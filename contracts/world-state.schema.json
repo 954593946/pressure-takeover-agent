@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pressure-agent.local/contracts/world-state.schema.json",
+  "title": "Pressure Agent World State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "revision",
+    "updatedAt",
+    "stage",
+    "agentMode",
+    "tasks",
+    "vehicle",
+    "risk",
+    "wearable",
+    "actions",
+    "messages"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "0.1.0"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "stage": {
+      "type": "string",
+      "enum": [
+        "idle",
+        "task_created",
+        "meeting_delay",
+        "departure_warning",
+        "vehicle_mode",
+        "traffic_delay",
+        "pressure_takeover",
+        "waiting_confirmation",
+        "action_completed",
+        "role_transition"
+      ]
+    },
+    "agentMode": {
+      "type": "string",
+      "enum": ["quiet", "observing", "taking_over", "awaiting_confirmation", "resolved"]
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/task"
+      }
+    },
+    "vehicle": {
+      "$ref": "#/$defs/vehicle"
+    },
+    "risk": {
+      "$ref": "#/$defs/risk"
+    },
+    "wearable": {
+      "$ref": "#/$defs/wearable"
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/action"
+      }
+    },
+    "messages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/message"
+      }
+    },
+    "conclusion": {
+      "type": "string"
+    },
+    "confirmation": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/confirmation"}
+      ]
+    }
+  },
+  "$defs": {
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "type", "priority", "adjustable", "status"],
+      "properties": {
+        "id": {"type": "string"},
+        "title": {"type": "string"},
+        "scheduledAt": {"type": "string", "format": "date-time"},
+        "location": {"type": "string"},
+        "type": {"type": "string", "enum": ["rigid", "flexible"]},
+        "priority": {"type": "string", "enum": ["low", "medium", "high"]},
+        "adjustable": {"type": "boolean"},
+        "status": {"type": "string", "enum": ["pending", "rescheduled", "completed"]},
+        "waitingParties": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "vehicle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "delayMinutes"],
+      "properties": {
+        "mode": {"type": "string", "enum": ["off", "parked", "driving"]},
+        "destination": {"type": "string"},
+        "eta": {"type": "string", "format": "date-time"},
+        "delayMinutes": {"type": "integer", "minimum": 0}
+      }
+    },
+    "risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "realityRiskConfirmed", "auxiliarySignalPresent", "reasons"],
+      "properties": {
+        "level": {"type": "string", "enum": ["none", "watch", "high"]},
+        "realityRiskConfirmed": {"type": "boolean"},
+        "auxiliarySignalPresent": {"type": "boolean"},
+        "reasons": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "wearable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["connected", "state", "vibration"],
+      "properties": {
+        "connected": {"type": "boolean"},
+        "state": {"type": "string", "enum": ["idle", "ready", "warning", "driving", "taking_over", "resolved", "offline"]},
+        "text": {"type": "string"},
+        "vibration": {"type": "string", "enum": ["none", "short", "rhythmic"]},
+        "heartRate": {"type": "integer", "minimum": 20, "maximum": 250},
+        "heartRateSource": {"type": "string", "enum": ["device", "simulated"]}
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "target", "riskLevel", "requiresConfirmation", "status"],
+      "properties": {
+        "id": {"type": "string"},
+        "type": {"type": "string", "enum": ["reschedule", "draft_message", "send_message"]},
+        "target": {"type": "string"},
+        "summary": {"type": "string"},
+        "riskLevel": {"type": "string", "enum": ["low", "medium", "high"]},
+        "requiresConfirmation": {"type": "boolean"},
+        "status": {"type": "string", "enum": ["planned", "ready", "awaiting_confirmation", "completed", "blocked"]}
+      }
+    },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "audience", "body", "status"],
+      "properties": {
+        "id": {"type": "string"},
+        "audience": {"type": "string", "enum": ["teacher", "family"]},
+        "displayName": {"type": "string"},
+        "body": {"type": "string"},
+        "status": {"type": "string", "enum": ["draft", "awaiting_confirmation", "simulated_sent"]}
+      }
+    },
+    "confirmation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "prompt", "status", "actionIds"],
+      "properties": {
+        "id": {"type": "string"},
+        "prompt": {"type": "string"},
+        "status": {"type": "string", "enum": ["pending", "accepted", "rejected", "expired"]},
+        "actionIds": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  }
+}

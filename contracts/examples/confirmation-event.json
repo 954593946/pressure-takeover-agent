@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "0.1.0",
+  "eventId": "evt_confirm_vehicle_001",
+  "type": "confirmation.submitted",
+  "source": "vehicle_hmi",
+  "occurredAt": "2026-07-14T18:28:05+08:00",
+  "correlationId": "demo_run_001",
+  "deviceId": "vehicle_display_01",
+  "payload": {
+    "confirmationId": "confirm_send_001",
+    "decision": "accept",
+    "inputMode": "button"
+  }
+}
