@@ -70,7 +70,7 @@ AURI 是一个面向车机、手机与腕上设备的多端 Agent。它在驾驶
 - `WorldState` 至少包含 `session_id`、`stage`、`scene`、`primary_surface`、`pressure_level`、`tasks`、`eta`、`actions`、`profile`、`wearable`。
 - 驾驶输出预算固定为：**最多 1 句结论 + 1 个动作组 + 1 个确认入口**。非主端只渲染状态，不振动、不播报、不提供可点击确认。
 - 所有端依赖后端状态和版本号恢复；刷新或重连后不得出现端侧自推状态漂移。
-- 详细架构见 [docs/architecture.md](docs/architecture.md)。当前 `contracts/` 仍是早期 v0.1 基线，加入 Profile、ServiceOrder、交互所有权和生活服务事件后方可宣布 v0.2 冻结。
+- 详细架构见 [docs/architecture.md](docs/architecture.md)。当前 `contracts/` 已形成 v0.2 候选基线，包含 Profile、ServiceOrder、交互所有权、L0-L3、Ledger 和生活服务事件；在生产方与消费方共同评审后正式冻结。
 
 ## 真实与模拟边界
 
@@ -117,8 +117,8 @@ AURI 是一个面向车机、手机与腕上设备的多端 Agent。它在驾驶
 - `apps/watch/active2-pressure-watch/`：已有 Active 2 466×466 静态框架与状态映射，Side Service、真实震动、ACK 和新触觉编码仍待实现。
 - `apps/mobile/`：目前仅有模块说明，业务 UI 与连接层待开发。
 - `apps/demo-console/`：目前仅有模块说明，场景事件、服务异常和重置控制台待开发。
-- `services/agent-api/`：目前仅有架构说明，Agent/后端 P0 尚待实现。
-- `contracts/`：v0.1 早期契约可用于参考，但缺少新文档要求的 `Profile`、`ServiceOrder`、`primary_surface`、L0-L3、动作 Ledger 与服务事件。
+- `services/agent-api/`：已有 FastAPI v0.2 基础版，包含事件幂等、World State、L0-L3、主交互端、Profile、动作规划、确认幂等、Mock Adapter、Ledger、SSE/WebSocket 和 OpenAI 兼容适配器；当前使用进程内存存储，适合单实例 Demo。
+- `contracts/`：已有 v0.2 候选 Schema、OpenAPI、正向样例和标准事件序列，等待跨端共同评审后冻结。
 
 ## AI Agent 开工与完成检查
 
@@ -165,7 +165,7 @@ docs/                             架构、范围、分工与 ADR
 
 ## 当前必须优先冻结
 
-1. contracts v0.2：八个共享对象、事件名、状态名、错误码和示例。
+1. contracts v0.2 跨端评审：确认八个共享对象、事件名、状态名、错误码和示例，并冻结候选基线。
 2. 手机与后端技术栈、统一 API Client 和状态层边界。
 3. Zepp OS Side Service / BLE 网关链路与 ACK 协议；保留 ESP32-S3 止损点。
 4. HMI 目标屏幕参数，以及可直接用于产品界面的透明 AURI Logo/Icon 素材。

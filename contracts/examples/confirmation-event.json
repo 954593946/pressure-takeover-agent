@@ -1,14 +1,15 @@
 {
-  "schemaVersion": "0.1.0",
-  "eventId": "evt_confirm_vehicle_001",
-  "type": "confirmation.submitted",
+  "schema_version": "0.2.0",
+  "event_id": "evt_confirm_vehicle_001",
+  "session_id": "demo_run_001",
+  "type": "confirmation.confirmed",
   "source": "vehicle_hmi",
-  "occurredAt": "2026-07-14T18:28:05+08:00",
-  "correlationId": "demo_run_001",
-  "deviceId": "vehicle_display_01",
+  "timestamp": "2026-07-15T18:28:05+08:00",
+  "correlation_id": "demo_run_001",
+  "device_id": "vehicle_display_01",
   "payload": {
-    "confirmationId": "confirm_send_001",
+    "confirmation_id": "confirm_all_001",
     "decision": "accept",
-    "inputMode": "button"
+    "input_mode": "button"
   }
 }

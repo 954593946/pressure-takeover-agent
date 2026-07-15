@@ -1,0 +1,7 @@
+# Temporary fallback owner until every workstream provides its GitHub username.
+* @954593946
+
+/contracts/ @954593946
+/services/agent-api/ @954593946
+/packages/test-fixtures/ @954593946
+/docs/decisions/ @954593946

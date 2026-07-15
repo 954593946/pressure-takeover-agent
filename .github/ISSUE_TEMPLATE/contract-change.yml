@@ -1,0 +1,30 @@
+name: 契约变更
+description: 修改跨端 Schema、API、事件或错误码
+title: "contract: "
+labels: ["contract"]
+body:
+  - type: textarea
+    id: change
+    attributes:
+      label: 契约变化
+      description: 精确列出新增、删除或修改的字段与事件。
+    validations:
+      required: true
+  - type: input
+    id: producer
+    attributes:
+      label: 生产方 Reviewer
+    validations:
+      required: true
+  - type: input
+    id: consumer
+    attributes:
+      label: 消费方 Reviewer
+    validations:
+      required: true
+  - type: textarea
+    id: migration
+    attributes:
+      label: 兼容性与迁移
+    validations:
+      required: true

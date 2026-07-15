@@ -1,0 +1,34 @@
+name: Agent P0 功能
+description: 拆分一个可验收的 Agent/后端功能
+title: "agent: "
+labels: ["agent", "P0"]
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: 验收结果
+      description: 完成后用户或相邻模块能观察到什么？
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: 输入与输出契约
+      description: 列出 Event、World State、Action 或错误码。
+    validations:
+      required: true
+  - type: textarea
+    id: failure
+    attributes:
+      label: 失败与降级
+      description: LLM、网络、服务或重复请求失败时如何继续 Demo？
+    validations:
+      required: true
+  - type: checkboxes
+    id: done
+    attributes:
+      label: 完成定义
+      options:
+        - label: 固定输入结果一致
+        - label: 包含幂等与越权测试
+        - label: 更新契约、样例和启动说明

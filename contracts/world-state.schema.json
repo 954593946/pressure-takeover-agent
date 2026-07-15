@@ -1,177 +1,166 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://pressure-agent.local/contracts/world-state.schema.json",
-  "title": "Pressure Agent World State",
-  "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "schemaVersion",
-    "revision",
-    "updatedAt",
-    "stage",
-    "agentMode",
-    "tasks",
-    "vehicle",
-    "risk",
-    "wearable",
-    "actions",
-    "messages"
-  ],
-  "properties": {
-    "schemaVersion": {
-      "const": "0.1.0"
-    },
-    "revision": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "updatedAt": {
-      "type": "string",
-      "format": "date-time"
-    },
-    "stage": {
-      "type": "string",
-      "enum": [
-        "idle",
-        "task_created",
-        "meeting_delay",
-        "departure_warning",
-        "vehicle_mode",
-        "traffic_delay",
-        "pressure_takeover",
-        "waiting_confirmation",
-        "action_completed",
-        "role_transition"
-      ]
-    },
-    "agentMode": {
-      "type": "string",
-      "enum": ["quiet", "observing", "taking_over", "awaiting_confirmation", "resolved"]
-    },
-    "tasks": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/task"
-      }
-    },
-    "vehicle": {
-      "$ref": "#/$defs/vehicle"
-    },
-    "risk": {
-      "$ref": "#/$defs/risk"
-    },
-    "wearable": {
-      "$ref": "#/$defs/wearable"
-    },
-    "actions": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/action"
-      }
-    },
-    "messages": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/message"
-      }
-    },
-    "conclusion": {
-      "type": "string"
-    },
-    "confirmation": {
-      "oneOf": [
-        {"type": "null"},
-        {"$ref": "#/$defs/confirmation"}
-      ]
-    }
-  },
+  "$id": "https://auri.local/contracts/world-state.schema.json",
+  "title": "AURI World State",
+  "$ref": "#/$defs/WorldState",
   "$defs": {
-    "task": {
+    "Task": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "title", "type", "priority", "adjustable", "status"],
+      "required": ["task_id", "title", "task_type", "priority", "adjustable", "status", "capability_tags"],
       "properties": {
-        "id": {"type": "string"},
+        "task_id": {"type": "string"},
         "title": {"type": "string"},
-        "scheduledAt": {"type": "string", "format": "date-time"},
-        "location": {"type": "string"},
-        "type": {"type": "string", "enum": ["rigid", "flexible"]},
-        "priority": {"type": "string", "enum": ["low", "medium", "high"]},
+        "scheduled_at": {"type": ["string", "null"], "format": "date-time"},
+        "location": {"type": ["string", "null"]},
+        "task_type": {"enum": ["rigid", "flexible"]},
+        "priority": {"enum": ["low", "medium", "high"]},
         "adjustable": {"type": "boolean"},
-        "status": {"type": "string", "enum": ["pending", "rescheduled", "completed"]},
-        "waitingParties": {"type": "array", "items": {"type": "string"}}
+        "status": {"enum": ["pending", "rescheduled", "completed"]},
+        "waiting_party": {"type": "array", "items": {"type": "string"}},
+        "capability_tags": {"type": "array", "items": {"type": "string"}}
       }
     },
-    "vehicle": {
+    "Event": {
+      "$ref": "event.schema.json"
+    },
+    "Action": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["mode", "delayMinutes"],
+      "required": ["action_id", "type", "target", "status", "risk", "requires_confirmation", "summary"],
       "properties": {
-        "mode": {"type": "string", "enum": ["off", "parked", "driving"]},
-        "destination": {"type": "string"},
-        "eta": {"type": "string", "format": "date-time"},
-        "delayMinutes": {"type": "integer", "minimum": 0}
+        "action_id": {"type": "string"},
+        "type": {"enum": ["message", "reschedule", "service_order"]},
+        "target": {"type": "string"},
+        "status": {"enum": ["planned", "ready", "awaiting_confirmation", "completed", "blocked", "failed"]},
+        "risk": {"enum": ["low", "medium", "high"]},
+        "requires_confirmation": {"type": "boolean"},
+        "summary": {"type": "string"},
+        "details_ref": {"type": ["string", "null"]},
+        "error_code": {"type": ["string", "null"]}
       }
     },
-    "risk": {
+    "Confirmation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["level", "realityRiskConfirmed", "auxiliarySignalPresent", "reasons"],
+      "required": ["confirmation_id", "action_ids", "expires_at", "status", "owner_surface"],
       "properties": {
-        "level": {"type": "string", "enum": ["none", "watch", "high"]},
-        "realityRiskConfirmed": {"type": "boolean"},
-        "auxiliarySignalPresent": {"type": "boolean"},
-        "reasons": {"type": "array", "items": {"type": "string"}}
+        "confirmation_id": {"type": "string"},
+        "action_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "expires_at": {"type": "string", "format": "date-time"},
+        "status": {"enum": ["pending", "accepted", "rejected", "expired"]},
+        "confirmed_by": {"type": ["string", "null"]},
+        "owner_surface": {"enum": ["mobile", "vehicle_hmi"]}
       }
     },
-    "wearable": {
+    "Profile": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["connected", "state", "vibration"],
+      "required": ["profile_id", "profile_type", "tone", "proactive_voice_threshold", "haptic_mode", "budget_limit", "delivery_priority", "substitution_policy", "explanation_depth"],
+      "properties": {
+        "profile_id": {"type": "string"},
+        "profile_type": {"enum": ["efficiency", "quality"]},
+        "tone": {"type": "string"},
+        "proactive_voice_threshold": {"enum": ["L1", "L2", "L3"]},
+        "haptic_mode": {"enum": ["clear", "gentle"]},
+        "budget_limit": {"type": "number", "minimum": 0},
+        "delivery_priority": {"enum": ["fastest", "quality_first"]},
+        "substitution_policy": {"enum": ["same_spec_within_budget", "same_brand_only"]},
+        "explanation_depth": {"enum": ["brief", "detailed"]}
+      }
+    },
+    "WearableState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["connected", "mode", "text", "color", "haptic", "command_id"],
       "properties": {
         "connected": {"type": "boolean"},
-        "state": {"type": "string", "enum": ["idle", "ready", "warning", "driving", "taking_over", "resolved", "offline"]},
+        "mode": {"enum": ["idle", "warning", "handover", "processing", "completed", "error"]},
         "text": {"type": "string"},
-        "vibration": {"type": "string", "enum": ["none", "short", "rhythmic"]},
-        "heartRate": {"type": "integer", "minimum": 20, "maximum": 250},
-        "heartRateSource": {"type": "string", "enum": ["device", "simulated"]}
+        "color": {"enum": ["navy", "blue", "yellow", "green", "red"]},
+        "haptic": {"enum": ["none", "double_short", "single_pulse", "three_beat", "soft_short", "error_once"]},
+        "command_id": {"type": "string"},
+        "heart_rate": {"type": ["integer", "null"], "minimum": 20, "maximum": 250},
+        "signal_confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1}
       }
     },
-    "action": {
+    "ServiceItem": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "type", "target", "riskLevel", "requiresConfirmation", "status"],
+      "required": ["sku", "name", "quantity", "unit_price", "subtotal"],
       "properties": {
-        "id": {"type": "string"},
-        "type": {"type": "string", "enum": ["reschedule", "draft_message", "send_message"]},
-        "target": {"type": "string"},
-        "summary": {"type": "string"},
-        "riskLevel": {"type": "string", "enum": ["low", "medium", "high"]},
-        "requiresConfirmation": {"type": "boolean"},
-        "status": {"type": "string", "enum": ["planned", "ready", "awaiting_confirmation", "completed", "blocked"]}
+        "sku": {"type": "string"},
+        "name": {"type": "string"},
+        "quantity": {"type": "integer", "minimum": 1},
+        "unit_price": {"type": "number", "minimum": 0},
+        "subtotal": {"type": "number", "minimum": 0},
+        "substitution": {"type": ["string", "null"]}
       }
     },
-    "message": {
+    "ServiceOrder": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "audience", "body", "status"],
+      "required": ["order_id", "preview_id", "items", "total", "budget_limit", "budget_status", "delivery_window", "status"],
       "properties": {
-        "id": {"type": "string"},
-        "audience": {"type": "string", "enum": ["teacher", "family"]},
-        "displayName": {"type": "string"},
-        "body": {"type": "string"},
-        "status": {"type": "string", "enum": ["draft", "awaiting_confirmation", "simulated_sent"]}
+        "order_id": {"type": ["string", "null"]},
+        "preview_id": {"type": "string"},
+        "items": {"type": "array", "items": {"$ref": "#/$defs/ServiceItem"}},
+        "total": {"type": "number", "minimum": 0},
+        "budget_limit": {"type": "number", "minimum": 0},
+        "budget_status": {"enum": ["within_budget", "over_budget"]},
+        "delivery_window": {"type": "string"},
+        "status": {"enum": ["preview", "awaiting_confirmation", "submitted", "blocked", "failed"]},
+        "error_code": {"type": ["string", "null"], "enum": [null, "OUT_OF_STOCK", "OVER_BUDGET", "DUPLICATE", "EXPIRED", "NOT_AUTHORIZED", "NOT_FOUND"]}
       }
     },
-    "confirmation": {
+    "Risk": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "prompt", "status", "actionIds"],
+      "required": ["pressure_level", "late_minutes", "reason_codes", "auxiliary_signals"],
       "properties": {
-        "id": {"type": "string"},
-        "prompt": {"type": "string"},
-        "status": {"type": "string", "enum": ["pending", "accepted", "rejected", "expired"]},
-        "actionIds": {"type": "array", "items": {"type": "string"}}
+        "pressure_level": {"enum": ["L0", "L1", "L2", "L3", "Recovery"]},
+        "late_minutes": {"type": "integer", "minimum": 0},
+        "reason_codes": {"type": "array", "items": {"type": "string"}},
+        "auxiliary_signals": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "InteractionOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message_id", "priority", "owner_surface", "suppressed_surfaces", "expires_at", "requires_confirmation", "conclusion"],
+      "properties": {
+        "message_id": {"type": "string"},
+        "priority": {"enum": ["low", "normal", "high", "critical"]},
+        "owner_surface": {"enum": ["mobile", "vehicle_hmi", "none"]},
+        "suppressed_surfaces": {"type": "array", "items": {"enum": ["mobile", "vehicle_hmi", "wearable"]}},
+        "expires_at": {"type": "string", "format": "date-time"},
+        "requires_confirmation": {"type": "boolean"},
+        "conclusion": {"type": "string"}
+      }
+    },
+    "WorldState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "session_id", "revision", "updated_at", "stage", "scene", "primary_surface", "risk", "tasks", "actions", "profile", "wearable", "service_orders", "action_ledger"],
+      "properties": {
+        "schema_version": {"const": "0.2.0"},
+        "session_id": {"type": "string"},
+        "revision": {"type": "integer", "minimum": 0},
+        "updated_at": {"type": "string", "format": "date-time"},
+        "stage": {"enum": ["off_vehicle_idle", "pre_departure_warning", "handover_to_vehicle", "vehicle_observation", "takeover_L2", "takeover_L3", "planning", "service_prepared", "waiting_confirmation", "executing", "service_executed", "action_completed", "cooldown", "parked_review", "error"]},
+        "scene": {"enum": ["off_vehicle", "approaching_vehicle", "driving", "high_load_driving", "parked"]},
+        "primary_surface": {"enum": ["mobile", "vehicle_hmi", "none"]},
+        "risk": {"$ref": "#/$defs/Risk"},
+        "tasks": {"type": "array", "items": {"$ref": "#/$defs/Task"}},
+        "eta": {"type": ["string", "null"], "format": "date-time"},
+        "actions": {"type": "array", "items": {"$ref": "#/$defs/Action"}},
+        "confirmation": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/Confirmation"}]},
+        "profile": {"$ref": "#/$defs/Profile"},
+        "wearable": {"$ref": "#/$defs/WearableState"},
+        "service_orders": {"type": "array", "items": {"$ref": "#/$defs/ServiceOrder"}},
+        "output": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/InteractionOutput"}]},
+        "action_ledger": {"type": "array", "items": {"type": "string"}},
+        "service_mock_mode": {"enum": ["success", "out_of_stock", "over_budget"]}
       }
     }
   }
