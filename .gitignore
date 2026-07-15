@@ -53,6 +53,7 @@ devices/zepp-os/.zeus/
 
 # Runtime data and logs
 data/
+!apps/mobile/app/src/main/java/com/pressureagent/mobile/data/
 logs/
 *.log
 *.sqlite
