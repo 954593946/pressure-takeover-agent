@@ -1,0 +1,38 @@
+name: Agent API CI
+
+on:
+  pull_request:
+    paths:
+      - "contracts/**"
+      - "packages/test-fixtures/**"
+      - "services/agent-api/**"
+      - ".github/workflows/agent-api.yml"
+  push:
+    branches: [main]
+    paths:
+      - "contracts/**"
+      - "packages/test-fixtures/**"
+      - "services/agent-api/**"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: services/agent-api/pyproject.toml
+      - name: Install
+        working-directory: services/agent-api
+        run: python -m pip install -e ".[dev]"
+      - name: Test
+        working-directory: services/agent-api
+        env:
+          LLM_ENABLED: "false"
+        run: python -m pytest -q
