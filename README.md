@@ -10,6 +10,25 @@ AURI 是一个面向车机、手机与腕上设备的多端 Agent。它在驾驶
 
 本仓库用于六周 Demo：**会议延迟 + 晚高峰拥堵 + 接孩子预计迟到 18 分钟**。项目不是普通提醒、导航播报、情绪陪聊或多端页面展示；核心是责任风险模型、唯一主交互端、个性化策略、安全确认与生活服务动作编排。
 
+## 团队同步：当前开发基线
+
+> 最后更新：2026-07-15。当前正在评审 [Agent / contracts v0.2 基础 PR #4](https://github.com/954593946/pressure-takeover-agent/pull/4)。在该 PR 合并且完成跨端评审前，`contracts v0.2` 属于候选基线，不得在各端复制后自行修改。
+
+| 模块 | 当前可用状态 | 其他成员现在可以做什么 |
+|---|---|---|
+| Agent / 后端 | FastAPI 基础版可运行；已有事件、World State、L0-L3、Profile、动作规划、确认幂等、Mock 订单、SSE/WebSocket | 使用标准事件和状态快照开发各端，不需要等待真实外部服务 |
+| 跨端契约 | v0.2 候选 Schema、OpenAPI、示例和 happy-path 事件序列已提交评审 | 逐字段评审生产/消费需求；发现缺字段先提契约变更，不在端内补私有字段 |
+| 手机端 | 业务 UI 与连接层待开发 | 按 `WorldState` 渲染；通过 Event API 上报任务、Profile 和确认 |
+| 车机 / 控制台 | 车机已有早期原型，控制台待接标准事件 | 移除页面自推状态；按 `stage + primary_surface` 渲染和注入事件 |
+| 腕上设备 | Active 2 静态框架可运行 | 对齐 `WearableState` 和 `command_id/ACK`，不直接判断压力等级 |
+
+新成员或 AI 编程助手开始工作前，按这个顺序阅读：
+
+1. [AGENTS.md](AGENTS.md)：AI 编程不可违反的仓库规则。
+2. [Agent 接入与跨端协作指南](docs/agent-integration-guide.md)：从零理解 Agent、接口、状态流和各端接入方式。
+3. 本 README 中的 P0 闭环、模块所有权和视觉规则。
+4. 自己模块的 README 与 `contracts/` 实际 Schema/示例。
+
 ## AI Agent 开发入口
 
 > 开始任何任务前，先读本节和与你模块对应的正式文档。不得依据现有页面自行推断产品需求，不得在端内发明第二套状态名、压力等级、确认逻辑或视觉 Token。
@@ -19,8 +38,9 @@ AURI 是一个面向车机、手机与腕上设备的多端 Agent。它在驾驶
 1. [开发功能清单 v1（五人分工版）](随行压力接管Agent_开发功能清单_v1_五人分工版.docx)：**开发执行主依据**，定义 P0/P1/P2、Owner、接口、验收和降级。
 2. [六周 Demo 汇报材料 v4（生活服务执行增强版）](随行压力接管Agent_六周Demo汇报材料_v4_生活服务执行增强版.docx)：产品目标、故事线、交互逻辑与真实/模拟边界。
 3. 本 README：全仓统一入口、不可违反的跨端规则和 AURI 视觉基线。
-4. `contracts/`：当前可执行接口基线。若正式文档新增了字段，必须先提交契约变更并由生产方、消费方共同评审，再写端侧实现。
-5. 现有代码：只代表当前实现进度，不自动成为需求或视觉标准。
+4. [Agent 接入与跨端协作指南](docs/agent-integration-guide.md)：面向新手和 AI 的实现说明，不替代产品主依据。
+5. `contracts/`：当前可执行接口基线。若正式文档新增了字段，必须先提交契约变更并由生产方、消费方共同评审，再写端侧实现。
+6. 现有代码：只代表当前实现进度，不自动成为需求或视觉标准。
 
 旧的 `v2` 汇报材料仅作历史记录，不再作为开发依据。若内容冲突，以“功能清单 v1 → 汇报材料 v4 → README → 已冻结 contracts”的顺序处理，并在 PR 中说明冲突，禁止静默选择。
 
@@ -61,6 +81,8 @@ AURI 是一个面向车机、手机与腕上设备的多端 Agent。它在驾驶
 | Agent / 后端 | `services/agent-api/`、`contracts/`、`packages/test-fixtures/` | World State、事件、状态机、风险、Profile、动作编排、权限幂等、Mock Adapter、日志回放 |
 
 模块边界、接口和个人完成定义见 [docs/workstreams.md](docs/workstreams.md) 与正式功能清单。任何跨模块字段变更必须由一个生产方和一个消费方共同评审。
+
+第一次接 Agent 的成员不要从源码猜接口，直接阅读 [Agent 接入与跨端协作指南](docs/agent-integration-guide.md)，再对照 [OpenAPI](contracts/openapi.yaml)、[Event Schema](contracts/event.schema.json) 和 [World State Schema](contracts/world-state.schema.json)。
 
 ## 全局技术契约
 
