@@ -1,0 +1,56 @@
+{
+  "configVersion": "v3",
+  "app": {
+    "appId": 20301,
+    "appName": "Pressure Watch",
+    "appType": "app",
+    "version": {
+      "code": 1,
+      "name": "0.1.0"
+    },
+    "icon": "icon.png",
+    "vender": "pressure-agent",
+    "description": "Amazfit Active 2 pressure takeover demo watch app"
+  },
+  "permissions": [
+    "data:os.device.info",
+    "device:os.local_storage"
+  ],
+  "runtime": {
+    "apiVersion": {
+      "compatible": "4.2",
+      "target": "4.2",
+      "minVersion": "4.2"
+    }
+  },
+  "debug": false,
+  "targets": {
+    "active2": {
+      "module": {
+        "page": {
+          "pages": [
+            "page/active2/home/index.page"
+          ]
+        }
+      },
+      "platforms": [
+        {
+          "name": "Amazfit Active 2 (Round)",
+          "deviceSource": 8913152,
+          "st": "r",
+          "sr": "w466"
+        }
+      ],
+      "designWidth": 466
+    }
+  },
+  "i18n": {
+    "en-US": {
+      "appName": "Pressure Watch"
+    },
+    "zh-CN": {
+      "appName": "压力接管"
+    }
+  },
+  "defaultLanguage": "zh-CN"
+}
