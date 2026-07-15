@@ -1,26 +1,37 @@
-# 跨端契约 v0.1
+# 跨端契约
 
-`contracts/` 是手机、车机、控制台、Agent 服务和腕上网关之间的唯一对外字段定义。
+> 当前 JSON Schema/OpenAPI 是早期 `0.1.0` 基线，尚未完整覆盖 2026-07-15 功能清单。不得因为现有 Schema 缺少字段，就在各端建立私有模型；先完成 v0.2 契约 PR。
 
-## 通道
+## 权威边界
 
-- `POST /v1/events`：所有客户端上报事件。
-- `GET /v1/world-state`：首次连接或重连时获取完整快照。
-- `GET /v1/stream`：SSE 状态流草案。
-- `/v1/ws`：如采用 WebSocket，应发送同一份 World State，不再定义另一套消息模型。
+- 根目录功能清单定义目标对象、接口与验收。
+- 本目录定义已冻结、可生成代码和可验证的机器契约。
+- README/正式文档与当前 Schema 冲突时，暂停跨端实现，先由 Agent Owner 发起契约变更并邀请生产方/消费方评审。
 
-## 规则
+## v0.2 必须覆盖
 
-- 客户端不直接设置 `stage` 或 `agentMode`，它们由 Agent 状态机推导。
-- 所有事件必须有唯一 `eventId`；用户确认还必须携带 `confirmationId`。
-- `revision` 单调递增；客户端忽略小于等于本地 revision 的旧快照。
-- 腕上端只需消费 World State 子集，但字段含义不能另起一套。
-- 当前 payload 为了便于第一周联调保持开放；每个事件类型冻结后应增加对应的细分 Schema。
+- 对象：`Task`、`WorldState`、`Event`、`Action`、`Confirmation`、`Profile`、`WearableState`、`ServiceOrder`。
+- 状态：车内外 Scene、L0-L3/Recovery、主交互端、服务准备/执行、cooldown 和停车后复盘。
+- 接口：事件上报、状态快照、实时流、确认、Profile 更新和 Session 重置。
+- 幂等：`event_id`、`message_id`、`command_id`、`action_id`、`confirmation_id`、`order_id`。
+- 生活服务：Capability、订单 preview/execute/status、缺货/超预算/过期/未授权错误。
+- 输出调度：priority、owner surface、suppressed surfaces、expires at 和 requires confirmation。
 
-## 第一周必须共同评审的字段
+## 当前通道草案
 
-- 事件类型命名和来源枚举。
-- `stage` 与 `agentMode` 的区别。
-- 腕上 `state/text/vibration` 的最小字段。
-- `confirmationId` 的生成者、有效期和一次性消费语义。
-- 重连后是发完整快照还是增量事件（v0.1 建议完整快照）。
+- `POST /v1/event`：各端上报事件。
+- `GET /v1/state`：首次连接或重连获取完整 World State。
+- `WS /v1/stream`：广播 state/output/action 更新；断线后以完整快照恢复。
+- `POST /v1/confirm`：一次性消费 confirmation 下的动作组。
+- `PUT /v1/profile`：更新显式 Profile 与生活服务规则。
+- `POST /v1/session/reset`：重置标准 Demo Session。
+
+当前 `openapi.yaml` 仍保留旧复数路径用于兼容参考，v0.2 评审时必须统一命名，不允许不同客户端分别实现 `/event` 与 `/events`。
+
+## 契约规则
+
+- 客户端不得直接设置最终 stage、压力等级或动作完成状态。
+- 客户端只消费后端版本号更高的快照，重复事件不得重复执行。
+- 腕上端可只消费 World State 子集，但字段和值域必须来自同一 Schema。
+- 每次变更同时更新 Schema、OpenAPI、正向样例、错误样例和跨端固定场景。
+- 删除/重命名字段属于破坏性变更；六周 Demo 内优先新增可选字段并保留兼容映射。
