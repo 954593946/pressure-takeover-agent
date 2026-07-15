@@ -18,7 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 @pytest.fixture
 def client() -> TestClient:
-    app = create_app(Settings(llm_enabled=False, openai_api_key=""))
+    app = create_app(Settings(llm_enabled=False, openai_api_key="", agent_shared_token=""))
     return TestClient(app)
 
 
@@ -56,6 +56,22 @@ def test_health_never_exposes_key(client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     assert "api_key" not in response.text.lower()
+
+
+def test_shared_backend_requires_team_token() -> None:
+    app = create_app(Settings(llm_enabled=False, openai_api_key="", agent_shared_token="team-test-token"))
+    secured_client = TestClient(app)
+    health = secured_client.get("/health")
+    assert health.status_code == 200
+    assert health.json()["shared_access_enabled"] is True
+    assert "team-test-token" not in health.text
+
+    missing = secured_client.get("/v1/state")
+    wrong = secured_client.get("/v1/state", headers={"X-Agent-Token": "wrong"})
+    allowed = secured_client.get("/v1/state", headers={"X-Agent-Token": "team-test-token"})
+    assert missing.status_code == 401
+    assert wrong.status_code == 401
+    assert allowed.status_code == 200
 
 
 def test_happy_path_and_duplicate_confirmation(client: TestClient) -> None:

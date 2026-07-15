@@ -12,12 +12,12 @@ AURI 是一个面向车机、手机与腕上设备的多端 Agent。它在驾驶
 
 ## 团队同步：当前开发基线
 
-> 最后更新：2026-07-15。当前正在评审 [Agent / contracts v0.2 基础 PR #4](https://github.com/954593946/pressure-takeover-agent/pull/4)。在该 PR 合并且完成跨端评审前，`contracts v0.2` 属于候选基线，不得在各端复制后自行修改。
+> 最后更新：2026-07-16。[Agent / contracts v0.2 基础 PR #4](https://github.com/954593946/pressure-takeover-agent/pull/4) 已合并。`contracts v0.2` 是当前共享实现基线，仍需各端逐字段评审；发现问题必须通过契约变更 PR 处理，不得在端内复制后自行修改。
 
 | 模块 | 当前可用状态 | 其他成员现在可以做什么 |
 |---|---|---|
-| Agent / 后端 | FastAPI 基础版可运行；已有事件、World State、L0-L3、Profile、动作规划、确认幂等、Mock 订单、SSE/WebSocket | 使用标准事件和状态快照开发各端，不需要等待真实外部服务 |
-| 跨端契约 | v0.2 候选 Schema、OpenAPI、示例和 happy-path 事件序列已提交评审 | 逐字段评审生产/消费需求；发现缺字段先提契约变更，不在端内补私有字段 |
+| Agent / 后端 | FastAPI v0.2 可运行；已有真实 LLM 任务解析、事件、World State、L0-L3、Profile、动作规划、确认幂等、Mock 订单、SSE/WebSocket 和团队令牌鉴权 | 按[接入指南](docs/agent-integration-guide.md)使用标准事件与状态快照开发；共享后端只分发团队令牌，不分发 Bosch API Key |
+| 跨端契约 | v0.2 Schema、OpenAPI、示例和 happy-path 事件序列已合并为共享实现基线 | 逐字段评审生产/消费需求；发现缺字段先提契约变更，不在端内补私有字段 |
 | 手机端 | 业务 UI 与连接层待开发 | 按 `WorldState` 渲染；通过 Event API 上报任务、Profile 和确认 |
 | 车机 / 控制台 | 车机已有早期原型，控制台待接标准事件 | 移除页面自推状态；按 `stage + primary_surface` 渲染和注入事件 |
 | 腕上设备 | Active 2 静态框架可运行 | 对齐 `WearableState` 和 `command_id/ACK`，不直接判断压力等级 |

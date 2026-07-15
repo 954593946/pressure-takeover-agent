@@ -130,6 +130,14 @@ packages/test-fixtures/happy-path.events.json
 
 所有客户端都按同一个顺序接入。
 
+如果团队使用共享 Agent，所有 `/v1/*` HTTP 请求必须增加：
+
+```http
+X-Agent-Token: 由 Agent Owner 单独提供的团队令牌
+```
+
+团队令牌只保护 Demo Agent 入口，不是 Bosch API Key。Bosch Key 永远只存在于运行 Agent 的服务器环境中，不能进入手机、车机、腕上或控制台代码。
+
 ### 第一步：获取当前 Session 和完整状态
 
 ```http
@@ -286,7 +294,7 @@ Content-Type: application/json
 
 ```text
 onStart:
-  state = GET /v1/state
+  state = GET /v1/state with X-Agent-Token
   connect stream
 
 onSnapshot(next):
@@ -297,7 +305,7 @@ onSnapshot(next):
 
 onDisconnect:
   exponential backoff
-  state = GET /v1/state
+  state = GET /v1/state with X-Agent-Token
   reconnect stream
 ```
 
