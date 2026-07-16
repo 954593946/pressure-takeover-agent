@@ -1,61 +1,105 @@
-# 系统架构
+# AURI 系统架构
 
-## 原则
+## 不可违反的原则
 
-1. `services/agent-api` 是 World State 的唯一写入者。
-2. 手机、车机、腕上设备和控制台只上报事件，不直接互相改状态。
-3. 所有生产方使用统一事件信封；所有消费方渲染同一份 World State 的子集。
-4. 数学计算和权限判断不交给 LLM：ETA 偏差、最晚出发、确认幂等和越权拦截由确定性代码负责。
-5. LLM 用于语义理解、责任判断、消息和短话术生成，并必须经过结构化输出和安全校验。
+1. Agent/后端是唯一 World State 写入者；所有端只上传事件。
+2. LLM 负责语义理解和候选内容，不负责压力等级、数学计算、权限或金额决策。
+3. 任一时刻只有一个 `primary_surface` 可以要求注意或确认。
+4. 所有不可逆动作都经过 Permission Engine 和 Confirmation Service；事件、命令、动作、确认和订单均幂等。
+5. 模拟的是外部来源与第三方结果，状态机、动作编排、安全和多端同步必须真实。
 
-## 数据流
+## 最小架构
 
 ```text
-mobile / vehicle-hmi / wearable / demo-console
-                     |
-                     | POST /v1/events
-                     v
-                 agent-api
-      event validation -> state machine -> policy
-              -> optional LLM -> safety gate
-                     |
-                     | WebSocket / SSE
-                     v
-mobile UI / vehicle HMI / wearable gateway / console log
+mobile / vehicle-hmi / wearable-gateway / demo-console
+                           |
+                           | Event
+                           v
+                       agent-api
+  Event Ingestor -> World State -> Risk Engine (L0-L3)
+                           |
+               Interaction Orchestrator
+                    /              \
+            Profile Policy     Action Orchestrator
+                                   |
+         Permission -> Confirmation -> Mock Service Adapter
+                                   |
+                    Action Ledger + State version
+                           |
+                snapshot + real-time stream
+                           v
+      mobile / vehicle HMI / wearable / console log
 ```
 
-腕上设备可以直连后端，也可以通过手机网关转发；无论链路如何，进入 Agent 的事件格式不变。
+腕上设备可以通过 Zepp Side Service/BLE 手机网关或后端链路接入；进入系统边界后必须转换成统一 `WearableState` 和 Event。
 
-## 状态机
+## 共享对象
 
-主流程按以下顺序推进：
+| 对象 | 最小职责 |
+|---|---|
+| `Task` | 刚性/弹性、时间、地点、等待方、依赖、`capability_tags` |
+| `Event` | 唯一 ID、来源、时间、session 和 payload；重复 ID 不重复处理 |
+| `WorldState` | session、version、stage、scene、主端、压力、任务、ETA、动作、Profile 和腕上状态 |
+| `Action` | message/reschedule/service_order、风险、确认要求、摘要、详情引用和状态 |
+| `Confirmation` | 动作组、过期、状态、确认来源；只能消费一次 |
+| `Profile` | 交互阈值、触觉、话术、预算、配送和替代规则；不改变安全权限 |
+| `WearableState` | mode、短文本、颜色、触觉、可选心率和信号置信度 |
+| `ServiceOrder` | 预览、商品数/明细、总价、预算、配送、状态和错误码 |
+
+## 主状态流
 
 ```text
-idle
-  -> task_created
-  -> meeting_delay
-  -> departure_warning
-  -> vehicle_mode
-  -> traffic_delay
-  -> pressure_takeover
+off_vehicle_idle
+  -> pre_departure_warning (L1)
+  -> handover_to_vehicle
+  -> vehicle_observation
+  -> takeover_L2 / takeover_L3
+  -> planning
+  -> service_prepared
   -> waiting_confirmation
-  -> action_completed
-  -> role_transition (P1)
+  -> executing
+  -> service_executed / action_completed
+  -> cooldown
+  -> parked_review
 ```
 
-控制台只能注入“会议延迟、车辆、路况、辅助信号”等外部事件。是否进入 `pressure_takeover`、哪些动作可自动执行、是否需要确认，由 Agent 后端决定。
+控制台只能注入 meeting/scene/traffic/signal/service mock 等事件，不能直接指定最终页面或跳过 Agent 判断。
 
-## 安全门
+## L0-L3 与输出
 
-- 低风险动作（例如后置超市）可自动执行。
-- 中风险动作（例如通知家人晚到）需要简单确认。
-- 高风险动作（例如联系老师、共享位置、改变接送人）必须明确确认。
-- `confirmation_id` 只能成功消费一次；语音和按钮并发提交也只执行一次。
-- 主动介入至少需要“现实风险成立 + 一个用户求助或辅助信号”。心率不得作为单点依据。
+| 等级 | 现实条件 | 输出 |
+|---|---|---|
+| L0 | 无刚性责任冲突 | 保持安静 |
+| L1 | 时间窗压缩但仍可能完成 | 车外手机风险卡 + 腕上一次双短震；不重排、不联系 |
+| L2 | 确定晚到或用户明确求助，并有辅助证据 | 车机一句结论 + 动作组 + 单确认；准备消息和服务方案 |
+| L3 | 明确责任风险 + 至少两类持续高负荷辅助信号 | 车机保护态，抑制非必要内容；敏感动作仍需确认 |
+| Recovery | 动作完成或风险解除 | 一句完成提示后 cooldown，停车后手机复盘 |
 
-## 接口版本
+心率、急刹、语气和视觉只能作为辅助证据。等级迁移必须有迟滞、冷却和可解释 `reason_codes`。
 
-- 当前契约版本：`0.1.0`。
-- HTTP 接口前缀：`/v1`。
-- 事件和 World State 都携带 `schemaVersion`。
-- 破坏性契约变更需要新增版本；六周 Demo 内优先使用向后兼容的可选字段。
+## 交互所有权
+
+| Scene | 主端 | 其他端行为 |
+|---|---|---|
+| off_vehicle | mobile | 腕上轻提示；车机静默 |
+| approaching_vehicle | mobile → vehicle_hmi | 手机停止新确认；腕上提示交接；车机预加载 |
+| driving / high_load_driving | vehicle_hmi | 手机后台只读；腕上只做一次状态/触觉回执 |
+| parked | mobile | 车机结束/待机；腕上同步后静默 |
+
+每条输出包含 message ID、priority、owner surface、expires at 和 confirmation 属性。非 Owner 端不得振动、播报或提供可操作确认。
+
+## 动作编排与服务执行
+
+1. `Task.capability_tags` 把“去超市”匹配为 `grocery_delivery`。
+2. Profile Store 返回当前动作所需的最少偏好数据。
+3. Action Planner 生成消息、重排和订单候选动作。
+4. Mock Catalog 与 Adapter 生成结构化 preview；手机显示明细，车机显示摘要。
+5. Permission Engine 判断 allow / confirm / block，以及能否合并确认。
+6. Confirmation Service 成功消费后调用 execute；重复调用返回同一结果。
+7. Action Ledger 保存 action/order 状态；重连、刷新和停车后复盘可恢复。
+
+缺货时消息照常处理，订单降级为停车后选择替代；超预算或地址变化不得在驾驶中追加复杂选择。
+
+## 契约演进
+
+当前仓库 Schema 是早期 v0.1。v0.2 冻结必须补齐上述八个对象、主端/输出字段、L0-L3、Profile、ServiceOrder、Adapter 错误和标准事件序列。契约变更应保持向后兼容；确需破坏性修改时升级版本并提供迁移样例。

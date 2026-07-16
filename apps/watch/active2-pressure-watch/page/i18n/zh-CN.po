@@ -1,0 +1,2 @@
+msgid "appName"
+msgstr "压力接管"

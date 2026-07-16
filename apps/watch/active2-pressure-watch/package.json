@@ -1,0 +1,16 @@
+{
+  "name": "active2-pressure-watch",
+  "version": "0.1.0",
+  "description": "Amazfit Active 2 round watch app framework for the pressure takeover demo",
+  "main": "app.js",
+  "scripts": {
+    "dev": "zeus dev",
+    "build": "zeus build",
+    "preview": "zeus preview"
+  },
+  "author": "",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@zeppos/device-types": "^3.0.0"
+  }
+}

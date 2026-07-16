@@ -1,0 +1,7 @@
+[
+  {"schema_version":"0.2.0","event_id":"evt_001","session_id":"demo_run_001","type":"task.created","source":"mobile","timestamp":"2026-07-15T17:20:00+08:00","payload":{"text":"今天18:10接孩子，之后去超市"}},
+  {"schema_version":"0.2.0","event_id":"evt_002","session_id":"demo_run_001","type":"meeting.overrun","source":"demo_console","timestamp":"2026-07-15T17:35:00+08:00","payload":{"delay_minutes":20}},
+  {"schema_version":"0.2.0","event_id":"evt_003","session_id":"demo_run_001","type":"scene.vehicle_entered","source":"demo_console","timestamp":"2026-07-15T17:55:00+08:00","payload":{}},
+  {"schema_version":"0.2.0","event_id":"evt_004","session_id":"demo_run_001","type":"traffic.updated","source":"demo_console","timestamp":"2026-07-15T18:00:00+08:00","payload":{"eta":"2026-07-15T18:28:00+08:00","late_minutes":18}},
+  {"schema_version":"0.2.0","event_id":"evt_005","session_id":"demo_run_001","type":"user.utterance","source":"vehicle_hmi","timestamp":"2026-07-15T18:00:05+08:00","payload":{"text":"我还来得及吗？帮我处理"}}
+]

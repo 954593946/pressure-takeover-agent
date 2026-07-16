@@ -1,74 +1,94 @@
 openapi: 3.1.0
 info:
-  title: Pressure Takeover Agent API
-  version: 0.1.0
-  description: Contract draft for the six-week multi-device demo.
+  title: AURI Pressure Takeover Agent API
+  version: 0.2.0
+  description: Contract-first API for the six-week multi-device demo.
 servers:
   - url: http://localhost:8000
+components:
+  securitySchemes:
+    TeamToken:
+      type: apiKey
+      in: header
+      name: X-Agent-Token
+security:
+  - TeamToken: []
 paths:
   /health:
     get:
       operationId: getHealth
+      security: []
       responses:
-        '200':
-          description: Service is ready.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [status]
-                properties:
-                  status:
-                    type: string
-                    const: ok
-  /v1/events:
+        '200': {description: Runtime health and provider configuration without secrets.}
+  /v1/event:
     post:
       operationId: submitEvent
-      summary: Submit an event from a client or the demo console.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: ./event.schema.json}
+      responses:
+        '202': {description: Event accepted or returned from the idempotency ledger.}
+        '400': {description: Invalid event payload.}
+  /v1/state:
+    get:
+      operationId: getWorldState
+      responses:
+        '200':
+          description: Latest complete World State snapshot.
+          content:
+            application/json:
+              schema: {$ref: ./world-state.schema.json}
+  /v1/stream:
+    get:
+      operationId: streamWorldState
+      responses:
+        '200':
+          description: Server-Sent Events stream of complete World State snapshots.
+          content:
+            text/event-stream:
+              schema: {type: string}
+  /v1/confirm:
+    post:
+      operationId: confirmActionGroup
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: ./event.schema.json
+              type: object
+              required: [confirmation_id, decision, confirmed_by]
+              properties:
+                confirmation_id: {type: string}
+                decision: {enum: [accept, reject]}
+                confirmed_by: {enum: [mobile, vehicle_hmi]}
+                input_mode: {enum: [button, voice]}
       responses:
-        '202':
-          description: Event accepted for processing.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [eventId, accepted]
-                properties:
-                  eventId:
-                    type: string
-                  accepted:
-                    type: boolean
-                  revision:
-                    type: integer
-        '400':
-          description: Invalid event payload.
-        '409':
-          description: Duplicate or already-consumed event/confirmation.
-  /v1/world-state:
-    get:
-      operationId: getWorldState
-      summary: Get the latest complete World State snapshot.
+        '200': {description: Updated World State; duplicate accepts return the original result.}
+        '404': {description: Confirmation not found.}
+        '409': {description: Confirmation expired or owned by another surface.}
+  /v1/profile:
+    put:
+      operationId: updateProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./world-state.schema.json#/$defs/Profile
       responses:
-        '200':
-          description: Latest World State.
-          content:
-            application/json:
-              schema:
-                $ref: ./world-state.schema.json
-  /v1/stream:
-    get:
-      operationId: streamWorldState
-      summary: Stream complete World State snapshots with Server-Sent Events.
+        '200': {description: Updated World State.}
+  /v1/session/reset:
+    post:
+      operationId: resetSession
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scenario_id: {type: string, default: happy-path}
       responses:
-        '200':
-          description: SSE stream. Each data field contains a World State JSON object.
-          content:
-            text/event-stream:
-              schema:
-                type: string
+        '200': {description: New initial World State.}

@@ -1,62 +1,39 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://pressure-agent.local/contracts/event.schema.json",
-  "title": "Pressure Agent Event Envelope",
+  "$id": "https://auri.local/contracts/event.schema.json",
+  "title": "AURI Event Envelope",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schemaVersion",
-    "eventId",
-    "type",
-    "source",
-    "occurredAt",
-    "payload"
-  ],
+  "required": ["schema_version", "event_id", "session_id", "type", "source", "timestamp", "payload"],
   "properties": {
-    "schemaVersion": {
-      "const": "0.1.0"
-    },
-    "eventId": {
-      "type": "string",
-      "minLength": 1
-    },
+    "schema_version": {"const": "0.2.0"},
+    "event_id": {"type": "string", "minLength": 1},
+    "session_id": {"type": "string", "minLength": 1},
     "type": {
       "type": "string",
       "enum": [
-        "task.input.received",
-        "meeting.delay.reported",
-        "vehicle.mode.changed",
+        "task.created",
+        "meeting.overrun",
+        "scene.approaching",
+        "scene.vehicle_entered",
+        "scene.parked",
         "traffic.updated",
-        "pressure.signal.reported",
-        "assistance.requested",
-        "confirmation.submitted",
-        "wearable.status.reported",
-        "demo.reset.requested"
+        "wearable.signal",
+        "driving.signal",
+        "user.utterance",
+        "service.mock.config",
+        "confirmation.confirmed",
+        "cooldown.elapsed",
+        "session.reset"
       ]
     },
     "source": {
       "type": "string",
-      "enum": [
-        "mobile",
-        "vehicle_hmi",
-        "wearable",
-        "demo_console",
-        "agent_api"
-      ]
+      "enum": ["mobile", "vehicle_hmi", "wearable", "demo_console", "agent_api"]
     },
-    "occurredAt": {
-      "type": "string",
-      "format": "date-time"
-    },
-    "correlationId": {
-      "type": "string"
-    },
-    "deviceId": {
-      "type": "string"
-    },
-    "payload": {
-      "type": "object",
-      "additionalProperties": true
-    }
+    "timestamp": {"type": "string", "format": "date-time"},
+    "correlation_id": {"type": ["string", "null"]},
+    "device_id": {"type": ["string", "null"]},
+    "payload": {"type": "object", "additionalProperties": true}
   }
 }
