@@ -13,7 +13,7 @@ Clean Architecture 3 层：
   → Data (repository impls, remote API/SSE, mock, voice impls)
 
 DI: Hilt (Singleton component, @HiltViewModel)
-Navigation: Jetpack Navigation Compose (bottom nav, 5 tabs)
+Navigation: Jetpack Navigation Compose (bottom nav, 4 tabs)
 State: UDF — StateFlow from ViewModel, events up via lambda
 Streaming: SSE (Ktor) with auto-reconnect, polling fallback
 Voice: VoiceInputProvider / VoiceOutputProvider 接口 + Mock/Android 实现
@@ -27,6 +27,7 @@ com.pressureagent.mobile/
 │   ├── model/                # ★ 纯 Kotlin，对齐 contracts v0.2
 │   │   ├── WorldState.kt     # 15 stage + L0-L3 + Profile + ServiceOrder + Action + Wearable + Confirmation
 │   │   ├── Event.kt          # 13 种事件类型 + EventResponse
+│   │   ├── Vehicle.kt        # ★ v0.3: VehicleInfo, VehicleStatus, TripSummary
 │   │   └── ChatMessage.kt    # 聊天消息（旧 VoiceChat 遗留）
 │   └── voice/
 │       ├── VoiceInputProvider.kt   # ★ ASR 接口（Flow<VoiceInputEvent>）
@@ -34,8 +35,9 @@ com.pressureagent.mobile/
 │
 ├── data/
 │   ├── remote/
-│   │   ├── AgentApiService.kt    # Retrofit: v1/state, v1/event
-│   │   └── SseClient.kt          # Ktor SSE: v1/stream, 自动重连 + 指数退避
+│   │   ├── AgentApiService.kt     # Retrofit: v1/state, v1/event
+│   │   ├── VehicleApiService.kt   # ★ v0.3: v1/vehicle/status, v1/vehicle/trips
+│   │   └── SseClient.kt           # Ktor SSE: v1/stream, 自动重连 + 指数退避
 │   ├── repository/
 │   │   ├── WorldStateRepository.kt        # ★ Interface（UI 层唯一数据依赖）
 │   │   └── DefaultWorldStateRepository.kt # SSE 优先 → polling 降级
@@ -52,28 +54,36 @@ com.pressureagent.mobile/
 ├── di/
 │   ├── NetworkModule.kt       # OkHttp, Retrofit, MockAgent?
 │   ├── DataModule.kt          # SseClient, WorldStateRepository
-│   ├── ChatModule.kt          # Chat 绑定
+│   ├── ChatModule.kt          # Chat 绑定（旧 VoiceChat 基础设施）
 │   └── VoiceModule.kt         # ★ 语音 I/O 绑定（换实现只改这里）
 │
 ├── ui/
 │   ├── navigation/
-│   │   ├── Screen.kt          # Sealed class: Home/Tasks/Messages/ServicePlan/Profile + Debug/Review/TaskCreate
-│   │   └── AppNavigation.kt  # NavHost + bottom nav bar (5 tabs)
-│   ├── home/       HomeScreen + HomeViewModel（★ 豆包风格：聊天气泡 + 语音栏）
-│   ├── task/       TaskListScreen + CreateTaskScreen + ViewModels
-│   ├── message/    MessageListScreen + MessageListViewModel
-│   ├── profile/    ProfileScreen + ViewModel（★ 新增）
-│   ├── service/    ServicePlanScreen + ViewModel（★ 新增）
-│   ├── review/     ReviewScreen + ViewModel（★ 新增：停车复盘）
+│   │   ├── Screen.kt          # ★ v0.3: 4 tabs — Chat/Calendar/Vehicle/Profile + 二级页
+│   │   └── AppNavigation.kt   # NavHost + bottom nav bar (4 tabs)
+│   ├── chat/       ★ ChatScreen + ChatViewModel（豆包风格对话 + rich card + 语音栏）
+│   ├── calendar/   ★ CalendarScreen + CalendarViewModel（月历视图 + 当日任务）
+│   ├── vehicle/    ★ VehicleScreen + VehicleViewModel（车辆状态 + HMI 联动 + 行程历史）
+│   ├── task/       CreateTaskScreen + ViewModel（任务创建）
+│   ├── profile/    ProfileScreen + ViewModel（入口列表式：复盘/偏好/腕上/调试/关于）
+│   ├── review/     ReviewScreen + ViewModel（停车复盘）
 │   ├── wearable/   WearableScreen + WearableViewModel
 │   ├── debug/      DebugScreen + DebugViewModel（mock 模式可用）
 │   ├── voice/      VoiceChatScreen 等（旧 AI 助手，未在导航中使用）
-│   ├── common/     TaskCard, RiskBanner, VehicleCard, WearableBar
 │   └── theme/      AURI 品牌色（navy #0B1B33 / gold #D4AF7A / ivory #F5F2EC + 状态色）
 │
 ├── MobileApp.kt    # @HiltAndroidApp
 └── MainActivity.kt # @AndroidEntryPoint → AppNavigation()
 ```
+
+## 底部导航（v0.3 — 4 Tab，豆包风格）
+
+| Tab | 路由 | 说明 |
+|-----|------|------|
+| 💬 对话 | `chat` | 豆包风格语音优先 AI 对话；消息/方案/风险全部作为 rich card 嵌入对话流；语音栏常驻 |
+| 📅 日程 | `calendar` | 月历视图 + 点击日期展示当日任务；刚性(红)弹性(绿)；FAB 创建任务 |
+| 🚗 车辆 | `vehicle` | 车辆状态（电池/续航/里程/门锁/空调/安防）+ HMI 联动面板 + 行程历史 |
+| 👤 我的 | `profile` | 入口列表：停车复盘 → 偏好设置 → 腕上设备 → 调试 → 关于 |
 
 ## 如何扩展
 
@@ -97,6 +107,15 @@ com.pressureagent.mobile/
 ### 切换 mock ↔ 真实后端
 - `gradle/libs.versions.toml` → 改 `USE_MOCK_AGENT` buildConfig
 - MockAgent 只在 `BuildConfig.USE_MOCK_AGENT == true` 时创建
+
+## 车辆 API（v0.3 — 独立端点，待后端对接）
+
+```
+GET /v1/vehicle/status     → VehicleStateResponse { vehicleInfo, vehicleStatus }
+GET /v1/vehicle/trips?limit=n → List<TripSummary>
+```
+
+详见 `data/remote/VehicleApiService.kt` 接口注释。Demo 阶段使用 mock 数据（VehicleViewModel 内置默认值）。
 
 ## 技术栈
 
@@ -133,3 +152,4 @@ com.pressureagent.mobile/
 - 中高风险动作必须先确认；`confirmation_id` 幂等
 - 驾驶中 `primary_surface != mobile` 时，手机进入 Companion 只读模式
 - 语音通过 `VoiceInputProvider` / `VoiceOutputProvider` 接口，不硬编码实现
+- 语音栏仅在对话 Tab 显示；切到日程/车辆/我的时语音栏消失
