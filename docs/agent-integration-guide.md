@@ -138,6 +138,8 @@ X-Agent-Token: 由 Agent Owner 单独提供的团队令牌
 
 团队令牌只保护 Demo Agent 入口，不是 Bosch API Key。Bosch Key 永远只存在于运行 Agent 的服务器环境中，不能进入手机、车机、腕上或控制台代码。
 
+公网联调时使用项目负责人提供的 Render HTTPS 地址作为 `AGENT_API_BASE_URL`，不要在客户端写死某台电脑的局域网 IP。SSE 地址在该基址后增加 `/v1/stream`，WebSocket 把协议改为 `wss` 并增加 `/v1/ws`。Render 免费实例可能休眠；连接失败时先请求公开的 `/health` 唤醒服务，再按退避策略重连。
+
 ### 第一步：获取当前 Session 和完整状态
 
 ```http
