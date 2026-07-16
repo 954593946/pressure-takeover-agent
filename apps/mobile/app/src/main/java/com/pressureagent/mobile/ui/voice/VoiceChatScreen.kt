@@ -187,7 +187,7 @@ fun VoiceChatScreen(
                             ContentType.CONFIRMATION -> {
                                 message.confirmation?.let { conf ->
                                     ConfirmationCard(
-                                        prompt = conf.prompt,
+                                        prompt = "是否确认执行此操作？",
                                         onConfirm = viewModel::confirm,
                                         onReject = viewModel::reject,
                                         isConfirmed = conf.status == com.pressureagent.mobile.domain.model.ConfirmationStatus.ACCEPTED,

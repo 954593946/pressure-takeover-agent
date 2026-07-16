@@ -8,18 +8,17 @@ import retrofit2.http.GET
 import retrofit2.http.POST
 
 /**
- * Retrofit interface matching the agent-api OpenAPI contract.
- * Base URL is injected at construction time (debug → MockAgent, release → real server).
+ * Retrofit interface matching the agent-api OpenAPI contract v0.2.
  */
 interface AgentApiService {
 
     @GET("health")
     suspend fun getHealth(): HealthResponse
 
-    @GET("v1/world-state")
+    @GET("v1/state")
     suspend fun getWorldState(): WorldState
 
-    @POST("v1/events")
+    @POST("v1/event")
     suspend fun submitEvent(@Body event: Event): EventResponse
 }
 

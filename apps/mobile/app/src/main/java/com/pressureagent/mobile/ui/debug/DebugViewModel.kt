@@ -2,6 +2,7 @@ package com.pressureagent.mobile.ui.debug
 
 import androidx.lifecycle.ViewModel
 import com.pressureagent.mobile.data.mock.MockAgent
+import com.pressureagent.mobile.data.mock.StoryScript
 import com.pressureagent.mobile.data.repository.WorldStateRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,7 +12,7 @@ import javax.inject.Inject
 
 data class DebugUiState(
     val currentStep: Int = 0,
-    val totalSteps: Int = 9,
+    val totalSteps: Int = StoryScript.STEP_COUNT,
 )
 
 @HiltViewModel
@@ -27,7 +28,7 @@ class DebugViewModel @Inject constructor(
 
     fun advance() {
         val agent = mockAgent ?: return
-        agent.jumpTo((agent.currentStep + 1) % 9)
+        agent.jumpTo((agent.currentStep + 1) % StoryScript.STEP_COUNT)
         _uiState.value = _uiState.value.copy(currentStep = agent.currentStep)
     }
 

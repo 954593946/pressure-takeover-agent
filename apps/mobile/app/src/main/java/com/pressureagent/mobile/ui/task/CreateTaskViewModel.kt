@@ -3,11 +3,7 @@ package com.pressureagent.mobile.ui.task
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pressureagent.mobile.data.repository.WorldStateRepository
-import com.pressureagent.mobile.domain.model.Event
-import com.pressureagent.mobile.domain.model.EventSource
-import com.pressureagent.mobile.domain.model.EventType
-import com.pressureagent.mobile.domain.model.Priority
-import com.pressureagent.mobile.domain.model.TaskType
+import com.pressureagent.mobile.domain.model.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,32 +41,16 @@ class CreateTaskViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(CreateTaskUiState())
     val uiState: StateFlow<CreateTaskUiState> = _uiState.asStateFlow()
 
-    fun onTitleChange(title: String) {
-        _uiState.update { it.copy(title = title, titleError = null) }
-    }
-
-    fun onLocationChange(location: String) {
-        _uiState.update { it.copy(location = location) }
-    }
-
-    fun onScheduledAtSelected(iso: String, display: String) {
-        _uiState.update { it.copy(scheduledAtIso = iso, scheduledAtDisplay = display) }
-    }
-
-    fun onTaskTypeSelected(type: TaskType) {
-        _uiState.update { it.copy(taskType = type) }
-    }
-
-    fun onPrioritySelected(priority: Priority) {
-        _uiState.update { it.copy(priority = priority) }
-    }
+    fun onTitleChange(title: String) { _uiState.update { it.copy(title = title, titleError = null) } }
+    fun onLocationChange(location: String) { _uiState.update { it.copy(location = location) } }
+    fun onScheduledAtSelected(iso: String, display: String) { _uiState.update { it.copy(scheduledAtIso = iso, scheduledAtDisplay = display) } }
+    fun onTaskTypeSelected(type: TaskType) { _uiState.update { it.copy(taskType = type) } }
+    fun onPrioritySelected(priority: Priority) { _uiState.update { it.copy(priority = priority) } }
 
     fun onWaitingPartyToggle(party: String) {
         _uiState.update { state ->
-            val current = state.waitingParties
-            state.copy(
-                waitingParties = if (current.contains(party)) current - party else current + party
-            )
+            val cur = state.waitingParties
+            state.copy(waitingParties = if (cur.contains(party)) cur - party else cur + party)
         }
     }
 
@@ -90,16 +70,15 @@ class CreateTaskViewModel @Inject constructor(
                     put("type", state.taskType.name.lowercase())
                     put("priority", state.priority.name.lowercase())
                     if (state.waitingParties.isNotEmpty()) {
-                        put("waitingParties", buildJsonArray {
-                            state.waitingParties.forEach { add(JsonPrimitive(it)) }
-                        })
+                        put("waitingParties", buildJsonArray { state.waitingParties.forEach { add(JsonPrimitive(it)) } })
                     }
                 }
                 val event = Event(
                     eventId = UUID.randomUUID().toString(),
-                    type = EventType.TASK_INPUT_RECEIVED,
+                    sessionId = "",
+                    type = EventType.TASK_CREATED,
                     source = EventSource.MOBILE,
-                    occurredAt = ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                    timestamp = ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
                     payload = payload,
                 )
                 repository.submitEvent(event)

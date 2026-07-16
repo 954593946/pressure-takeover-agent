@@ -6,28 +6,33 @@ import kotlinx.serialization.json.JsonObject
 
 @Serializable
 data class Event(
-    @SerialName("schemaVersion")
-    val schemaVersion: String = "0.1.0",
-    val eventId: String,
+    @SerialName("schema_version")
+    val schemaVersion: String = "0.2.0",
+    @SerialName("event_id") val eventId: String,
+    @SerialName("session_id") val sessionId: String = "",
     val type: EventType,
     val source: EventSource,
-    val occurredAt: String,
-    val correlationId: String? = null,
-    val deviceId: String? = null,
+    val timestamp: String,
+    @SerialName("correlation_id") val correlationId: String? = null,
+    @SerialName("device_id") val deviceId: String? = null,
     val payload: JsonObject,
 )
 
 @Serializable
 enum class EventType {
-    @SerialName("task.input.received") TASK_INPUT_RECEIVED,
-    @SerialName("meeting.delay.reported") MEETING_DELAY_REPORTED,
-    @SerialName("vehicle.mode.changed") VEHICLE_MODE_CHANGED,
+    @SerialName("task.created") TASK_CREATED,
+    @SerialName("meeting.overrun") MEETING_OVERRUN,
+    @SerialName("scene.approaching") SCENE_APPROACHING,
+    @SerialName("scene.vehicle_entered") SCENE_VEHICLE_ENTERED,
+    @SerialName("scene.parked") SCENE_PARKED,
     @SerialName("traffic.updated") TRAFFIC_UPDATED,
-    @SerialName("pressure.signal.reported") PRESSURE_SIGNAL_REPORTED,
-    @SerialName("assistance.requested") ASSISTANCE_REQUESTED,
-    @SerialName("confirmation.submitted") CONFIRMATION_SUBMITTED,
-    @SerialName("wearable.status.reported") WEARABLE_STATUS_REPORTED,
-    @SerialName("demo.reset.requested") DEMO_RESET_REQUESTED,
+    @SerialName("wearable.signal") WEARABLE_SIGNAL,
+    @SerialName("driving.signal") DRIVING_SIGNAL,
+    @SerialName("user.utterance") USER_UTTERANCE,
+    @SerialName("service.mock.config") SERVICE_MOCK_CONFIG,
+    @SerialName("confirmation.confirmed") CONFIRMATION_CONFIRMED,
+    @SerialName("cooldown.elapsed") COOLDOWN_ELAPSED,
+    @SerialName("session.reset") SESSION_RESET,
 }
 
 @Serializable
@@ -41,7 +46,7 @@ enum class EventSource {
 
 @Serializable
 data class EventResponse(
-    val eventId: String,
+    @SerialName("event_id") val eventId: String,
     val accepted: Boolean,
     val revision: Int,
 )

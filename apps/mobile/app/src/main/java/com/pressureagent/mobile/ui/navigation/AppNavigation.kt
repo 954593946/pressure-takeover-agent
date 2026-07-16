@@ -9,6 +9,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -18,27 +19,29 @@ import androidx.navigation.compose.rememberNavController
 import com.pressureagent.mobile.ui.debug.DebugScreen
 import com.pressureagent.mobile.ui.home.HomeScreen
 import com.pressureagent.mobile.ui.message.MessageListScreen
+import com.pressureagent.mobile.ui.profile.ProfileScreen
+import com.pressureagent.mobile.ui.review.ReviewScreen
+import com.pressureagent.mobile.ui.service.ServicePlanScreen
 import com.pressureagent.mobile.ui.splash.SplashScreen
 import com.pressureagent.mobile.ui.task.CreateTaskScreen
 import com.pressureagent.mobile.ui.task.TaskListScreen
-import com.pressureagent.mobile.ui.voice.VoiceChatScreen
-import com.pressureagent.mobile.ui.wearable.WearableScreen
 
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
-    val tabs = listOf(Screen.Home, Screen.Tasks, Screen.Messages, Screen.Wearable, Screen.Debug)
+    val tabs = listOf(Screen.Home, Screen.Tasks, Screen.Messages, Screen.ServicePlan, Screen.Profile)
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    // 仅在非开屏页显示底部栏
     val showBottomBar = currentRoute != Screen.Splash.route
 
     Scaffold(
         bottomBar = {
             if (showBottomBar) {
-                NavigationBar {
+                NavigationBar(
+                    containerColor = androidx.compose.ui.graphics.Color.White,
+                ) {
                     val currentDestination = navBackStackEntry?.destination
                     tabs.forEach { screen ->
                         NavigationBarItem(
@@ -75,20 +78,22 @@ fun AppNavigation() {
                 )
             }
             composable(Screen.Home.route) {
-                HomeScreen(onNavigateToVoiceChat = { navController.navigate(Screen.VoiceChat.route) })
+                HomeScreen(
+                    onNavigateToServicePlan = { navController.navigate(Screen.ServicePlan.route) },
+                    onNavigateToReview = { navController.navigate(Screen.Review.route) },
+                )
             }
             composable(Screen.Tasks.route) {
                 TaskListScreen(onNavigateToCreate = { navController.navigate(Screen.TaskCreate.route) })
             }
             composable(Screen.Messages.route) { MessageListScreen() }
-            composable(Screen.Wearable.route) { WearableScreen() }
+            composable(Screen.ServicePlan.route) { ServicePlanScreen() }
+            composable(Screen.Profile.route) { ProfileScreen() }
             composable(Screen.Debug.route) { DebugScreen() }
             composable(Screen.TaskCreate.route) {
                 CreateTaskScreen(onNavigateBack = { navController.popBackStack() })
             }
-            composable(Screen.VoiceChat.route) {
-                VoiceChatScreen(onNavigateBack = { navController.popBackStack() })
-            }
+            composable(Screen.Review.route) { ReviewScreen() }
         }
     }
 }

@@ -18,8 +18,10 @@ import java.util.UUID
 import javax.inject.Inject
 
 data class MessageListUiState(
-    val messages: List<Message> = emptyList(),
+    val messageActions: List<Action> = emptyList(),
+    val completedMessages: List<Action> = emptyList(),
     val confirmation: Confirmation? = null,
+    val outputConclusion: String = "",
 )
 
 @HiltViewModel
@@ -33,28 +35,35 @@ class MessageListViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             repository.worldState.collect { ws ->
-                _uiState.value = MessageListUiState(messages = ws.messages, confirmation = ws.confirmation)
+                val messageActions = ws.actions.filter { it.type == ActionType.MESSAGE }
+                _uiState.value = MessageListUiState(
+                    messageActions = messageActions.filter { it.status != ActionStatus.COMPLETED },
+                    completedMessages = messageActions.filter { it.status == ActionStatus.COMPLETED },
+                    confirmation = ws.confirmation,
+                    outputConclusion = ws.output?.conclusion ?: "",
+                )
             }
         }
     }
 
     fun confirm() {
         val c = _uiState.value.confirmation ?: return
-        submitConfirmation(c.id, "accepted")
+        submitConfirmation(c.confirmationId, "accepted")
     }
 
     fun reject() {
         val c = _uiState.value.confirmation ?: return
-        submitConfirmation(c.id, "rejected")
+        submitConfirmation(c.confirmationId, "rejected")
     }
 
     private fun submitConfirmation(confirmationId: String, decision: String) {
         viewModelScope.launch {
             val event = Event(
                 eventId = UUID.randomUUID().toString(),
-                type = EventType.CONFIRMATION_SUBMITTED,
+                sessionId = "",
+                type = EventType.CONFIRMATION_CONFIRMED,
                 source = EventSource.MOBILE,
-                occurredAt = ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                timestamp = ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
                 payload = buildJsonObject {
                     put("confirmationId", confirmationId)
                     put("decision", decision)

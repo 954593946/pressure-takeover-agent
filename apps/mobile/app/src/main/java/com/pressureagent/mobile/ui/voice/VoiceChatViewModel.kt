@@ -110,10 +110,11 @@ class VoiceChatViewModel @Inject constructor(
                         is ChatStreamEvent.ConfirmationRequired -> {
                             // Map to domain Confirmation for display
                             val domainConfirmation = com.pressureagent.mobile.domain.model.Confirmation(
-                                id = event.confirmationId,
-                                prompt = event.prompt,
-                                status = ConfirmationStatus.PENDING,
+                                confirmationId = event.confirmationId,
                                 actionIds = event.actionIds,
+                                expiresAt = "",
+                                status = ConfirmationStatus.PENDING,
+                                ownerSurface = "mobile",
                             )
                             val confirmMsg = ChatMessage(
                                 id = UUID.randomUUID().toString(),
@@ -175,13 +176,13 @@ class VoiceChatViewModel @Inject constructor(
 
         viewModelScope.launch {
             try {
-                chatRepository.confirmAction(sessionId, confirmation.id, "accepted")
+                chatRepository.confirmAction(sessionId, confirmation.confirmationId, "accepted")
 
                 // Update confirmation status in messages
                 _uiState.update { state ->
                     state.copy(
                         messages = state.messages.map { msg ->
-                            if (msg.confirmation?.id == confirmation.id) {
+                            if (msg.confirmation?.confirmationId == confirmation.confirmationId) {
                                 msg.copy(
                                     confirmation = msg.confirmation!!.copy(status = ConfirmationStatus.ACCEPTED),
                                 )
@@ -203,12 +204,12 @@ class VoiceChatViewModel @Inject constructor(
 
         viewModelScope.launch {
             try {
-                chatRepository.confirmAction(sessionId, confirmation.id, "rejected")
+                chatRepository.confirmAction(sessionId, confirmation.confirmationId, "rejected")
 
                 _uiState.update { state ->
                     state.copy(
                         messages = state.messages.map { msg ->
-                            if (msg.confirmation?.id == confirmation.id) {
+                            if (msg.confirmation?.confirmationId == confirmation.confirmationId) {
                                 msg.copy(
                                     confirmation = msg.confirmation!!.copy(status = ConfirmationStatus.REJECTED),
                                 )

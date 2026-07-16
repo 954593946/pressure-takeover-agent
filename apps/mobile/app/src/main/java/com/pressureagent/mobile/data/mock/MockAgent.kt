@@ -1,13 +1,6 @@
 package com.pressureagent.mobile.data.mock
 
-import com.pressureagent.mobile.domain.model.Event
-import com.pressureagent.mobile.domain.model.EventResponse
-import com.pressureagent.mobile.domain.model.EventType
-import com.pressureagent.mobile.domain.model.Priority
-import com.pressureagent.mobile.domain.model.Task
-import com.pressureagent.mobile.domain.model.TaskStatus
-import com.pressureagent.mobile.domain.model.TaskType
-import com.pressureagent.mobile.domain.model.WorldState
+import com.pressureagent.mobile.domain.model.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
@@ -25,10 +18,8 @@ import java.util.UUID
 /**
  * OkHttp [Interceptor] that implements a complete mock of the agent-api.
  *
- * ## Story progression
- *
- * Follows the canonical 9-step story defined in [StoryScript].
- * Any POST to /v1/events advances one step. `demo.reset.requested` resets.
+ * Follows the canonical 9-step story defined in [StoryScript] (v0.2).
+ * Any POST to /v1/event advances one step. [EventType.SESSION_RESET] resets.
  */
 class MockAgent : Interceptor {
 
@@ -38,19 +29,20 @@ class MockAgent : Interceptor {
     @Volatile var step: Int = 0
         private set
     @Volatile private var revision: Int = 0
+    @Volatile private var sessionId: String = "mock-session-${UUID.randomUUID().toString().take(8)}"
     @Volatile private var customTasks: MutableList<Task> = mutableListOf()
 
     val currentStep: Int get() = step
 
-    fun reset() { step = 0; revision = 0; customTasks.clear() }
+    fun reset() { step = 0; revision = 0; sessionId = "mock-session-${UUID.randomUUID().toString().take(8)}"; customTasks.clear() }
     fun jumpTo(targetStep: Int) { step = targetStep.coerceIn(0, StoryScript.STEP_COUNT - 1); revision++ }
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val req = chain.request()
         return when {
             req.method == "GET"  && req.url.encodedPath == "/health"          -> handleHealth()
-            req.method == "GET"  && req.url.encodedPath == "/v1/world-state"  -> handleGetWorldState()
-            req.method == "POST" && req.url.encodedPath == "/v1/events"       -> handlePostEvent(req)
+            req.method == "GET"  && req.url.encodedPath == "/v1/state"        -> handleGetWorldState()
+            req.method == "POST" && req.url.encodedPath == "/v1/event"         -> handlePostEvent(req)
             req.method == "GET"  && req.url.encodedPath == "/v1/stream"       -> handleStream()
             else -> chain.proceed(req)
         }
@@ -72,17 +64,15 @@ class MockAgent : Interceptor {
         val event: Event = try {
             json.decodeFromString(Event.serializer(), bodyStr)
         } catch (e: Exception) {
-            return jsonResponse(400, """{"error":"invalid event"}""")
+            return jsonResponse(400, """{"error":"invalid event: ${e.message}"}""")
         }
         when (event.type) {
-            EventType.DEMO_RESET_REQUESTED -> reset()
-            EventType.TASK_INPUT_RECEIVED -> {
+            EventType.SESSION_RESET -> reset()
+            EventType.TASK_CREATED -> {
                 val title = event.payload["title"]?.jsonPrimitive?.contentOrNull
                 if (title != null) {
-                    // Real task creation from form
                     handleTaskCreated(event.payload)
                 } else {
-                    // Old-style story advance (from demo buttons)
                     step = (step + 1) % StoryScript.STEP_COUNT
                     revision++
                 }
@@ -105,26 +95,27 @@ class MockAgent : Interceptor {
         val scheduledAt = payload["scheduledAt"]?.jsonPrimitive?.contentOrNull
         val typeStr = payload["type"]?.jsonPrimitive?.contentOrNull ?: "rigid"
         val priorityStr = payload["priority"]?.jsonPrimitive?.contentOrNull ?: "medium"
-        val waitingParties = payload["waitingParties"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }
+        val waitingParties = payload["waitingParties"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
 
         val task = Task(
-            id = "task_${UUID.randomUUID().toString().take(8)}",
+            taskId = "task_${UUID.randomUUID().toString().take(8)}",
             title = title,
             location = location,
             scheduledAt = scheduledAt,
-            type = if (typeStr == "rigid") TaskType.RIGID else TaskType.FLEXIBLE,
+            taskType = if (typeStr == "rigid") TaskType.RIGID else TaskType.FLEXIBLE,
             priority = when (priorityStr) { "high" -> Priority.HIGH; "low" -> Priority.LOW; else -> Priority.MEDIUM },
             adjustable = typeStr != "rigid",
             status = TaskStatus.PENDING,
-            waitingParties = waitingParties,
+            waitingParty = waitingParties,
+            capabilityTags = if (typeStr == "rigid") listOf("pickup", "rigid_deadline") else listOf("grocery"),
         )
-        customTasks.add(0, task) // new task first
+        customTasks.add(0, task)
         revision++
     }
 
     private fun currentSnapshot(): WorldState {
         val now = ZonedDateTime.now()
-        val base = StoryScript.forStep(step, revision, now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
+        val base = StoryScript.forStep(step, sessionId, revision, now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
         return if (customTasks.isEmpty()) base
         else base.copy(tasks = customTasks.toList() + base.tasks)
     }
