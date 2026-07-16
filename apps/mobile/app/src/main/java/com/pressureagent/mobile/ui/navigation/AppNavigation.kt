@@ -9,27 +9,26 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.pressureagent.mobile.ui.calendar.CalendarScreen
+import com.pressureagent.mobile.ui.chat.ChatScreen
 import com.pressureagent.mobile.ui.debug.DebugScreen
-import com.pressureagent.mobile.ui.home.HomeScreen
-import com.pressureagent.mobile.ui.message.MessageListScreen
 import com.pressureagent.mobile.ui.profile.ProfileScreen
 import com.pressureagent.mobile.ui.review.ReviewScreen
-import com.pressureagent.mobile.ui.service.ServicePlanScreen
 import com.pressureagent.mobile.ui.splash.SplashScreen
 import com.pressureagent.mobile.ui.task.CreateTaskScreen
-import com.pressureagent.mobile.ui.task.TaskListScreen
+import com.pressureagent.mobile.ui.vehicle.VehicleScreen
 
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
-    val tabs = listOf(Screen.Home, Screen.Tasks, Screen.Messages, Screen.ServicePlan, Screen.Profile)
+    val tabs = listOf(Screen.Chat, Screen.Calendar, Screen.Vehicle, Screen.Profile)
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
@@ -40,7 +39,7 @@ fun AppNavigation() {
         bottomBar = {
             if (showBottomBar) {
                 NavigationBar(
-                    containerColor = androidx.compose.ui.graphics.Color.White,
+                    containerColor = Color.White,
                 ) {
                     val currentDestination = navBackStackEntry?.destination
                     tabs.forEach { screen ->
@@ -68,32 +67,46 @@ fun AppNavigation() {
             startDestination = Screen.Splash.route,
             modifier = Modifier.padding(innerPadding),
         ) {
+            // ─── Splash ────────────────────────────────────────────────────
             composable(Screen.Splash.route) {
                 SplashScreen(
                     onSplashFinished = {
-                        navController.navigate(Screen.Home.route) {
+                        navController.navigate(Screen.Chat.route) {
                             popUpTo(Screen.Splash.route) { inclusive = true }
                         }
                     },
                 )
             }
-            composable(Screen.Home.route) {
-                HomeScreen(
-                    onNavigateToServicePlan = { navController.navigate(Screen.ServicePlan.route) },
-                    onNavigateToReview = { navController.navigate(Screen.Review.route) },
+
+            // ─── 4 个主 Tab ────────────────────────────────────────────────
+            composable(Screen.Chat.route) {
+                ChatScreen()
+            }
+            composable(Screen.Calendar.route) {
+                CalendarScreen(
+                    onNavigateToCreate = { navController.navigate(Screen.TaskCreate.route) },
                 )
             }
-            composable(Screen.Tasks.route) {
-                TaskListScreen(onNavigateToCreate = { navController.navigate(Screen.TaskCreate.route) })
+            composable(Screen.Vehicle.route) {
+                VehicleScreen()
             }
-            composable(Screen.Messages.route) { MessageListScreen() }
-            composable(Screen.ServicePlan.route) { ServicePlanScreen() }
-            composable(Screen.Profile.route) { ProfileScreen() }
-            composable(Screen.Debug.route) { DebugScreen() }
+            composable(Screen.Profile.route) {
+                ProfileScreen(
+                    onNavigateToReview = { navController.navigate(Screen.Review.route) },
+                    onNavigateToDebug = { navController.navigate(Screen.Debug.route) },
+                )
+            }
+
+            // ─── 二级页面 ──────────────────────────────────────────────────
             composable(Screen.TaskCreate.route) {
                 CreateTaskScreen(onNavigateBack = { navController.popBackStack() })
             }
-            composable(Screen.Review.route) { ReviewScreen() }
+            composable(Screen.Review.route) {
+                ReviewScreen()
+            }
+            composable(Screen.Debug.route) {
+                DebugScreen()
+            }
         }
     }
 }
