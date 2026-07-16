@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-5.5"
     openai_timeout_seconds: float = 12.0
     llm_enabled: bool = True
+    agent_shared_token: str = Field(default="", repr=False)
 
     model_config = SettingsConfigDict(
         env_file=(REPO_ROOT / ".env", SERVICE_ROOT / ".env"),
@@ -33,6 +34,10 @@ class Settings(BaseSettings):
     @property
     def llm_configured(self) -> bool:
         return self.llm_enabled and bool(self.openai_api_key and self.openai_base_url and self.openai_model)
+
+    @property
+    def shared_access_enabled(self) -> bool:
+        return bool(self.agent_shared_token)
 
     @property
     def cors_origin_list(self) -> list[str]:

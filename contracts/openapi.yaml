@@ -5,10 +5,19 @@ info:
   description: Contract-first API for the six-week multi-device demo.
 servers:
   - url: http://localhost:8000
+components:
+  securitySchemes:
+    TeamToken:
+      type: apiKey
+      in: header
+      name: X-Agent-Token
+security:
+  - TeamToken: []
 paths:
   /health:
     get:
       operationId: getHealth
+      security: []
       responses:
         '200': {description: Runtime health and provider configuration without secrets.}
   /v1/event:

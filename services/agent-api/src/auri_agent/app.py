@@ -1,13 +1,18 @@
 import json
 import logging
+import secrets
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Security, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.security import APIKeyHeader
 
 from .config import Settings
 from .models import ConfirmationRequest, Event, EventAccepted, Profile, ResetRequest, WorldState
 from .runtime import AgentRuntime, RuntimeErrorWithCode
+
+
+shared_token_header = APIKeyHeader(name="X-Agent-Token", auto_error=False)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -17,7 +22,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
-        allow_credentials=True,
+        allow_credentials="*" not in settings.cors_origin_list,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -26,6 +31,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def runtime(request: Request) -> AgentRuntime:
         return request.app.state.runtime
+
+    async def require_shared_access(
+        request: Request,
+        header_token: str | None = Security(shared_token_header),
+    ) -> None:
+        current_settings: Settings = request.app.state.settings
+        if not _token_is_valid(current_settings, header_token):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"code": "UNAUTHORIZED", "message": "missing or invalid X-Agent-Token"},
+            )
 
     @app.get("/health")
     async def health(request: Request) -> dict[str, object]:
@@ -38,22 +54,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "llm_configured": current_settings.llm_configured,
             "llm_model": current_settings.openai_model,
             "llm_last_mode": current_runtime.task_parser.last_mode,
+            "shared_access_enabled": current_settings.shared_access_enabled,
         }
 
-    @app.post("/v1/event", response_model=EventAccepted, status_code=status.HTTP_202_ACCEPTED)
-    @app.post("/v1/events", response_model=EventAccepted, status_code=status.HTTP_202_ACCEPTED, include_in_schema=False)
+    @app.post("/v1/event", response_model=EventAccepted, status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(require_shared_access)])
+    @app.post("/v1/events", response_model=EventAccepted, status_code=status.HTTP_202_ACCEPTED, include_in_schema=False, dependencies=[Depends(require_shared_access)])
     async def submit_event(event: Event, request: Request) -> EventAccepted:
         try:
             return await runtime(request).submit_event(event)
         except RuntimeErrorWithCode as exc:
             raise _http_error(exc) from exc
 
-    @app.get("/v1/state", response_model=WorldState)
-    @app.get("/v1/world-state", response_model=WorldState, include_in_schema=False)
+    @app.get("/v1/state", response_model=WorldState, dependencies=[Depends(require_shared_access)])
+    @app.get("/v1/world-state", response_model=WorldState, include_in_schema=False, dependencies=[Depends(require_shared_access)])
     async def get_state(request: Request) -> WorldState:
         return await runtime(request).get_state()
 
-    @app.post("/v1/confirm", response_model=WorldState)
+    @app.post("/v1/confirm", response_model=WorldState, dependencies=[Depends(require_shared_access)])
     async def confirm(body: ConfirmationRequest, request: Request) -> WorldState:
         try:
             state, _duplicate = await runtime(request).confirm(body)
@@ -61,15 +78,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except RuntimeErrorWithCode as exc:
             raise _http_error(exc) from exc
 
-    @app.put("/v1/profile", response_model=WorldState)
+    @app.put("/v1/profile", response_model=WorldState, dependencies=[Depends(require_shared_access)])
     async def update_profile(profile: Profile, request: Request) -> WorldState:
         return await runtime(request).update_profile(profile)
 
-    @app.post("/v1/session/reset", response_model=WorldState)
+    @app.post("/v1/session/reset", response_model=WorldState, dependencies=[Depends(require_shared_access)])
     async def reset_session(body: ResetRequest, request: Request) -> WorldState:
         return await runtime(request).reset(body.scenario_id)
 
-    @app.get("/v1/stream")
+    @app.get("/v1/stream", dependencies=[Depends(require_shared_access)])
     async def stream(request: Request) -> StreamingResponse:
         current_runtime = runtime(request)
 
@@ -88,6 +105,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.websocket("/v1/ws")
     async def websocket_stream(websocket: WebSocket) -> None:
+        current_settings: Settings = websocket.app.state.settings
+        websocket_token = websocket.headers.get("x-agent-token") or websocket.query_params.get("access_token")
+        if not _token_is_valid(current_settings, websocket_token):
+            await websocket.close(code=4401, reason="missing or invalid team token")
+            return
         await websocket.accept()
         current_runtime: AgentRuntime = websocket.app.state.runtime
         queue = await current_runtime.subscribe()
@@ -101,6 +123,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             current_runtime.unsubscribe(queue)
 
     return app
+
+
+def _token_is_valid(settings: Settings, candidate: str | None) -> bool:
+    if not settings.shared_access_enabled:
+        return True
+    return bool(candidate) and secrets.compare_digest(candidate, settings.agent_shared_token)
 
 
 def _http_error(exc: RuntimeErrorWithCode) -> HTTPException:

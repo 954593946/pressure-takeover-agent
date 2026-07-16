@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: auri-agent-api
+    runtime: python
+    plan: free
+    region: singapore
+    rootDir: services/agent-api
+    buildCommand: python -m pip install .
+    startCommand: python -m uvicorn auri_agent.app:app --host 0.0.0.0 --port $PORT --no-access-log
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    numInstances: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ENVIRONMENT
+        value: demo
+      - key: LOG_LEVEL
+        value: INFO
+      - key: DEMO_MODE
+        value: "true"
+      - key: LLM_ENABLED
+        value: "true"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_BASE_URL
+        value: https://aigc.bosch.com.cn/llmservice/api/v1
+      - key: OPENAI_MODEL
+        value: gpt-5.5
+      - key: OPENAI_TIMEOUT_SECONDS
+        value: "30"
+      - key: AGENT_SHARED_TOKEN
+        sync: false
+      - key: CORS_ORIGINS
+        value: "*"
