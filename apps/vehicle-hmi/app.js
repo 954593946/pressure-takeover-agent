@@ -80,6 +80,17 @@ function setConnection(text) {
   log("connection", text);
 }
 
+function friendlyError(error) {
+  const message = error?.message || String(error);
+  if (message.includes("NetworkError") || message.includes("Failed to fetch") || message.includes("Load failed")) {
+    return `${message}；请确认 Agent 后端已启动、Agent API 地址正确，且后端 CORS 放行当前页面端口。`;
+  }
+  if (message.includes("UNAUTHORIZED") || message.includes("401")) {
+    return `${message}；请填写正确 Team Token，或确认本地后端未开启共享访问。`;
+  }
+  return message;
+}
+
 async function apiFetch(path, options = {}) {
   const response = await fetch(`${CONFIG.apiBase}${path}`, {
     ...options,
@@ -172,7 +183,7 @@ async function connectStream() {
       chunks.forEach(parseStreamChunk);
     }
   } catch (error) {
-    setConnection(`状态流断开：${error.message}`);
+    setConnection(`状态流断开：${friendlyError(error)}`);
     setTimeout(connectStream, 2500);
   }
 }
@@ -183,7 +194,7 @@ function parseStreamChunk(chunk) {
   try {
     consumeWorldState(JSON.parse(dataLine.slice(6)), "stream");
   } catch (error) {
-    log("stream-parse-error", error.message);
+    log("stream-parse-error", friendlyError(error));
   }
 }
 
@@ -308,8 +319,8 @@ document.querySelector(".demo")?.addEventListener("click", async (event) => {
     else if (button.dataset.event === "reset") await resetSession();
     else await submitEvent(EVENT_BUTTONS[button.dataset.event]);
   } catch (error) {
-    log("error", error.message);
-    setConnection(`错误：${error.message}`);
+    log("error", friendlyError(error));
+    setConnection(`错误：${friendlyError(error)}`);
   } finally {
     button.disabled = false;
   }
@@ -320,7 +331,7 @@ ui.confirmBtn.addEventListener("click", async () => {
   try {
     await confirmAction("button");
   } catch (error) {
-    log("confirm-error", error.message);
+    log("confirm-error", friendlyError(error));
   } finally {
     render();
   }
@@ -345,6 +356,6 @@ window.AURI_HMI = {
 
 render();
 loadState("load").then(connectStream).catch((error) => {
-  setConnection(`连接失败：${error.message}`);
+  setConnection(`连接失败：${friendlyError(error)}`);
   render();
 });

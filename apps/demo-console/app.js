@@ -65,6 +65,17 @@ function log(kind, message, detail = "") {
   while (ui.eventLog.children.length > 80) ui.eventLog.lastElementChild.remove();
 }
 
+function friendlyError(error) {
+  const message = error?.message || String(error);
+  if (message.includes("NetworkError") || message.includes("Failed to fetch") || message.includes("Load failed")) {
+    return `${message}；请确认 Agent 后端已启动、Agent API 地址正确，且后端 CORS 放行当前页面端口。`;
+  }
+  if (message.includes("UNAUTHORIZED") || message.includes("401")) {
+    return `${message}；请填写正确 Team Token，或确认本地后端未开启共享访问。`;
+  }
+  return message;
+}
+
 async function apiFetch(path, options = {}) {
   const response = await fetch(`${CONFIG.apiBase}${path}`, {
     ...options,
@@ -197,7 +208,7 @@ async function connectStream() {
     }
   } catch (error) {
     if (error.name === "AbortError") return;
-    log("error", "stream disconnected", error.message);
+    log("error", "stream disconnected", friendlyError(error));
   }
 }
 
@@ -207,7 +218,7 @@ function parseStreamChunk(chunk) {
   try {
     consumeState(JSON.parse(dataLine.slice(6)), "stream");
   } catch (error) {
-    log("error", "stream parse failed", error.message);
+    log("error", "stream parse failed", friendlyError(error));
   }
 }
 
@@ -232,7 +243,7 @@ document.addEventListener("click", async (event) => {
     else if (action === "refresh") await loadState("refresh");
     else await submitEvent(action);
   } catch (error) {
-    log("error", actionButton.dataset.action, error.message);
+    log("error", actionButton.dataset.action, friendlyError(error));
   } finally {
     actionButton.disabled = false;
   }
@@ -245,14 +256,14 @@ ui.connectBtn.addEventListener("click", async () => {
     await loadState("connect");
     connectStream();
   } catch (error) {
-    log("error", "connect failed", error.message);
+    log("error", "connect failed", friendlyError(error));
   }
 });
-ui.resetBtn.addEventListener("click", () => reset().catch((error) => log("error", "reset", error.message)));
+ui.resetBtn.addEventListener("click", () => reset().catch((error) => log("error", "reset", friendlyError(error))));
 ui.clearLog.addEventListener("click", () => {
   ui.eventLog.innerHTML = "";
 });
 
 initConfig();
 render();
-loadState("load").then(connectStream).catch((error) => log("error", "initial load", error.message));
+loadState("load").then(connectStream).catch((error) => log("error", "initial load", friendlyError(error)));

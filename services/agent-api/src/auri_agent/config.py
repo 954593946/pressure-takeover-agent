@@ -16,7 +16,13 @@ class Settings(BaseSettings):
 
     host: str = "127.0.0.1"
     port: int = 8000
-    cors_origins: str = "http://localhost:3000,http://localhost:5173"
+    cors_origins: str = (
+        "http://localhost:3000,"
+        "http://localhost:5173,"
+        "http://127.0.0.1:5173,"
+        "http://localhost:5174,"
+        "http://127.0.0.1:5174"
+    )
 
     openai_api_key: str = Field(default="", repr=False)
     openai_base_url: str = "https://api.openai.com/v1"
