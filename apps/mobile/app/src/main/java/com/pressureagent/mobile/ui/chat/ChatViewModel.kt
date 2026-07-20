@@ -57,7 +57,10 @@ class ChatViewModel @Inject constructor(
     private var lastActionIds: Set<String> = emptySet()
     private var lastOrderIds: Set<String> = emptySet()
     private var lastConfirmationId: String? = null
+    private var currentSessionId: String = ""
     private var voiceJob: Job? = null
+
+    private var firstStateReceived = false
 
     init {
         observeWorldState()
@@ -67,84 +70,33 @@ class ChatViewModel @Inject constructor(
     private fun observeWorldState() {
         viewModelScope.launch {
             repository.worldState.collect { ws ->
-                val newChats = mutableListOf<ChatItem>()
-
-                // 1) Stage change → AURI message
-                if (ws.stage != lastStage) {
-                    val msg = stageMessage(ws)
-                    if (msg != null) {
-                        newChats.add(ChatItem(id = "stage_${ws.stage.name}_${ws.revision}", text = msg, isUser = false))
-                        voiceOutput.speak(msg)
+                // Auto-reset stale session on first connect
+                if (!firstStateReceived) {
+                    firstStateReceived = true
+                    val isStale = ws.confirmation != null ||
+                        ws.stage != Stage.OFF_VEHICLE_IDLE ||
+                        ws.primarySurface != PrimarySurface.MOBILE
+                    if (isStale) {
+                        viewModelScope.launch {
+                            try {
+                                repository.resetSession()
+                            } catch (_: Exception) { /* non-critical */ }
+                        }
+                        return@collect
                     }
-                    lastStage = ws.stage
                 }
 
-                // 2) Conclusion change → AURI message
+                val newChats = mutableListOf<ChatItem>()
+
+                // 1) Conclusion change → AURI text response (like normal AI chat)
                 val conclusion = ws.output?.conclusion.orEmpty()
                 if (conclusion.isNotBlank() && conclusion != lastConclusion) {
-                    newChats.add(ChatItem(id = "conclusion_${ws.revision}", text = conclusion, isUser = false))
+                    newChats.add(ChatItem(id = "msg_${ws.revision}", text = conclusion, isUser = false))
                     voiceOutput.speak(conclusion)
                     lastConclusion = conclusion
                 }
 
-                // 3) Risk level change → rich card
-                if (ws.risk.pressureLevel != PressureLevel.L0 && ws.risk.pressureLevel != lastRiskLevel) {
-                    newChats.add(
-                        ChatItem(
-                            id = "risk_${ws.revision}",
-                            text = riskSummary(ws.risk),
-                            isUser = false,
-                            richCard = RichCard.RiskInfo(ws.risk, conclusion, ws.eta),
-                        )
-                    )
-                    lastRiskLevel = ws.risk.pressureLevel
-                }
-
-                // 4) New tasks → rich card
-                val currentTaskIds = ws.tasks.map { it.taskId }.toSet()
-                if (currentTaskIds != lastTaskIds && ws.tasks.isNotEmpty()) {
-                    newChats.add(
-                        ChatItem(
-                            id = "tasks_${ws.revision}",
-                            text = "今日任务已更新（${ws.tasks.size} 项）",
-                            isUser = false,
-                            richCard = RichCard.TaskList(ws.tasks),
-                        )
-                    )
-                    lastTaskIds = currentTaskIds
-                }
-
-                // 5) New actions (message drafts) → individual rich cards
-                val currentActionIds = ws.actions.map { it.actionId }.toSet()
-                val newActions = ws.actions.filter { it.actionId !in lastActionIds && it.type == ActionType.MESSAGE && it.status != ActionStatus.COMPLETED }
-                newActions.forEach { action ->
-                    newChats.add(
-                        ChatItem(
-                            id = "action_${action.actionId}",
-                            text = "已草拟消息给 ${action.target}",
-                            isUser = false,
-                            richCard = RichCard.MessageDraft(action),
-                        )
-                    )
-                }
-                if (ws.actions.isNotEmpty()) lastActionIds = currentActionIds
-
-                // 6) New service orders → rich cards
-                val currentOrderIds = ws.serviceOrders.map { it.previewId }.toSet()
-                val newOrders = ws.serviceOrders.filter { it.previewId !in lastOrderIds }
-                newOrders.forEach { order ->
-                    newChats.add(
-                        ChatItem(
-                            id = "order_${order.previewId}",
-                            text = "服务方案已生成：${order.items.size} 项商品 ¥${"%.1f".format(order.total)}",
-                            isUser = false,
-                            richCard = RichCard.ServicePlan(order),
-                        )
-                    )
-                }
-                if (ws.serviceOrders.isNotEmpty()) lastOrderIds = currentOrderIds
-
-                // 7) Confirmation → rich card
+                // 2) Confirmation → actionable card
                 if (ws.confirmation != null && ws.confirmation!!.confirmationId != lastConfirmationId && ws.confirmation!!.status == ConfirmationStatus.PENDING) {
                     newChats.add(
                         ChatItem(
@@ -156,6 +108,9 @@ class ChatViewModel @Inject constructor(
                     )
                     lastConfirmationId = ws.confirmation!!.confirmationId
                 }
+
+                lastStage = ws.stage
+                currentSessionId = ws.sessionId
 
                 _uiState.update {
                     it.copy(
@@ -186,24 +141,41 @@ class ChatViewModel @Inject constructor(
     // ─── Voice ─────────────────────────────────────────────────────────────
 
     fun onVoiceToggle() {
+        android.util.Log.d("AURI-VOICE", "onVoiceToggle called, isListening=${voiceInput.isListening}")
         if (voiceInput.isListening) {
+            // Stop recognition and send whatever was recognized so far
             voiceInput.stop()
             voiceJob?.cancel()
-            _uiState.update { it.copy(isListening = false) }
+            val partialText = _uiState.value.voiceText
+            _uiState.update { it.copy(isListening = false, voiceText = "", error = null) }
+            if (partialText.isNotBlank()) {
+                addUserChat(partialText)
+                submitUtterance(partialText)
+            }
         } else {
-            _uiState.update { it.copy(isListening = true) }
+            _uiState.update { it.copy(isListening = true, voiceText = "", error = null) }
             voiceJob = viewModelScope.launch {
                 voiceInput.listen().collect { event ->
+                    android.util.Log.d("AURI-VOICE", "Voice event: $event")
                     when (event) {
                         is VoiceInputEvent.ListeningStarted -> _uiState.update { it.copy(isListening = true) }
                         is VoiceInputEvent.PartialResult -> _uiState.update { it.copy(voiceText = event.text) }
                         is VoiceInputEvent.FinalResult -> {
-                            _uiState.update { it.copy(isListening = false, voiceText = event.text) }
+                            _uiState.update { it.copy(isListening = false, voiceText = "") }
                             addUserChat(event.text)
                             submitUtterance(event.text)
                         }
                         is VoiceInputEvent.NoSpeech -> _uiState.update { it.copy(isListening = false, error = "未检测到语音") }
-                        is VoiceInputEvent.Error -> _uiState.update { it.copy(isListening = false, error = event.message) }
+                        is VoiceInputEvent.Error -> {
+                            val partial = _uiState.value.voiceText
+                            _uiState.update { it.copy(isListening = false, voiceText = "", error = event.message) }
+                            // On error, try to send partial text
+                            if (partial.isNotBlank()) {
+                                addUserChat(partial)
+                                submitUtterance(partial)
+                            }
+                            android.util.Log.e("AURI-VOICE", "Voice error: ${event.message}")
+                        }
                     }
                 }
             }
@@ -230,7 +202,7 @@ class ChatViewModel @Inject constructor(
                 repository.submitEvent(
                     Event(
                         eventId = UUID.randomUUID().toString(),
-                        sessionId = _uiState.value.pendingConfirmation?.confirmationId ?: "",
+                        sessionId = currentSessionId,
                         type = EventType.USER_UTTERANCE,
                         source = EventSource.MOBILE,
                         timestamp = ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
@@ -261,7 +233,7 @@ class ChatViewModel @Inject constructor(
                 repository.submitEvent(
                     Event(
                         eventId = UUID.randomUUID().toString(),
-                        sessionId = _uiState.value.pendingConfirmation?.confirmationId ?: "",
+                        sessionId = currentSessionId,
                         type = EventType.CONFIRMATION_CONFIRMED,
                         source = EventSource.MOBILE,
                         timestamp = ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),

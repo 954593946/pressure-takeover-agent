@@ -42,8 +42,8 @@ object NetworkModule {
     @Singleton
     fun provideOkHttpClient(mockAgent: MockAgent?): OkHttpClient =
         OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
             .apply {
                 if (BuildConfig.DEBUG) {
                     addInterceptor(HttpLoggingInterceptor().apply {
@@ -52,6 +52,20 @@ object NetworkModule {
                 }
                 if (mockAgent != null) {
                     addInterceptor(mockAgent)
+                } else {
+                    // X-Agent-Token for real backend access
+                    addInterceptor { chain ->
+                        val token = BuildConfig.AGENT_API_TOKEN
+                        if (token.isNotBlank()) {
+                            chain.proceed(
+                                chain.request().newBuilder()
+                                    .addHeader("X-Agent-Token", token)
+                                    .build()
+                            )
+                        } else {
+                            chain.proceed(chain.request())
+                        }
+                    }
                 }
             }
             .build()

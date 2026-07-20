@@ -19,16 +19,35 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     buildTypes {
+        // ── Mock / Real 后端切换 ──────────────────────────────────────
+        // USE_MOCK_AGENT=true  → 所有请求被本地 MockAgent 拦截，无需网络
+        // USE_MOCK_AGENT=false → 连接 AGENT_API_BASE_URL 的真实 Agent API
+        //
+        // AGENT_API_BASE_URL 说明:
+        //   模拟器: http://10.0.2.2:8000  (Android 模拟器到宿主机 localhost)
+        //   真机:   http://<你电脑IP>:8000  (需在同一局域网)
+        //
+        // 要接真实后端:
+        //   1. cd services/agent-api && .\start.ps1
+        //   2. 把下面 USE_MOCK_AGENT 改成 "false"
+        //   3. Build & run
+        // ────────────────────────────────────────────────────────────────
         debug {
-            buildConfigField("boolean", "USE_MOCK_AGENT", "true")
-            buildConfigField("String", "AGENT_API_BASE_URL", "\"http://10.0.2.2:8000\"")
+            buildConfigField("boolean", "USE_MOCK_AGENT", "false")
+            buildConfigField("String", "AGENT_API_BASE_URL", "\"https://auri-agent-api.onrender.com\"")
+            buildConfigField("String", "AGENT_API_TOKEN", "\"auri-team-7f3e2a91c8b64d40a5e96f17\"")
         }
         release {
             buildConfigField("boolean", "USE_MOCK_AGENT", "false")
-            buildConfigField("String", "AGENT_API_BASE_URL", "\"http://10.0.2.2:8000\"")
+            buildConfigField("String", "AGENT_API_BASE_URL", "\"https://auri-agent-api.onrender.com\"")
+            buildConfigField("String", "AGENT_API_TOKEN", "\"auri-team-7f3e2a91c8b64d40a5e96f17\"")
         }
     }
 
@@ -44,6 +63,11 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    // Don't compress ONNX model files in assets (they're already compressed)
+    androidResources {
+        noCompress += listOf("onnx")
     }
 }
 
@@ -90,4 +114,7 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
+
+    // Sherpa ONNX — offline speech recognition (local AAR)
+    implementation(fileTree("libs") { include("*.aar") })
 }

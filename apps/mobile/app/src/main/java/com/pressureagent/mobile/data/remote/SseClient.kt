@@ -34,6 +34,7 @@ import java.util.concurrent.TimeUnit
 class SseClient(
     private val baseUrl: String,
     private val json: Json = Json { ignoreUnknownKeys = true },
+    private val token: String = "",
     private val reconnectDelayMs: Long = 2_000L,
     private val maxReconnectDelayMs: Long = 30_000L,
 ) {
@@ -44,7 +45,7 @@ class SseClient(
         }
         engine {
             config {
-                connectTimeout(10, TimeUnit.SECONDS)
+                connectTimeout(30, TimeUnit.SECONDS)
                 readTimeout(0, TimeUnit.MILLISECONDS) // unlimited for SSE
             }
         }
@@ -59,7 +60,12 @@ class SseClient(
         while (isActive) {
             try {
                 client.get("$baseUrl/v1/stream") {
-                    headers { append("Accept", "text/event-stream") }
+                    headers {
+                        append("Accept", "text/event-stream")
+                        if (token.isNotBlank()) {
+                            append("X-Agent-Token", token)
+                        }
+                    }
                 }.let { response ->
                     val channel = response.bodyAsChannel()
                     while (isActive && !channel.isClosedForRead) {

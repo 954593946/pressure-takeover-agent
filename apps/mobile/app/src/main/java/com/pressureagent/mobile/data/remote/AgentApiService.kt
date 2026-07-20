@@ -20,7 +20,15 @@ interface AgentApiService {
 
     @POST("v1/event")
     suspend fun submitEvent(@Body event: Event): EventResponse
+
+    @POST("v1/session/reset")
+    suspend fun resetSession(@Body body: ResetRequest): WorldState
 }
+
+@kotlinx.serialization.Serializable
+data class ResetRequest(
+    val scenario_id: String = "happy-path",
+)
 
 @kotlinx.serialization.Serializable
 data class HealthResponse(

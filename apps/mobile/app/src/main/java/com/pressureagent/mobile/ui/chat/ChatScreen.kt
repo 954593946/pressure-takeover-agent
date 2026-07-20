@@ -1,9 +1,11 @@
 package com.pressureagent.mobile.ui.chat
 
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -15,12 +17,18 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mic
+import android.Manifest
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -30,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.pressureagent.mobile.domain.model.*
 import com.pressureagent.mobile.ui.theme.*
+import java.util.Locale
 
 // ─── 豆包风格 ChatScreen：对话即一切 ─────────────────────────────────────
 
@@ -44,6 +53,41 @@ fun ChatScreen(
 
     var textInput by remember { mutableStateOf("") }
     var isTextMode by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    // Intent-based speech recognizer (fallback for devices without SpeechRecognizer)
+    val speechIntentLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val matches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+        val text = matches?.firstOrNull()?.trim() ?: ""
+        if (text.isNotBlank()) {
+            viewModel.onTextSubmit(text)
+        }
+    }
+
+    fun doStartVoice(vm: ChatViewModel) {
+        // Use sherpa-onnx offline ASR via VoiceInputProvider
+        vm.onVoiceToggle()
+    }
+
+    // Runtime permission for voice input
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) doStartVoice(viewModel)
+    }
+
+    val startVoiceWithPermission: () -> Unit = {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                context, Manifest.permission.RECORD_AUDIO
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            doStartVoice(viewModel)
+        } else {
+            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
 
     LaunchedEffect(state.chatMessages.size) {
         if (state.chatMessages.isNotEmpty()) {
@@ -113,23 +157,34 @@ fun ChatScreen(
             )
         },
         bottomBar = {
-            VoiceInputBar(
-                text = textInput,
-                onTextChange = { textInput = it },
-                isTextMode = isTextMode,
-                onToggleMode = { isTextMode = !isTextMode },
-                isListening = state.isListening,
-                isCompanionMode = state.isCompanionMode,
-                onSend = {
-                    if (textInput.isNotBlank()) {
-                        viewModel.onTextSubmit(textInput.trim())
-                        textInput = ""
-                        focusManager.clearFocus()
-                    }
-                },
-                onStartVoice = viewModel::onVoiceToggle,
-                onStopVoice = viewModel::onVoiceToggle,
-            )
+            Column {
+                // Quick-action chips — contextual shortcuts based on current stage
+                QuickActionChips(
+                    stage = state.stage,
+                    pendingConfirmation = state.pendingConfirmation,
+                    onChipClick = { chipText ->
+                        viewModel.onTextSubmit(chipText)
+                    },
+                )
+                VoiceInputBar(
+                    text = textInput,
+                    onTextChange = { textInput = it },
+                    isTextMode = isTextMode,
+                    onToggleMode = { isTextMode = !isTextMode },
+                    isListening = state.isListening,
+                    isCompanionMode = state.isCompanionMode,
+                    voiceText = state.voiceText,
+                    onSend = {
+                        if (textInput.isNotBlank()) {
+                            viewModel.onTextSubmit(textInput.trim())
+                            textInput = ""
+                            focusManager.clearFocus()
+                        }
+                    },
+                    onStartVoice = startVoiceWithPermission,
+                    onStopVoice = viewModel::onVoiceToggle,
+                )
+            }
         },
     ) { padding ->
         LazyColumn(
@@ -143,6 +198,27 @@ fun ChatScreen(
                 item(key = "loading") {
                     Box(Modifier.fillMaxWidth().height(60.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = AuriNavy)
+                    }
+                }
+            }
+
+            // Error banner
+            if (state.error != null) {
+                item(key = "error") {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = AuriCritical.copy(alpha = 0.1f),
+                        onClick = { viewModel.dismissError() },
+                    ) {
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("⚠️", fontSize = 16.sp)
+                            Spacer(Modifier.width(8.dp))
+                            Text(state.error ?: "", style = MaterialTheme.typography.bodySmall, color = AuriCritical, modifier = Modifier.weight(1f))
+                            IconButton(onClick = { viewModel.dismissError() }, modifier = Modifier.size(20.dp)) {
+                                Icon(Icons.Filled.Close, contentDescription = "关闭", tint = AuriCritical, modifier = Modifier.size(16.dp))
+                            }
+                        }
                     }
                 }
             }
@@ -180,7 +256,7 @@ fun ChatScreen(
 
             // Chat messages with embedded rich cards
             items(state.chatMessages, key = { it.id }) { chat ->
-                ChatBubble(chat = chat)
+                ChatBubble(chat = chat, onConfirm = viewModel::confirm, onReject = viewModel::reject)
             }
 
             item(key = "spacer") { Spacer(Modifier.height(8.dp)) }
@@ -191,7 +267,7 @@ fun ChatScreen(
 // ─── Chat Bubble ──────────────────────────────────────────────────────────
 
 @Composable
-private fun ChatBubble(chat: ChatItem) {
+private fun ChatBubble(chat: ChatItem, onConfirm: () -> Unit = {}, onReject: () -> Unit = {}) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         horizontalArrangement = if (chat.isUser) Arrangement.End else Arrangement.Start,
@@ -235,7 +311,7 @@ private fun ChatBubble(chat: ChatItem) {
                     is RichCard.TaskList -> InlineTaskListCard(card.tasks)
                     is RichCard.ServicePlan -> InlineServiceOrderCard(card.order)
                     is RichCard.MessageDraft -> InlineMessageCard(card.action)
-                    is RichCard.ConfirmRequest -> InlineConfirmationCard(card.confirmationId, card.prompt)
+                    is RichCard.ConfirmRequest -> InlineConfirmationCard(card.confirmationId, card.prompt, onConfirm, onReject)
                 }
             }
         }
@@ -358,13 +434,26 @@ private fun InlineMessageCard(action: Action) {
 }
 
 @Composable
-private fun InlineConfirmationCard(confirmationId: String, prompt: String) {
+private fun InlineConfirmationCard(confirmationId: String, prompt: String, onConfirm: () -> Unit, onReject: () -> Unit) {
     Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = AuriNavy)) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text("📋 $prompt", fontWeight = FontWeight.SemiBold, color = Color.White)
             Spacer(Modifier.height(12.dp))
-            // Confirmation buttons use the parent ChatViewModel via ambient — simplified here
-            // The actual interactivity is wired through ChatViewModel.confirm/reject
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(
+                    onClick = onReject,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)),
+                ) { Text("拒绝") }
+                Button(
+                    onClick = onConfirm,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AuriSuccess),
+                ) { Text("确认执行") }
+            }
         }
     }
 }
@@ -379,6 +468,7 @@ private fun VoiceInputBar(
     onToggleMode: () -> Unit,
     isListening: Boolean,
     isCompanionMode: Boolean,
+    voiceText: String = "",
     onSend: () -> Unit,
     onStartVoice: () -> Unit,
     onStopVoice: () -> Unit,
@@ -413,14 +503,14 @@ private fun VoiceInputBar(
                         modifier = Modifier.weight(1f).height(48.dp),
                         shape = RoundedCornerShape(24.dp),
                         color = Color(0xFFF5F5F5),
-                        onClick = { if (!isCompanionMode) onStartVoice() },
+                        onClick = onStartVoice,
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 if (isListening) {
                                     PulseDot()
                                     Spacer(Modifier.width(8.dp))
-                                    Text("正在聆听…", color = AuriCritical, fontSize = 14.sp)
+                                    Text(if (voiceText.isNotBlank()) voiceText else "正在聆听…", color = if (voiceText.isNotBlank()) AuriNavy else AuriCritical, fontSize = 14.sp)
                                 } else {
                                     Text(if (isCompanionMode) "驾驶中 — 车机主控" else "按住说话，比如「帮我处理一下」", color = if (isCompanionMode) Color.Gray.copy(alpha = 0.5f) else Color.Gray, fontSize = 14.sp)
                                 }
@@ -429,7 +519,7 @@ private fun VoiceInputBar(
                     }
                     Spacer(Modifier.width(8.dp))
                     Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(if (isListening) AuriCritical else AuriNavy), contentAlignment = Alignment.Center) {
-                        IconButton(onClick = { if (!isCompanionMode) { if (isListening) onStopVoice() else onStartVoice() } }, modifier = Modifier.size(44.dp)) {
+                        IconButton(onClick = { if (isListening) onStopVoice() else onStartVoice() }, modifier = Modifier.size(44.dp)) {
                             Icon(if (isListening) Icons.Filled.Close else Icons.Filled.Mic, contentDescription = if (isListening) "停止" else "语音", tint = Color.White, modifier = Modifier.size(22.dp))
                         }
                     }
@@ -444,6 +534,74 @@ private fun PulseDot() {
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val alpha by infiniteTransition.animateFloat(initialValue = 0.4f, targetValue = 1f, animationSpec = infiniteRepeatable(animation = tween(600)), label = "pulse_alpha")
     Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(AuriCritical.copy(alpha = alpha)))
+}
+
+// ─── Quick Action Chips ────────────────────────────────────────────────────
+
+@Composable
+private fun QuickActionChips(
+    stage: Stage,
+    pendingConfirmation: Confirmation?,
+    onChipClick: (String) -> Unit,
+) {
+    val chips = remember(stage, pendingConfirmation?.status) {
+        buildList {
+            when (stage) {
+                Stage.OFF_VEHICLE_IDLE -> {
+                    add("📝 创建任务：接孩子+超市采购" to "创建任务：18:10接孩子，之后去超市采购")
+                    add("🚗 我上车了" to "我上车了")
+                }
+                Stage.PRE_DEPARTURE_WARNING -> {
+                    add("🚗 我上车了" to "我上车了")
+                    add("⏰ 会议延迟了20分钟" to "会议延迟了20分钟")
+                }
+                Stage.VEHICLE_OBSERVATION -> {
+                    add("🚦 前面堵车，晚到15分钟" to "前面堵车，估计晚到15分钟")
+                    add("🎙️ 帮我处理一下" to "帮我处理一下")
+                }
+                Stage.TAKEOVER_L2, Stage.TAKEOVER_L3, Stage.PLANNING -> {
+                    add("🎙️ 帮我处理一下" to "帮我处理一下")
+                }
+                Stage.WAITING_CONFIRMATION -> {
+                    add("✅ 确认执行" to "确认执行")
+                    add("❌ 拒绝" to "拒绝")
+                }
+                Stage.ACTION_COMPLETED, Stage.COOLDOWN -> {
+                    add("🅿️ 停车了" to "停车了")
+                }
+                Stage.PARKED_REVIEW -> {
+                    add("🔄 重新开始" to "重新开始")
+                }
+                else -> { /* no chips */ }
+            }
+        }
+    }
+
+    if (chips.isEmpty()) return
+
+    Surface(color = AuriIvory) {
+        LazyRow(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(chips.size) { index ->
+                val (label, payload) = chips[index]
+                Surface(
+                    onClick = { onChipClick(payload) },
+                    shape = RoundedCornerShape(20.dp),
+                    color = Color.White,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE0E0E0)),
+                ) {
+                    Text(
+                        label,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        fontSize = 13.sp,
+                        color = AuriNavy,
+                    )
+                }
+            }
+        }
+    }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
