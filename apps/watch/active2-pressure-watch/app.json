@@ -2,19 +2,22 @@
   "configVersion": "v3",
   "app": {
     "appId": 20301,
-    "appName": "Pressure Watch",
+    "appName": "AURI Watch",
     "appType": "app",
     "version": {
-      "code": 1,
-      "name": "0.1.0"
+      "code": 2,
+      "name": "0.2.0"
     },
     "icon": "icon.png",
     "vender": "pressure-agent",
-    "description": "Amazfit Active 2 pressure takeover demo watch app"
+    "description": "AURI wrist status and health bridge for Amazfit Active 2"
   },
   "permissions": [
     "data:os.device.info",
-    "device:os.local_storage"
+    "device:os.local_storage",
+    "data:user.hd.heart_rate",
+    "data:user.hd.spo2",
+    "data:user.hd.sleep"
   ],
   "runtime": {
     "apiVersion": {
@@ -31,12 +34,33 @@
           "pages": [
             "page/active2/home/index.page"
           ]
+        },
+        "app-side": {
+          "path": "app-side/index"
         }
       },
       "platforms": [
         {
           "name": "Amazfit Active 2 (Round)",
           "deviceSource": 8913152,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit Active 2 (Round)",
+          "deviceSource": 8913153,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit Active 2 NFC (Round)",
+          "deviceSource": 10092800,
+          "st": "r",
+          "sr": "w466"
+        },
+        {
+          "name": "Amazfit Active 2 NFC (Round)",
+          "deviceSource": 10092801,
           "st": "r",
           "sr": "w466"
         }
@@ -46,10 +70,10 @@
   },
   "i18n": {
     "en-US": {
-      "appName": "Pressure Watch"
+      "appName": "AURI Watch"
     },
     "zh-CN": {
-      "appName": "压力接管"
+      "appName": "AURI 手表"
     }
   },
   "defaultLanguage": "zh-CN"
