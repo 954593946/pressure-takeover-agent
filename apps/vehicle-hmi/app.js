@@ -1,48 +1,43 @@
+const DEFAULT_CONFIG = {
+  apiBase: "http://127.0.0.1:8000",
+  streamUrl: "http://127.0.0.1:8000/v1/stream",
+  token: "",
+  stream: true
+};
+
+const CONFIG = { ...DEFAULT_CONFIG, ...(window.AURI_CONFIG || {}) };
+
 const DRAFTS = {
-  teacher: "老师您好，我可能会晚到约 18 分钟，正在赶往学校，请您帮忙照看一下孩子。我到达后会立即联系您。",
-  family: "我这边会议延迟加上路况拥堵，接孩子可能晚一点。AURI 已把超市任务后置，我会按当前路线安全驾驶。"
+  teacher: "老师您好，我这边路况拥堵，预计会晚到约 18 分钟。请您帮忙照看一下孩子，我到达后会立即联系您。（模拟消息）",
+  family: "我这边会议延迟加上路况拥堵，接孩子可能晚一点。AURI 已把超市任务转为配送方案，我会按当前路线安全驾驶。（模拟消息）"
 };
 
-const INITIAL = {
-  stage: "idle",
-  eta: "--:--",
-  etaDelay: 0,
-  duration: "--",
-  distance: "--",
-  windowState: "未建立",
-  speed: 0,
-  phone: "待创建任务",
-  watch: "常态",
-  console: "待机",
-  kidTask: "等待创建",
-  shopTask: "等待创建",
-  draft: "teacher",
-  draftReady: false,
-  confirmationId: null,
-  confirmed: [],
-  events: []
+const STAGE_VIEW = {
+  off_vehicle_idle: ["idle", "等待任务创建", "手机端创建任务后，AURI 会识别刚性责任和弹性任务。", "暂无风险结论。", "手机端可语音创建任务", "无需确认", "等待风险成立", "待机"],
+  pre_departure_warning: ["delayed", "最晚出发窗口被压缩", "会议延迟已写入 World State，腕上设备进入黄色提醒。", "仍可能准时，但容错时间明显减少。", "腕上已提醒，车机保持低干扰", "无需确认", "继续观察 ETA", "监控中"],
+  handover_to_vehicle: ["warning", "正在交接到车机", "用户接近车辆，车机预加载驾驶页。", "准备进入驾驶模式，手机确认入口将失效。", "准备进入车辆", "无需确认", "等待车辆状态", "交接中"],
+  vehicle_observation: ["vehicle", "已进入驾驶模式", "车机 HMI 展示学校路线和当前 ETA。", "当前按路线观察，驾驶中只展示必要信息。", "可语音询问：“我还来得及吗？”", "无需确认", "车机保持低干扰", "观察中"],
+  takeover_L2: ["risk", "预计晚到 18 分钟", "刚性责任窗口被突破，等待用户明确求助后生成方案。", "继续加速无法明显缩短时间。", "你可以说：“我还来得及吗？”", "等待方案", "Agent 尚未生成确认项", "分析中"],
+  takeover_L3: ["risk", "高负荷保护", "多源辅助信号显示驾驶负荷升高，非必要内容已暂停。", "车机只保留必要判断和安全确认。", "保持驾驶，AURI 正在处理", "等待方案", "高负荷保护中", "保护中"],
+  planning: ["takeover", "压力源接管中", "Agent 正在保护接孩子任务，并准备消息与服务方案。", "继续加速无法明显缩短时间，正在处理现实后果。", "AURI 正在准备方案", "准备中", "等待确认项生成", "规划中"],
+  service_prepared: ["takeover", "方案已准备", "消息和生活服务方案已准备，等待确认。", "消息与服务方案已备好。", "可说：“确认处理”", "确认处理", "等待车机确认", "待确认"],
+  waiting_confirmation: ["takeover", "方案等待确认", "已后置超市任务，并生成老师、家人消息和模拟配送方案。", "继续加速无法明显缩短时间；消息和采购方案已备好。", "可说：“确认处理”", "确认处理", "执行消息和模拟订单", "待确认"],
+  executing: ["takeover", "正在执行", "AURI 正在执行已确认的动作组。", "请继续安全驾驶，动作正在处理。", "正在处理", "执行中", "请勿重复操作", "执行中"],
+  action_completed: ["done", "问题已处理", "消息已模拟发送，服务订单已模拟提交，三端同步已处理。", "已处理，按当前速度驾驶即可。", "AURI 已降低打扰", "已完成", "三端绿态同步", "完成"],
+  cooldown: ["done", "低干扰恢复", "压力源已处理，AURI 进入冷却状态。", "后续详情停车后在手机端复盘。", "AURI 保持安静", "已完成", "等待停车复盘", "恢复"],
+  parked_review: ["done", "停车后复盘", "主交互端回到手机，车机结束本次处理。", "请在手机端查看消息、订单和 Action Ledger。", "手机端复盘", "车机结束", "手机为主端", "复盘"],
+  error: ["risk", "连接或状态异常", "请检查 Agent 服务或控制台事件。", "当前无法确认动作，请使用控制台或手机兜底。", "连接异常", "不可确认", "等待状态恢复", "错误"]
 };
 
-const COPY = {
-  idle: ["等待任务创建", "创建任务后，AURI 会识别刚性责任和弹性任务。", "暂无风险结论。", "手机端可语音创建任务", "无需确认", "等待风险成立"],
-  task_created: ["任务已结构化", "接孩子为刚性责任，超市为弹性任务。", "已建立 18:10 接孩子责任窗口。", "手机端已完成语音任务创建", "无需确认", "继续监控出发窗口"],
-  delayed: ["最晚出发窗口被压缩", "会议延迟 20 分钟，腕上设备进入黄色提醒。", "仍可能准时，但容错时间明显减少。", "AURI 已同步会议延迟", "无需确认", "继续观察 ETA"],
-  warning: ["需要尽快出发", "系统计算最晚出发时间被压缩，腕上短震提醒。", "17:38 前需出发，否则接孩子存在迟到风险。", "腕上已提醒：尽快出发", "无需确认", "准备进入车辆"],
-  vehicle: ["已进入驾驶模式", "车机 HMI 展示学校路线和当前 ETA。", "当前 ETA 正常，驾驶中只展示必要信息。", "可语音询问：“我还来得及吗？”", "无需确认", "车机保持低干扰"],
-  risk: ["预计晚到 18 分钟", "ETA 变为 18:28，刚性责任窗口被突破。", "继续加速无法明显缩短时间。", "你可以说：“我还来得及吗？”", "等待方案生成", "Agent 正在分析"],
-  takeover: ["压力源接管中", "已后置超市任务，并生成老师和家人消息草稿。", "继续加速无法明显缩短时间；超市已后置；消息已备好。", "可说：“确认发送”", "确认发送", "发送老师/家人消息"],
-  done: ["问题已处理", "消息已模拟发送，手机、车机、腕上设备显示已处理。", "已处理，按当前速度开即可。", "AURI 已降低打扰", "已完成", "三端绿态同步"]
-};
-
-const ACTIONS = {
-  idle: [["", "等待用户在手机端创建任务"]],
-  task_created: [["done", "识别 18:10 接孩子为刚性责任"], ["done", "识别超市为弹性任务，可后置"], ["", "等待外部风险信号"]],
-  delayed: [["done", "会议延迟写入 World State"], ["done", "重新计算最晚出发窗口"], ["pending", "腕上设备黄色短震提醒"]],
-  warning: [["done", "生成 17:38 前需出发提醒"], ["done", "腕上设备短震"], ["pending", "等待进入车辆"]],
-  vehicle: [["done", "vehicle_mode=true"], ["done", "车机展示阳光小学路线"], ["", "等待路况/ETA 变化"]],
-  risk: [["done", "ETA 变为 18:28"], ["done", "判断预计晚到 18 分钟"], ["pending", "等待用户求助触发接管"]],
-  takeover: [["done", "后置超市任务"], ["done", "生成老师消息草稿"], ["done", "生成家人消息草稿"], ["pending", "等待用户确认发送"]],
-  done: [["done", "confirmation_id 校验通过"], ["done", "消息已模拟发送"], ["done", "手机、车机、腕上设备同步已处理"], ["done", "Agent 降低打扰"]]
+const EVENT_BUTTONS = {
+  create_task: ["task.created", "mobile", { text: "今天18:10接孩子，之后去超市" }],
+  meeting_delayed: ["meeting.overrun", "demo_console", { delay_minutes: 20 }],
+  departure_warning: ["scene.approaching", "demo_console", {}],
+  enter_vehicle: ["scene.vehicle_entered", "demo_console", {}],
+  traffic_jam: ["traffic.updated", "demo_console", { eta: "2026-07-15T18:28:00+08:00", late_minutes: 18 }],
+  stress_signal: ["wearable.signal", "wearable", { heart_rate: 120, confidence: 0.9 }],
+  agent_takeover: ["user.utterance", "vehicle_hmi", { text: "我还来得及吗？帮我处理" }],
+  restore: ["cooldown.elapsed", "demo_console", {}]
 };
 
 const $ = (id) => document.querySelector(id);
@@ -59,146 +54,297 @@ const ui = {
   amapRemain: $("#amapRemain"), amapDuration: $("#amapDuration"), amapArrival: $("#amapArrival")
 };
 
-let state = structuredClone(INITIAL);
+let worldState = null;
+let activeDraft = "teacher";
+let lastRevision = -1;
+let eventSeq = 0;
+const timeline = [];
 
-function log(type) {
-  state.events.unshift({ type, time: new Date().toLocaleTimeString("zh-CN", { hour12: false }) });
-  state.events = state.events.slice(0, 6);
+function authHeaders(extra = {}) {
+  return CONFIG.token ? { ...extra, "X-Agent-Token": CONFIG.token } : extra;
 }
 
-function setStage(stage) {
-  state.stage = stage;
-  log(stage);
+function eventId(type) {
+  eventSeq += 1;
+  return `hmi_${type.replaceAll(".", "_")}_${Date.now()}_${eventSeq}`;
+}
+
+function log(type, detail = "") {
+  timeline.unshift({ time: new Date().toLocaleTimeString("zh-CN", { hour12: false }), type, detail });
+  timeline.splice(6);
+  ui.timeline.innerHTML = timeline.map((item) => `<div>${item.time} · ${item.type}${item.detail ? ` · ${item.detail}` : ""}</div>`).join("");
+}
+
+function setConnection(text) {
+  ui.consoleStatus.textContent = text;
+  log("connection", text);
+}
+
+async function apiFetch(path, options = {}) {
+  const response = await fetch(`${CONFIG.apiBase}${path}`, {
+    ...options,
+    headers: authHeaders({
+      Accept: "application/json",
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(options.headers || {})
+    })
+  });
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!response.ok) {
+    const code = data?.detail?.code || response.status;
+    throw new Error(`${code}: ${data?.detail?.message || response.statusText}`);
+  }
+  return data;
+}
+
+async function loadState(reason = "load") {
+  const state = await apiFetch("/v1/state");
+  consumeWorldState(state, reason);
+}
+
+function consumeWorldState(next, reason = "state") {
+  if (!next || next.schema_version !== "0.2.0") return;
+  if (worldState && next.session_id === worldState.session_id && next.revision < lastRevision) return;
+  worldState = next;
+  lastRevision = next.revision;
+  log(reason, `${next.stage} r${next.revision}`);
   render();
-  window.dispatchEvent(new CustomEvent("auri:web3-state", { detail: structuredClone(state) }));
 }
 
-function applyEvent(type) {
-  if (type === "reset") {
-    state = structuredClone(INITIAL);
-    log("reset");
-    render();
-    return;
-  }
-  if (type === "create_task") {
-    Object.assign(state, { eta: "18:10", etaDelay: 0, duration: "18", distance: "7.8", windowState: "安全", speed: 0, phone: "任务已创建", kidTask: "不可后置", shopTask: "可调整" });
-    setStage("task_created");
-  }
-  if (type === "meeting_delayed") {
-    Object.assign(state, { windowState: "压缩", watch: "黄灯短震", console: "会议延迟+20min" });
-    setStage("delayed");
-  }
-  if (type === "departure_warning") {
-    Object.assign(state, { windowState: "需出发", watch: "黄色提醒" });
-    setStage("warning");
-  }
-  if (type === "enter_vehicle") {
-    Object.assign(state, { speed: 42, eta: "18:10", duration: "18", distance: "7.8", console: "已进入车辆" });
-    setStage("vehicle");
-  }
-  if (type === "traffic_jam") {
-    Object.assign(state, { eta: "18:28", etaDelay: 18, duration: "36", distance: "7.8", windowState: "突破", watch: "红色风险", console: "拥堵加剧" });
-    setStage("risk");
-  }
-  if (type === "stress_signal") {
-    state.watch = "压力辅助";
-    log("stress_signal");
-    render();
-  }
-  if (type === "agent_takeover") {
-    Object.assign(state, { draftReady: true, confirmationId: state.confirmationId || `confirm-${Date.now()}`, shopTask: "已后置" });
-    setStage("takeover");
-  }
-  if (type === "confirm_send") confirmSend();
-  if (type === "restore") setStage("done");
+async function submitEvent(definition) {
+  if (!worldState) await loadState("before-event");
+  const [type, source, payload] = definition;
+  const accepted = await apiFetch("/v1/event", {
+    method: "POST",
+    body: JSON.stringify({
+      schema_version: "0.2.0",
+      event_id: eventId(type),
+      session_id: worldState.session_id,
+      type,
+      source,
+      timestamp: new Date().toISOString(),
+      payload
+    })
+  });
+  consumeWorldState(accepted.state, accepted.duplicate ? "duplicate-event" : "event");
 }
 
-function confirmSend() {
-  if (state.stage !== "takeover" || !state.confirmationId) return;
-  if (!state.confirmed.includes(state.confirmationId)) state.confirmed.push(state.confirmationId);
-  Object.assign(state, { phone: "草稿已发送", watch: "绿色已处理", console: "确认完成" });
-  setStage("done");
+async function confirmAction(inputMode = "button") {
+  if (!worldState?.confirmation) return;
+  const state = await apiFetch("/v1/confirm", {
+    method: "POST",
+    body: JSON.stringify({
+      confirmation_id: worldState.confirmation.confirmation_id,
+      decision: "accept",
+      confirmed_by: "vehicle_hmi",
+      input_mode: inputMode
+    })
+  });
+  consumeWorldState(state, "confirm");
+}
+
+async function resetSession() {
+  const state = await apiFetch("/v1/session/reset", {
+    method: "POST",
+    body: JSON.stringify({ scenario_id: "happy-path" })
+  });
+  consumeWorldState(state, "reset");
+}
+
+async function connectStream() {
+  if (!CONFIG.stream) return;
+  try {
+    const response = await fetch(CONFIG.streamUrl || `${CONFIG.apiBase}/v1/stream`, {
+      headers: authHeaders({ Accept: "text/event-stream" })
+    });
+    if (!response.ok || !response.body) throw new Error(`stream ${response.status}`);
+    setConnection("状态流已连接");
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const chunks = buffer.split("\n\n");
+      buffer = chunks.pop() || "";
+      chunks.forEach(parseStreamChunk);
+    }
+  } catch (error) {
+    setConnection(`状态流断开：${error.message}`);
+    setTimeout(connectStream, 2500);
+  }
+}
+
+function parseStreamChunk(chunk) {
+  const dataLine = chunk.split("\n").find((line) => line.startsWith("data: "));
+  if (!dataLine) return;
+  try {
+    consumeWorldState(JSON.parse(dataLine.slice(6)), "stream");
+  } catch (error) {
+    log("stream-parse-error", error.message);
+  }
+}
+
+function stageView() {
+  return STAGE_VIEW[worldState?.stage] || STAGE_VIEW.error;
+}
+
+function formatTime(value) {
+  if (!value) return "--:--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "--:--";
+  return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+function pickupTask() {
+  return (worldState?.tasks || []).find((task) => task.task_type === "rigid" || task.task_id.includes("pickup"));
+}
+
+function groceryTask() {
+  return (worldState?.tasks || []).find((task) => task.capability_tags?.includes("grocery_delivery") || task.task_type === "flexible");
+}
+
+function actionText(action) {
+  const prefix = action.type === "message" ? "消息" : action.type === "service_order" ? "模拟订单" : "任务调整";
+  const status = {
+    awaiting_confirmation: "待确认",
+    completed: "已完成",
+    blocked: "已阻断",
+    failed: "失败",
+    planned: "已规划",
+    ready: "已准备"
+  }[action.status] || action.status;
+  return `${prefix} · ${action.target} · ${status}：${action.summary}`;
 }
 
 function renderActions() {
-  ui.actionList.innerHTML = "";
-  (ACTIONS[state.stage] || ACTIONS.idle).forEach(([cls, text]) => {
-    const li = document.createElement("li");
-    li.textContent = text;
-    if (cls) li.className = cls;
-    ui.actionList.appendChild(li);
-  });
+  const actions = worldState?.actions || [];
+  if (!actions.length) {
+    ui.actionList.innerHTML = "<li>等待 Agent 生成动作组</li>";
+    return;
+  }
+  ui.actionList.innerHTML = actions.map((action) => {
+    const cls = action.status === "completed" ? "done" : action.status === "awaiting_confirmation" ? "pending" : "";
+    return `<li class="${cls}">${actionText(action)}</li>`;
+  }).join("");
+}
+
+function renderDraft() {
+  const messageActions = (worldState?.actions || []).filter((action) => action.type === "message");
+  if (!messageActions.length) {
+    ui.draftState.textContent = "未生成";
+    ui.draftBody.textContent = "风险成立后生成老师和家人的模拟消息草稿。";
+    return;
+  }
+  const current = activeDraft === "family"
+    ? messageActions.find((action) => action.target.includes("家")) || messageActions[1] || messageActions[0]
+    : messageActions.find((action) => action.target.includes("老师")) || messageActions[0];
+  ui.draftState.textContent = current.status === "completed" ? "已模拟发送" : "等待确认";
+  ui.draftBody.textContent = `${current.summary}。${activeDraft === "family" ? DRAFTS.family : DRAFTS.teacher}`;
 }
 
 function render() {
-  const c = COPY[state.stage] || COPY.idle;
-  ui.root.className = `screen state-${state.stage}`;
-  ui.speed.textContent = state.speed || "--";
-  ui.headline.textContent = c[1];
-  ui.eta.textContent = state.eta;
-  ui.etaNote.textContent = state.etaDelay ? `晚到 ${state.etaDelay} 分钟` : state.eta === "--:--" ? "等待路线" : "准时";
-  ui.windowState.textContent = state.windowState;
-  ui.modeChip.textContent = state.stage === "idle" || state.stage === "task_created" || state.stage === "delayed" || state.stage === "warning" ? "待进入车辆" : "驾驶模式";
-  ui.phoneStatus.textContent = state.phone;
-  ui.phoneDetail.textContent = state.stage === "done" ? "已发送" : "PWA 已连接";
-  ui.watchStatus.textContent = state.watch;
-  ui.watchDetail.textContent = state.stage === "done" ? "绿色反馈" : state.watch === "常态" ? "低干扰" : "震动/颜色";
-  ui.consoleStatus.textContent = state.console;
-  ui.kidTask.classList.toggle("active", state.kidTask !== "等待创建");
-  ui.shopTask.classList.toggle("active", state.shopTask !== "等待创建");
-  ui.kidTaskState.textContent = state.kidTask;
-  ui.shopTaskState.textContent = state.shopTask;
-  ui.agentTitle.textContent = c[0];
-  ui.agentText.textContent = c[1];
-  ui.realConclusion.textContent = c[2];
-  ui.riskBadge.textContent = state.stage === "done" ? "已处理" : ["risk","takeover"].includes(state.stage) ? "高风险" : "低干扰";
-  ui.actionState.textContent = state.stage === "takeover" ? "待确认" : state.stage === "done" ? "完成" : "进行中";
-  ui.draftState.textContent = state.stage === "done" ? "已发送" : state.draftReady ? "等待确认" : "未生成";
-  ui.draftBody.textContent = state.draftReady || state.stage === "done" ? DRAFTS[state.draft] : "风险成立后生成老师和家人的消息草稿。";
-  ui.syncPhone.textContent = state.phone;
-  ui.syncWatch.textContent = state.watch;
-  ui.syncCar.textContent = state.stage === "done" ? "已处理" : state.stage === "idle" ? "待机" : "驾驶页同步";
-  ui.syncWatchDot.className = state.stage === "done" ? "done" : state.watch === "常态" ? "ok" : "warn";
-  ui.voiceHint.textContent = c[3];
-  const canConfirm = state.stage === "takeover";
+  const view = stageView();
+  const [className, title, text, conclusion, voice, confirmLabel, confirmSub, actionState] = view;
+  const risk = worldState?.risk || { pressure_level: "L0", late_minutes: 0 };
+  const eta = formatTime(worldState?.eta);
+  const pickup = pickupTask();
+  const grocery = groceryTask();
+  const canConfirm = worldState?.primary_surface === "vehicle_hmi"
+    && worldState?.confirmation?.owner_surface === "vehicle_hmi"
+    && worldState?.confirmation?.status === "pending";
+  const driving = ["driving", "high_load_driving"].includes(worldState?.scene);
+  const order = worldState?.service_orders?.[0];
+
+  ui.root.className = `screen state-${className}`;
+  ui.speed.textContent = driving ? "42" : "--";
+  ui.headline.textContent = worldState?.output?.conclusion || text;
+  ui.eta.textContent = eta;
+  ui.etaNote.textContent = risk.late_minutes > 0 ? `晚到 ${risk.late_minutes} 分钟` : eta === "--:--" ? "等待路线" : "准时";
+  ui.windowState.textContent = risk.late_minutes > 0 ? "突破" : worldState?.stage === "pre_departure_warning" ? "压缩" : pickup ? "已建立" : "未建立";
+  ui.modeChip.textContent = worldState?.primary_surface === "vehicle_hmi" ? "驾驶模式" : "手机为主端";
+  ui.phoneStatus.textContent = worldState?.primary_surface === "mobile" ? "主端" : worldState?.stage === "action_completed" ? "已同步" : "只读同步";
+  ui.phoneDetail.textContent = pickup ? "任务已创建" : "等待任务";
+  ui.watchStatus.textContent = worldState?.wearable?.text || "AURI 就绪";
+  ui.watchDetail.textContent = `${worldState?.wearable?.mode || "idle"} · ${worldState?.wearable?.haptic || "none"}`;
+  ui.consoleStatus.textContent = `r${worldState?.revision ?? 0} · ${worldState?.stage || "未连接"}`;
+  ui.kidTask.classList.toggle("active", Boolean(pickup));
+  ui.shopTask.classList.toggle("active", Boolean(grocery));
+  ui.kidTaskState.textContent = pickup ? (pickup.adjustable ? "可调整" : "不可后置") : "等待创建";
+  ui.shopTaskState.textContent = grocery ? (grocery.status === "rescheduled" ? "已后置" : "可调整") : "等待创建";
+  ui.agentTitle.textContent = title;
+  ui.agentText.textContent = text;
+  ui.realConclusion.textContent = worldState?.output?.conclusion || (order?.error_code ? `服务异常：${order.error_code}，驾驶中不展开复杂选择。` : conclusion);
+  ui.riskBadge.textContent = ["action_completed", "cooldown"].includes(worldState?.stage) ? "已处理" : risk.pressure_level || "L0";
+  ui.actionState.textContent = actionState;
+  renderActions();
+  renderDraft();
+  ui.syncPhone.textContent = worldState?.primary_surface === "mobile" ? "主端" : "同步";
+  ui.syncWatch.textContent = worldState?.wearable?.mode || "idle";
+  ui.syncCar.textContent = worldState?.primary_surface === "vehicle_hmi" ? "主端" : "只读";
+  ui.syncWatchDot.className = worldState?.wearable?.mode === "completed" ? "done" : worldState?.wearable?.mode === "warning" ? "warn" : "ok";
+  ui.voiceHint.textContent = voice;
   ui.confirmBtn.disabled = !canConfirm;
   ui.confirmBtn.classList.toggle("enabled", canConfirm);
-  ui.confirmLabel.textContent = c[4];
-  ui.confirmSub.textContent = c[5];
-  ui.speedLimit.textContent = ["vehicle","risk","takeover","done"].includes(state.stage) ? "40" : "--";
-  ui.lightCountdown.textContent = ["risk","takeover","done"].includes(state.stage) ? "21" : "65";
-  ui.turnDistance.textContent = ["vehicle","risk","takeover","done"].includes(state.stage) ? "1.5" : "--";
-  ui.routeProgress.style.height = state.stage === "done" ? "76%" : ["risk","takeover"].includes(state.stage) ? "58%" : "35%";
-  ui.amapRemain.textContent = state.distance === "--" ? "--" : `${state.distance} 公里`;
-  ui.amapDuration.textContent = state.duration === "--" ? "--" : `${state.duration} 分钟`;
-  ui.amapArrival.textContent = state.eta;
-  renderActions();
-  ui.timeline.innerHTML = state.events.map(e => `<div>${e.time} · ${e.type}</div>`).join("");
+  ui.confirmLabel.textContent = confirmLabel;
+  ui.confirmSub.textContent = canConfirm ? confirmSub : (worldState?.confirmation?.owner_surface && worldState.confirmation.owner_surface !== "vehicle_hmi" ? "确认入口不在车机" : confirmSub);
+  ui.speedLimit.textContent = driving ? "40" : "--";
+  ui.lightCountdown.textContent = risk.late_minutes > 0 ? "21" : "65";
+  ui.turnDistance.textContent = driving ? "1.5" : "--";
+  ui.routeProgress.style.height = worldState?.stage === "action_completed" ? "76%" : risk.late_minutes > 0 ? "58%" : "35%";
+  ui.amapRemain.textContent = driving ? "7.8 公里" : "--";
+  ui.amapDuration.textContent = risk.late_minutes > 0 ? "36 分钟" : driving ? "18 分钟" : "--";
+  ui.amapArrival.textContent = eta;
 }
 
-document.querySelector(".demo").addEventListener("click", (e) => {
-  const btn = e.target.closest("button[data-event]");
-  if (btn) applyEvent(btn.dataset.event);
+document.querySelector(".demo")?.addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-event]");
+  if (!button) return;
+  button.disabled = true;
+  try {
+    if (button.dataset.event === "confirm_send") await confirmAction("button");
+    else if (button.dataset.event === "reset") await resetSession();
+    else await submitEvent(EVENT_BUTTONS[button.dataset.event]);
+  } catch (error) {
+    log("error", error.message);
+    setConnection(`错误：${error.message}`);
+  } finally {
+    button.disabled = false;
+  }
 });
 
-ui.confirmBtn.addEventListener("click", confirmSend);
-
-ui.tabs.addEventListener("click", (e) => {
-  const btn = e.target.closest("button[data-draft]");
-  if (!btn) return;
-  state.draft = btn.dataset.draft;
-  ui.tabs.querySelectorAll("button").forEach(b => b.classList.toggle("active", b === btn));
-  render();
-});
-
-window.AURI_HMI_WEB3 = {
-  dispatchEvent: applyEvent,
-  getState: () => structuredClone(state),
-  confirm: confirmSend,
-  consumeWorldState(next) {
-    Object.assign(state, next || {});
+ui.confirmBtn.addEventListener("click", async () => {
+  ui.confirmBtn.disabled = true;
+  try {
+    await confirmAction("button");
+  } catch (error) {
+    log("confirm-error", error.message);
+  } finally {
     render();
   }
+});
+
+ui.tabs.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-draft]");
+  if (!button) return;
+  activeDraft = button.dataset.draft;
+  ui.tabs.querySelectorAll("button").forEach((item) => item.classList.toggle("active", item === button));
+  renderDraft();
+});
+
+window.AURI_HMI = {
+  loadState,
+  submitEvent,
+  confirm: confirmAction,
+  reset: resetSession,
+  consumeWorldState,
+  getState: () => structuredClone(worldState)
 };
 
 render();
+loadState("load").then(connectStream).catch((error) => {
+  setConnection(`连接失败：${error.message}`);
+  render();
+});
