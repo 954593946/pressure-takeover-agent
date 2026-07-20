@@ -12,6 +12,7 @@ ktor-client = "3.0.3"
 hilt = "2.53.1"
 hilt-navigation-compose = "1.2.0"
 navigation = "2.8.5"
+sherpa-onnx = "v1.12.5"
 
 [libraries]
 # Compose BOM
@@ -58,6 +59,9 @@ hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-com
 
 # Navigation
 navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigation" }
+
+# Sherpa ONNX — offline speech recognition
+sherpa-onnx = { group = "com.github.k2-fsa", name = "sherpa-onnx", version.ref = "sherpa-onnx" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

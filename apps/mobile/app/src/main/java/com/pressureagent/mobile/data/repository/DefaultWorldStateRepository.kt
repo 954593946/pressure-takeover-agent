@@ -1,6 +1,7 @@
 package com.pressureagent.mobile.data.repository
 
 import com.pressureagent.mobile.data.remote.AgentApiService
+import com.pressureagent.mobile.data.remote.ResetRequest
 import com.pressureagent.mobile.data.remote.SseClient
 import com.pressureagent.mobile.domain.model.Event
 import com.pressureagent.mobile.domain.model.EventResponse
@@ -55,6 +56,12 @@ class DefaultWorldStateRepository(
         val response = api.submitEvent(event)
         refresh()
         return response
+    }
+
+    override suspend fun resetSession(): WorldState {
+        val state = api.resetSession(ResetRequest())
+        _worldState.value = state
+        return state
     }
 
     private fun connectSse() {

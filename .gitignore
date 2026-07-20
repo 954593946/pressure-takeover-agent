@@ -57,6 +57,10 @@ data/
 logs/
 *.log
 *.sqlite
+
+# Mobile app — large binary dependencies (downloaded via setup script)
+apps/mobile/app/libs/
+apps/mobile/app/src/main/assets/models/
 *.sqlite3
 
 # Generated API clients

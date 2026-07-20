@@ -22,4 +22,7 @@ interface WorldStateRepository {
 
     /** Submit a user event. */
     suspend fun submitEvent(event: Event): EventResponse
+
+    /** Reset session to initial state. */
+    suspend fun resetSession(): WorldState
 }

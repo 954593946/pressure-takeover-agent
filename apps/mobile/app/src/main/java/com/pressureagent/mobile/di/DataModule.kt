@@ -1,5 +1,6 @@
 package com.pressureagent.mobile.di
 
+import com.pressureagent.mobile.BuildConfig
 import com.pressureagent.mobile.data.remote.AgentApiService
 import com.pressureagent.mobile.data.remote.SseClient
 import com.pressureagent.mobile.data.repository.DefaultWorldStateRepository
@@ -21,7 +22,7 @@ object DataModule {
     fun provideSseClient(
         @Named("baseUrl") baseUrl: String,
         json: Json,
-    ): SseClient = SseClient(baseUrl = baseUrl, json = json)
+    ): SseClient = SseClient(baseUrl = baseUrl, json = json, token = BuildConfig.AGENT_API_TOKEN)
 
     @Provides
     @Singleton

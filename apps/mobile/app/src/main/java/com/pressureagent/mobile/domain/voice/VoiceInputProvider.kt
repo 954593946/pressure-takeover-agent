@@ -4,11 +4,6 @@ import kotlinx.coroutines.flow.Flow
 
 /**
  * Voice input — Speech-to-Text (ASR).
- *
- * Implementations:
- * - [MockVoiceInputProvider] — simulates listening and returns demo text.
- * - AndroidVoiceInputProvider → uses android.speech.SpeechRecognizer.
- * - Cloud STT provider → uses cloud API (e.g. Azure, iFlytek).
  */
 interface VoiceInputProvider {
 
