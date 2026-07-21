@@ -78,13 +78,13 @@ WebSocket 客户端优先使用 `X-Agent-Token` 请求头；浏览器原生 WebS
 部署完成后，客户端配置改为：
 
 ```dotenv
-AGENT_API_BASE_URL=https://auri-agent-api.onrender.com
-AGENT_STREAM_URL=https://auri-agent-api.onrender.com/v1/stream
+AGENT_API_BASE_URL=https://auri-langchain-agent-api.onrender.com
+AGENT_STREAM_URL=https://auri-langchain-agent-api.onrender.com/v1/stream
 ```
 
 实际子域名以 Render 分配结果为准。所有 `/v1/*` 请求继续携带 `X-Agent-Token`；WebSocket 使用 `wss://<Render 域名>/v1/ws`。
 
-仓库根目录的 `render-langchain.yaml` 用于创建不影响现有共享后端的独立验证服务。创建 Blueprint 时选择分支 `codex/langchain-agent`、Blueprint Path `render-langchain.yaml`，并填写与现有服务相同的两个 Secret。验证完成并合并后，再把该服务分支切到 `main`；不要把 Bosch Key 写进 YAML、README 或客户端。
+仓库根目录的 `render-langchain.yaml` 用于创建不影响旧服务的独立 LangChain 服务。当前公网地址为 `https://auri-langchain-agent-api.onrender.com`，已验证 `/health`、团队令牌鉴权和两条不同自然语言任务，均真实进入 `langchain_agent` 模式。PR 合并后应把 Render 服务的代码分支切到 `main`；不要把 Bosch Key 写进 YAML、README 或客户端。
 
 免费实例适合团队开发联调，但空闲后会休眠，首次请求可能需要约一分钟唤醒；休眠、重启或重新部署都会清空当前进程内 World State。正式演示前应提前唤醒并执行一次标准场景重置，或临时升级到不会空闲休眠的实例。
 
