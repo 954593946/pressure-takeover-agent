@@ -12,11 +12,11 @@ AURI 是一个面向车机、手机与腕上设备的多端 Agent。它在驾驶
 
 ## 团队同步：当前开发基线
 
-> 最后更新：2026-07-21。[Agent / contracts v0.2 基础 PR #4](https://github.com/954593946/pressure-takeover-agent/pull/4) 与 [Render 共享后端 PR #5](https://github.com/954593946/pressure-takeover-agent/pull/5) 已合并；[LangChain Agent PR #11](https://github.com/954593946/pressure-takeover-agent/pull/11) 的独立公网实例已通过真实调用验收。`contracts v0.2` 是当前共享实现基线，仍需各端逐字段评审；发现问题必须通过契约变更 PR 处理，不得在端内复制后自行修改。
+> 最后更新：2026-07-21。[Agent / contracts v0.2 基础 PR #4](https://github.com/954593946/pressure-takeover-agent/pull/4) 与 [Render 共享后端 PR #5](https://github.com/954593946/pressure-takeover-agent/pull/5) 已合并；[LangChain Agent PR #11](https://github.com/954593946/pressure-takeover-agent/pull/11) 的独立公网实例已通过真实调用验收；[完整 LangChain 工具编排 PR #15](https://github.com/954593946/pressure-takeover-agent/pull/15) 已提交团队评审。`contracts v0.2` 是当前共享实现基线，仍需各端逐字段评审；发现问题必须通过契约变更 PR 处理，不得在端内复制后自行修改。
 
 | 模块 | 当前可用状态 | 其他成员现在可以做什么 |
 |---|---|---|
-| Agent / 后端 | LangChain Render 公网实例已上线并通过健康、鉴权和不同指令验收；不改变 FastAPI v0.2 接口、World State、L0-L3、确认幂等和团队令牌鉴权 | 使用下方 LangChain 地址联调；共享后端只分发团队令牌，不分发 Bosch API Key |
+| Agent / 后端 | LangChain 已从“只解析任务”升级为自然语言工具编排：可创建/查询/调整任务、记录延迟、按已有任务准备方案、确认执行并动态回复；FastAPI v0.2、L0-L3、确认幂等和团队令牌鉴权不变 | 使用下方 LangChain 地址联调；共享后端只分发团队令牌，不分发 Bosch API Key |
 | 跨端契约 | v0.2 Schema、OpenAPI、示例和 happy-path 事件序列已合并为共享实现基线 | 逐字段评审生产/消费需求；发现缺字段先提契约变更，不在端内补私有字段 |
 | 手机端 | 业务 UI 与连接层待开发 | 按 `WorldState` 渲染；通过 Event API 上报任务、Profile 和确认 |
 | 车机 / 控制台 | 车机已有早期原型，控制台待接标准事件 | 移除页面自推状态；按 `stage + primary_surface` 渲染和注入事件 |
@@ -25,6 +25,8 @@ AURI 是一个面向车机、手机与腕上设备的多端 Agent。它在驾驶
 ## 团队快速接入：公网 Agent
 
 当前推荐的 LangChain 共享后端：
+
+> PR #15 合并并由 Render 完成部署后，才可在共享实例使用完整工具编排。伙伴可通过 `/health` 的 `agent_tools_enabled=true` 和 `agent_last_tools` 判断新版本是否已经上线；部署前共享实例仍可能运行 PR #11 的任务解析版本。
 
 ```text
 API Base URL: https://auri-langchain-agent-api.onrender.com
@@ -186,7 +188,7 @@ wss://auri-langchain-agent-api.onrender.com/v1/ws?access_token=<AGENT_SHARED_TOK
 - `apps/watch/active2-pressure-watch/`：已有 Active 2 466×466 静态框架与状态映射，Side Service、真实震动、ACK 和新触觉编码仍待实现。
 - `apps/mobile/`：目前仅有模块说明，业务 UI 与连接层待开发。
 - `apps/demo-console/`：目前仅有模块说明，场景事件、服务异常和重置控制台待开发。
-- `services/agent-api/`：已有 FastAPI v0.2 基础版，包含事件幂等、World State、L0-L3、主交互端、Profile、动作规划、确认幂等、Mock Adapter、Ledger、SSE/WebSocket，以及 LangChain `create_agent + ToolStrategy` 任务解析；LangChain 只输出结构化任务，L0-L3、安全权限、金额、确认和执行仍由确定性后端控制。当前使用进程内存存储，适合单实例 Demo。
+- `services/agent-api/`：已有 FastAPI v0.2 和 LangChain `create_agent` 工具编排。LLM 理解自然语言、选择受控工具并生成动态回复；确定性后端继续控制 World State、L0-L3、主交互端、金额、确认、幂等、Mock Adapter 与 Ledger。当前使用进程内存存储，适合单实例 Demo。
 - `contracts/`：已有 v0.2 候选 Schema、OpenAPI、正向样例和标准事件序列，等待跨端共同评审后冻结。
 
 ## AI Agent 开工与完成检查
