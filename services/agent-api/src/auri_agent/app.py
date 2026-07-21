@@ -6,10 +6,12 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Security, WebSocke
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import APIKeyHeader
+from pydantic import BaseModel
 
 from .config import Settings
 from .models import ConfirmationRequest, Event, EventAccepted, Profile, ResetRequest, WorldState
 from .runtime import AgentRuntime, RuntimeErrorWithCode
+from .chat import ChatAgent
 
 
 shared_token_header = APIKeyHeader(name="X-Agent-Token", auto_error=False)
@@ -27,6 +29,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
     app.state.runtime = AgentRuntime(settings)
+    app.state.chat_agent = ChatAgent(app.state.runtime)
     app.state.settings = settings
 
     def runtime(request: Request) -> AgentRuntime:
@@ -124,6 +127,49 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             pass
         finally:
             current_runtime.unsubscribe(queue)
+
+    # ── Chat endpoints (SSE streaming for mobile ChatRepository) ──────────
+
+    class ChatRequest(BaseModel):
+        message: str
+        inputMode: str = "text"
+        sessionId: str | None = None
+
+    class ChatConfirmRequest(BaseModel):
+        sessionId: str
+        confirmationId: str
+        decision: str
+
+    @app.post("/v1/chat", dependencies=[Depends(require_shared_access)])
+    async def chat(body: ChatRequest, request: Request) -> StreamingResponse:
+        chat_agent: ChatAgent = request.app.state.chat_agent
+        current_runtime: AgentRuntime = request.app.state.runtime
+        session_id = body.sessionId or current_runtime._state.session_id
+
+        async def sse_stream():
+            async for event in chat_agent.chat_stream(body.message, session_id, body.inputMode):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+        return StreamingResponse(
+            sse_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    @app.post("/v1/chat/confirm", dependencies=[Depends(require_shared_access)])
+    async def chat_confirm(body: ChatConfirmRequest, request: Request) -> dict:
+        current_runtime: AgentRuntime = request.app.state.runtime
+        try:
+            req = ConfirmationRequest(
+                confirmation_id=body.confirmationId,
+                decision="accept" if body.decision == "accept" else "reject",
+                confirmed_by="mobile",
+                input_mode="button",
+            )
+            state, _ = await current_runtime.confirm(req)
+            return {"accepted": True, "revision": state.revision}
+        except Exception:
+            return {"accepted": False, "revision": 0}
 
     return app
 
