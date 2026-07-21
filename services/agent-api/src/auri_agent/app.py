@@ -54,7 +54,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "llm_configured": current_settings.llm_configured,
             "llm_framework": current_runtime.task_parser.framework,
             "llm_model": current_settings.openai_model,
-            "llm_last_mode": current_runtime.task_parser.last_mode,
+            "llm_last_mode": current_runtime.llm_last_mode,
+            "agent_tools_enabled": current_runtime.conversation_agent.configured,
+            "agent_last_tools": current_runtime.conversation_agent.last_tools,
             "shared_access_enabled": current_settings.shared_access_enabled,
         }
 
@@ -136,6 +138,7 @@ def _http_error(exc: RuntimeErrorWithCode) -> HTTPException:
     status_code = {
         "NOT_FOUND": 404,
         "SESSION_MISMATCH": 409,
+        "CONCURRENT_UPDATE": 409,
         "EXPIRED": 409,
         "WRONG_SURFACE": 409,
         "USE_RESET_ENDPOINT": 409,

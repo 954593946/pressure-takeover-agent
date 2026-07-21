@@ -5,6 +5,7 @@ from uuid import uuid4
 from .models import (
     Action,
     Confirmation,
+    ConfirmationRequest,
     InteractionOutput,
     PressureLevel,
     Scene,
@@ -98,48 +99,91 @@ class MockGroceryAdapter:
 
 class ActionPlanner:
     @staticmethod
-    def prepare(state: WorldState) -> None:
-        for task in state.tasks:
-            if task.task_type == "flexible" and "grocery_delivery" in task.capability_tags:
+    def prepare(
+        state: WorldState,
+        *,
+        include_messages: bool = True,
+        include_grocery: bool = True,
+    ) -> list[Action]:
+        grocery_tasks = [task for task in state.tasks if "grocery_delivery" in task.capability_tags]
+        rigid_tasks = [task for task in state.tasks if task.task_type == "rigid"]
+
+        for task in grocery_tasks:
+            if include_grocery and task.adjustable:
                 task.status = "rescheduled"
 
-        order = MockGroceryAdapter.preview(state)
-        state.service_orders = [order]
-        message_actions = [
-            Action(
-                action_id="action_message_teacher",
-                type="message",
-                target="王老师",
-                status="awaiting_confirmation",
-                risk="medium",
-                requires_confirmation=True,
-                summary=f"通知预计晚到{state.risk.late_minutes}分钟（模拟消息）",
-                details_ref="message_teacher",
-            ),
-            Action(
-                action_id="action_message_family",
-                type="message",
-                target="家人",
-                status="awaiting_confirmation",
-                risk="medium",
-                requires_confirmation=True,
-                summary="同步接送进度（模拟消息）",
-                details_ref="message_family",
-            ),
-        ]
-        order_action = Action(
-            action_id="action_grocery_order",
-            type="service_order",
-            target="模拟商超",
-            status="awaiting_confirmation" if order.status == "awaiting_confirmation" else "blocked",
-            risk="medium",
-            requires_confirmation=True,
-            summary=f"{len(order.items)}件商品，共{order.total:.0f}元，{order.delivery_window}送达（模拟订单）",
-            details_ref=order.preview_id,
-            error_code=order.error_code,
-        )
-        state.actions = message_actions + [order_action]
+        message_targets: list[str] = []
+        if include_messages:
+            for task in rigid_tasks:
+                message_targets.extend(task.waiting_party)
+                if "孩子" in task.title and not task.waiting_party:
+                    message_targets.extend(["老师", "家人"])
+        message_targets = list(dict.fromkeys(target for target in message_targets if target))[:2]
+
+        message_actions: list[Action] = []
+        for index, target in enumerate(message_targets):
+            if "老师" in target:
+                action_id = "action_message_teacher"
+                details_ref = "message_teacher"
+                summary = f"通知预计晚到{state.risk.late_minutes}分钟（模拟消息）"
+            elif "家" in target:
+                action_id = "action_message_family"
+                details_ref = "message_family"
+                summary = "同步接送进度（模拟消息）"
+            else:
+                action_id = f"action_message_{index + 1}"
+                details_ref = f"message_contact_{index + 1}"
+                summary = f"向{target}同步任务进度（模拟消息）"
+            message_actions.append(
+                Action(
+                    action_id=action_id,
+                    type="message",
+                    target=target,
+                    status="awaiting_confirmation",
+                    risk="medium",
+                    requires_confirmation=True,
+                    summary=summary,
+                    details_ref=details_ref,
+                )
+            )
+
+        order_actions: list[Action] = []
+        if include_grocery and grocery_tasks:
+            order = MockGroceryAdapter.preview(state)
+            state.service_orders = [order]
+            order_actions.append(
+                Action(
+                    action_id="action_grocery_order",
+                    type="service_order",
+                    target="模拟商超",
+                    status="awaiting_confirmation" if order.status == "awaiting_confirmation" else "blocked",
+                    risk="medium",
+                    requires_confirmation=True,
+                    summary=f"{len(order.items)}件商品，共{order.total:.0f}元，{order.delivery_window}送达（模拟订单）",
+                    details_ref=order.preview_id,
+                    error_code=order.error_code,
+                )
+            )
+        else:
+            state.service_orders = []
+
+        state.actions = message_actions + order_actions
         confirmable = [action.action_id for action in state.actions if action.status == "awaiting_confirmation"]
+        if not confirmable:
+            state.confirmation = None
+            state.stage = Stage.PLANNING
+            state.output = InteractionOutput(
+                message_id=f"msg_{uuid4().hex[:12]}",
+                priority="normal",
+                owner_surface=state.primary_surface,
+                suppressed_surfaces=["mobile", "wearable"] if state.primary_surface == Surface.VEHICLE_HMI else ["vehicle_hmi", "wearable"],
+                expires_at=output_expiry(),
+                requires_confirmation=False,
+                conclusion="当前没有需要代办或确认的可执行事项。",
+            )
+            state.action_ledger.append("plan:no_applicable_actions")
+            return state.actions
+
         state.confirmation = Confirmation(
             confirmation_id=f"confirm_{uuid4().hex[:12]}",
             action_ids=confirmable,
@@ -164,6 +208,71 @@ class ActionPlanner:
             conclusion=f"预计晚到{state.risk.late_minutes}分钟，消息和采购方案已准备。",
         )
         state.action_ledger.append(f"plan:{state.confirmation.confirmation_id}")
+        return state.actions
+
+
+class DomainError(RuntimeError):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+def consume_confirmation(state: WorldState, request: ConfirmationRequest) -> None:
+    confirmation = state.confirmation
+    if confirmation is None or confirmation.confirmation_id != request.confirmation_id:
+        raise DomainError("NOT_FOUND", "confirmation not found")
+    if confirmation.status != "pending":
+        return
+    if confirmation.expires_at < now():
+        confirmation.status = "expired"
+        raise DomainError("EXPIRED", "confirmation expired")
+    if request.confirmed_by != confirmation.owner_surface:
+        raise DomainError("WRONG_SURFACE", "confirmation is not owned by this surface")
+    confirmation.confirmed_by = request.confirmed_by
+    if request.decision == "reject":
+        confirmation.status = "rejected"
+        for action in state.actions:
+            if action.action_id in confirmation.action_ids:
+                action.status = "blocked"
+        state.stage = Stage.ACTION_COMPLETED
+        state.output = InteractionOutput(
+            message_id=f"msg_{uuid4().hex[:12]}",
+            priority="normal",
+            owner_surface=state.primary_surface,
+            suppressed_surfaces=["mobile", "wearable"] if state.primary_surface == Surface.VEHICLE_HMI else ["vehicle_hmi", "wearable"],
+            expires_at=output_expiry(1),
+            requires_confirmation=False,
+            conclusion="已取消本次处理方案，没有执行消息或订单。",
+        )
+        return
+
+    confirmation.status = "accepted"
+    state.stage = Stage.EXECUTING
+    for action in state.actions:
+        if action.action_id in confirmation.action_ids:
+            action.status = "completed"
+    for order in state.service_orders:
+        if order.status == "awaiting_confirmation":
+            order.order_id = order.order_id or f"order_{order.preview_id.removeprefix('preview_')}"
+            order.status = "submitted"
+    state.stage = Stage.ACTION_COMPLETED
+    state.risk.pressure_level = PressureLevel.RECOVERY
+    state.wearable = WearableState(
+        connected=state.wearable.connected,
+        mode="completed",
+        text="已同步完成",
+        color="green",
+        haptic="soft_short",
+    )
+    state.output = InteractionOutput(
+        message_id=f"msg_{uuid4().hex[:12]}",
+        priority="normal",
+        owner_surface=state.primary_surface,
+        suppressed_surfaces=["mobile", "wearable"] if state.primary_surface == Surface.VEHICLE_HMI else ["vehicle_hmi", "wearable"],
+        expires_at=output_expiry(1),
+        requires_confirmation=False,
+        conclusion="消息和订单已在 Demo 中模拟处理完成，按当前速度驾驶即可。",
+    )
 
 
 def add_auxiliary_signal(state: WorldState, signal: str) -> None:

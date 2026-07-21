@@ -57,6 +57,8 @@ def test_health_never_exposes_key(client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     assert response.json()["llm_framework"] == "langchain"
+    assert response.json()["agent_tools_enabled"] is False
+    assert response.json()["agent_last_tools"] == []
     assert "api_key" not in response.text.lower()
 
 
@@ -182,6 +184,10 @@ def test_l3_requires_two_auxiliary_signal_classes(client: TestClient) -> None:
 
 
 def test_over_budget_order_is_not_confirmable(client: TestClient) -> None:
+    client.post(
+        "/v1/event",
+        json=event(client, "evt_task", "task.created", {"text": "今天18:10接孩子，之后去超市"}, "mobile"),
+    )
     client.post("/v1/event", json=event(client, "evt_vehicle", "scene.vehicle_entered", {}))
     client.post("/v1/event", json=event(client, "evt_mock", "service.mock.config", {"mode": "over_budget"}))
     client.post(
@@ -216,6 +222,7 @@ async def test_concurrent_confirmation_executes_order_once() -> None:
             )
         )
 
+    await submit("evt_task", "task.created", {"text": "今天18:10接孩子，之后去超市"}, "mobile")
     await submit("evt_vehicle", "scene.vehicle_entered", {})
     await submit("evt_traffic", "traffic.updated", {"eta": "2026-07-15T18:28:00+08:00", "late_minutes": 18})
     await submit("evt_help", "user.utterance", {"text": "帮我处理"}, "vehicle_hmi")

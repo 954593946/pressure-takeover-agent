@@ -129,46 +129,51 @@ class TaskParser:
         )
 
     def _fallback(self, text: str) -> list[Task]:
-        today = datetime.now(TZ).date()
-        pickup_time = datetime.combine(today, datetime.min.time(), TZ).replace(hour=18, minute=10)
-        grocery_time = pickup_time.replace(hour=19, minute=30)
-        tasks: list[Task] = []
-        if "孩子" in text:
-            tasks.append(
-                Task(
-                    task_id="task_pickup_child",
-                    title="接孩子",
-                    scheduled_at=pickup_time,
-                    location="阳光小学",
-                    task_type="rigid",
-                    priority="high",
-                    adjustable=False,
-                    waiting_party=["王老师", "家人"],
-                    capability_tags=[],
-                )
+        return fallback_tasks(text)
+
+
+def fallback_tasks(text: str) -> list[Task]:
+    """Deterministic task extraction shared by direct events and agent fallback."""
+    today = datetime.now(TZ).date()
+    pickup_time = datetime.combine(today, datetime.min.time(), TZ).replace(hour=18, minute=10)
+    grocery_time = pickup_time.replace(hour=19, minute=30)
+    tasks: list[Task] = []
+    if "孩子" in text:
+        tasks.append(
+            Task(
+                task_id="task_pickup_child",
+                title="接孩子",
+                scheduled_at=pickup_time,
+                location="阳光小学",
+                task_type="rigid",
+                priority="high",
+                adjustable=False,
+                waiting_party=["王老师", "家人"],
+                capability_tags=[],
             )
-        if any(word in text for word in ("超市", "买菜", "采购")):
-            tasks.append(
-                Task(
-                    task_id="task_grocery",
-                    title="超市采购",
-                    scheduled_at=grocery_time,
-                    task_type="flexible",
-                    priority="low",
-                    adjustable=True,
-                    waiting_party=[],
-                    capability_tags=["grocery_delivery"],
-                )
+        )
+    if any(word in text for word in ("超市", "买菜", "采购")):
+        tasks.append(
+            Task(
+                task_id="task_grocery",
+                title="超市采购",
+                scheduled_at=grocery_time,
+                task_type="flexible",
+                priority="low",
+                adjustable=True,
+                waiting_party=[],
+                capability_tags=["grocery_delivery"],
             )
-        if not tasks:
-            tasks.append(
-                Task(
-                    task_id="task_manual_review",
-                    title=text[:40].strip() or "待确认任务",
-                    task_type="flexible",
-                    priority="medium",
-                    adjustable=True,
-                    capability_tags=[],
-                )
+        )
+    if not tasks:
+        tasks.append(
+            Task(
+                task_id="task_manual_review",
+                title=text[:40].strip() or "待确认任务",
+                task_type="flexible",
+                priority="medium",
+                adjustable=True,
+                capability_tags=[],
             )
-        return tasks
+        )
+    return tasks
