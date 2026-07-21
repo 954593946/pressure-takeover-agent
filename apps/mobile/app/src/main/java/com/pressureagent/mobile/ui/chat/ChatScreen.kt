@@ -17,6 +17,8 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import android.Manifest
 import android.content.Intent
 import android.speech.RecognizerIntent
@@ -124,9 +126,9 @@ fun ChatScreen(
                                     ConnectionStatus.INITIALIZING -> Color.Gray
                                 }
                                 val connLabel = when (state.connectionStatus) {
-                                    ConnectionStatus.CONNECTED -> "已连接"
-                                    ConnectionStatus.POLLING -> "轮询中"
-                                    ConnectionStatus.DISCONNECTED -> "已断开"
+                                    ConnectionStatus.CONNECTED -> "实时"
+                                    ConnectionStatus.POLLING -> "轮询"
+                                    ConnectionStatus.DISCONNECTED -> "断开"
                                     ConnectionStatus.INITIALIZING -> "连接中"
                                 }
                                 Box(
@@ -150,6 +152,14 @@ fun ChatScreen(
                     }
                 },
                 actions = {
+                    // TTS toggle
+                    IconButton(onClick = { viewModel.toggleTts() }) {
+                        Icon(
+                            if (state.isTtsEnabled) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
+                            contentDescription = if (state.isTtsEnabled) "关闭播报" else "开启播报",
+                            tint = if (state.isTtsEnabled) AuriNavy else Color.Gray,
+                        )
+                    }
                     if (state.isCompanionMode) {
                         Surface(shape = RoundedCornerShape(12.dp), color = AuriProcessing.copy(alpha = 0.1f)) {
                             Text("车机主控", modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = AuriProcessing, fontWeight = FontWeight.Medium)

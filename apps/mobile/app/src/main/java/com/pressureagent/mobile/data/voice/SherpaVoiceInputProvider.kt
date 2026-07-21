@@ -157,13 +157,14 @@ class SherpaVoiceInputProvider(private val context: Context) : VoiceInputProvide
 
         withContext(Dispatchers.IO) {
             stopRequested.set(false)
+            var rec: OnlineRecognizer? = null
             var stream: OnlineStream? = null
             var audioRec: AudioRecord? = null
             var lastPartial = ""
 
             try {
                 // Wait for preloaded recognizer (near-instant after first use)
-                val rec = awaitRecognizer()
+                rec = awaitRecognizer()
                 stream = rec.createStream().also { currentStream = it }
                 android.util.Log.d("AURI-ASR", "Stream created, opening microphone...")
 
@@ -226,7 +227,6 @@ class SherpaVoiceInputProvider(private val context: Context) : VoiceInputProvide
                         } else {
                             send(VoiceInputEvent.NoSpeech)
                         }
-                        rec.reset(stream)
                         break
                     }
                 }
@@ -244,6 +244,11 @@ class SherpaVoiceInputProvider(private val context: Context) : VoiceInputProvide
                 isListening = false
                 try { audioRec?.stop() } catch (_: Exception) {}
                 try { audioRec?.release() } catch (_: Exception) {}
+                // Always reset stream before releasing — prevents stale state
+                // in the recognizer when coroutine is cancelled mid-recognition
+                if (rec != null && stream != null) {
+                    try { rec.reset(stream) } catch (_: Exception) {}
+                }
                 try { stream?.release() } catch (_: Exception) {}
                 // Recognizer stays cached — only stream + audio are per-session
                 audioRecord = null

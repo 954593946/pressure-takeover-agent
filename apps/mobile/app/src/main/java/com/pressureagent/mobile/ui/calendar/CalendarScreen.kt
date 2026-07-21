@@ -11,11 +11,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,6 +47,9 @@ fun CalendarScreen(
 
     // 每次进入日程 Tab 自动回到今天
     LaunchedEffect(Unit) { viewModel.goToToday() }
+
+    // Calendar expand/collapse — must be at @Composable scope, not inside LazyColumn
+    var isExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = AuriIvory,
@@ -98,11 +106,20 @@ fun CalendarScreen(
                 }
             }
 
-            // ─── Month grid ────────────────────────────────────────────────
+            // ─── Month grid (collapsed = selected week only) ────────────────
             val daysInMonth = generateMonthGrid(state.currentMonth, state.tasks)
+            val weeks = daysInMonth.chunked(7)
+
+            // Find the week containing selectedDate
+            val selectedWeekIndex = weeks.indexOfFirst { week ->
+                week.any { it.date == state.selectedDate }
+            }.coerceAtLeast(0)
+
+            val visibleWeeks = if (isExpanded) weeks else listOf(weeks[selectedWeekIndex])
+
             item {
                 Column {
-                    daysInMonth.chunked(7).forEach { week ->
+                    visibleWeeks.forEach { week ->
                         Row(Modifier.fillMaxWidth()) {
                             week.forEach { dayCell ->
                                 DayCell(
@@ -114,6 +131,16 @@ fun CalendarScreen(
                                     },
                                 )
                             }
+                        }
+                    }
+                    // Expand / collapse button
+                    Box(modifier = Modifier.fillMaxWidth().padding(top = 4.dp), contentAlignment = Alignment.Center) {
+                        IconButton(onClick = { isExpanded = !isExpanded }) {
+                            Icon(
+                                if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                contentDescription = if (isExpanded) "收起" else "展开",
+                                tint = Color.Gray,
+                            )
                         }
                     }
                 }
@@ -142,8 +169,8 @@ fun CalendarScreen(
                     }
                 }
             } else {
-                items(state.tasksOnSelectedDate, key = { it.taskId }) { task ->
-                    TaskCard(task = task)
+                items(state.tasksOnSelectedDate.distinctBy { it.taskId }, key = { it.taskId }) { task ->
+                    TaskCard(task = task, onDelete = { viewModel.removeTask(task.taskId) })
                 }
             }
 
@@ -154,8 +181,8 @@ fun CalendarScreen(
                     HorizontalDivider(color = Color(0xFFE8E8E8))
                     Text("未安排日期", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = AuriWarning)
                 }
-                items(state.unscheduledTasks, key = { it.taskId }) { task ->
-                    TaskCard(task = task)
+                items(state.unscheduledTasks.distinctBy { it.taskId }, key = { it.taskId }) { task ->
+                    TaskCard(task = task, onDelete = { viewModel.removeTask(task.taskId) })
                 }
             }
 
@@ -242,7 +269,12 @@ private fun DayCell(dayCell: DayCell, isSelected: Boolean, modifier: Modifier = 
 // ─── Task Card ────────────────────────────────────────────────────────────
 
 @Composable
-private fun TaskCard(task: Task) {
+private fun TaskCard(task: Task, onDelete: (() -> Unit)? = null) {
+    val timeText = task.scheduledAt?.let {
+        try { it.split("T").getOrNull(1)?.substring(0, 5) } catch (_: Exception) { null }
+    }
+    val isLocal = task.taskId.startsWith("local_")
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
@@ -250,7 +282,19 @@ private fun TaskCard(task: Task) {
             containerColor = if (task.status == TaskStatus.COMPLETED) Color(0xFFF0F0F0) else Color.White,
         ),
     ) {
-        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(modifier = Modifier.padding(start = 14.dp, top = 14.dp, bottom = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            // ── Time (left) ─────────────────────────────────────────
+            if (timeText != null) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(timeText, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = AuriNavy)
+                    Text(
+                        try { task.scheduledAt!!.split("T")[0].takeLast(5).replace("-", "/") } catch (_: Exception) { "" },
+                        style = MaterialTheme.typography.labelSmall, color = Color.Gray, fontSize = 10.sp,
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+            }
+
             // Type indicator bar
             Box(
                 modifier = Modifier
@@ -273,15 +317,9 @@ private fun TaskCard(task: Task) {
                         )
                     }
                 }
-                if (task.scheduledAt != null || task.location != null) {
+                if (task.location != null) {
                     Spacer(Modifier.height(4.dp))
-                    Row {
-                        if (task.scheduledAt != null) {
-                            val time = try { task.scheduledAt!!.split("T").getOrNull(1)?.substring(0, 5) } catch (_: Exception) { null }
-                            if (time != null) Text("🕐 $time  ", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-                        }
-                        if (task.location != null) Text("📍 ${task.location}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-                    }
+                    Text("📍 ${task.location}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                 }
             }
             Surface(shape = RoundedCornerShape(6.dp), color = Color(0xFFF5F5F5)) {
@@ -290,6 +328,12 @@ private fun TaskCard(task: Task) {
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     style = MaterialTheme.typography.labelSmall,
                 )
+            }
+            if (isLocal && onDelete != null) {
+                Spacer(Modifier.width(4.dp))
+                IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
+                    Text("✕", fontSize = 14.sp, color = Color.Gray)
+                }
             }
         }
     }
