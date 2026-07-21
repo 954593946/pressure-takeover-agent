@@ -12,11 +12,11 @@ AURI 是一个面向车机、手机与腕上设备的多端 Agent。它在驾驶
 
 ## 团队同步：当前开发基线
 
-> 最后更新：2026-07-16。[Agent / contracts v0.2 基础 PR #4](https://github.com/954593946/pressure-takeover-agent/pull/4) 与 [Render 共享后端 PR #5](https://github.com/954593946/pressure-takeover-agent/pull/5) 已合并。`contracts v0.2` 是当前共享实现基线，仍需各端逐字段评审；发现问题必须通过契约变更 PR 处理，不得在端内复制后自行修改。
+> 最后更新：2026-07-21。[Agent / contracts v0.2 基础 PR #4](https://github.com/954593946/pressure-takeover-agent/pull/4) 与 [Render 共享后端 PR #5](https://github.com/954593946/pressure-takeover-agent/pull/5) 已合并；[LangChain Agent PR #11](https://github.com/954593946/pressure-takeover-agent/pull/11) 的独立公网实例已通过真实调用验收。`contracts v0.2` 是当前共享实现基线，仍需各端逐字段评审；发现问题必须通过契约变更 PR 处理，不得在端内复制后自行修改。
 
 | 模块 | 当前可用状态 | 其他成员现在可以做什么 |
 |---|---|---|
-| Agent / 后端 | Render 公网实例已上线；FastAPI v0.2 已有真实 LLM 任务解析、事件、World State、L0-L3、Profile、动作规划、确认幂等、Mock 订单、SSE/WebSocket 和团队令牌鉴权 | 直接使用下方公网地址联调；共享后端只分发团队令牌，不分发 Bosch API Key |
+| Agent / 后端 | LangChain Render 公网实例已上线并通过健康、鉴权和不同指令验收；不改变 FastAPI v0.2 接口、World State、L0-L3、确认幂等和团队令牌鉴权 | 使用下方 LangChain 地址联调；共享后端只分发团队令牌，不分发 Bosch API Key |
 | 跨端契约 | v0.2 Schema、OpenAPI、示例和 happy-path 事件序列已合并为共享实现基线 | 逐字段评审生产/消费需求；发现缺字段先提契约变更，不在端内补私有字段 |
 | 手机端 | 业务 UI 与连接层待开发 | 按 `WorldState` 渲染；通过 Event API 上报任务、Profile 和确认 |
 | 车机 / 控制台 | 车机已有早期原型，控制台待接标准事件 | 移除页面自推状态；按 `stage + primary_surface` 渲染和注入事件 |
@@ -24,21 +24,21 @@ AURI 是一个面向车机、手机与腕上设备的多端 Agent。它在驾驶
 
 ## 团队快速接入：公网 Agent
 
-当前共享后端：
+当前推荐的 LangChain 共享后端：
 
 ```text
-API Base URL: https://auri-agent-api.onrender.com
-Health:       https://auri-agent-api.onrender.com/health
-Swagger:      https://auri-agent-api.onrender.com/docs
-SSE:          https://auri-agent-api.onrender.com/v1/stream
-WebSocket:    wss://auri-agent-api.onrender.com/v1/ws
+API Base URL: https://auri-langchain-agent-api.onrender.com
+Health:       https://auri-langchain-agent-api.onrender.com/health
+Swagger:      https://auri-langchain-agent-api.onrender.com/docs
+SSE:          https://auri-langchain-agent-api.onrender.com/v1/stream
+WebSocket:    wss://auri-langchain-agent-api.onrender.com/v1/ws
 ```
 
 伙伴不需要 Bosch API Key。请向 Agent Owner 单独索取 `AGENT_SHARED_TOKEN`，只放在自己未提交的本地环境变量中：
 
 ```dotenv
-AGENT_API_BASE_URL=https://auri-agent-api.onrender.com
-AGENT_STREAM_URL=https://auri-agent-api.onrender.com/v1/stream
+AGENT_API_BASE_URL=https://auri-langchain-agent-api.onrender.com
+AGENT_STREAM_URL=https://auri-langchain-agent-api.onrender.com/v1/stream
 AGENT_SHARED_TOKEN=向项目负责人索取，禁止提交
 ```
 
@@ -57,17 +57,17 @@ X-Agent-Token: <AGENT_SHARED_TOKEN>
 5. 通过 SSE 或 WebSocket 接收完整 World State 快照，刷新或断线后重新请求 `GET /v1/state` 对账。
 
 ```bash
-curl https://auri-agent-api.onrender.com/v1/state \
+curl https://auri-langchain-agent-api.onrender.com/v1/state \
   -H "X-Agent-Token: $AGENT_SHARED_TOKEN"
 ```
 
 浏览器原生 `EventSource` 不能设置自定义请求头，因此 Web 客户端应使用带请求头的流式 `fetch`，或使用 WebSocket。浏览器原生 WebSocket 不能设置请求头时，Demo 联调可使用：
 
 ```text
-wss://auri-agent-api.onrender.com/v1/ws?access_token=<AGENT_SHARED_TOKEN>
+wss://auri-langchain-agent-api.onrender.com/v1/ws?access_token=<AGENT_SHARED_TOKEN>
 ```
 
-这是一个共享单实例 Demo：所有伙伴看到同一个 Session 和 World State。不要在其他人联调时调用 `/v1/session/reset`；控制台、手机和车机也不得直接修改 World State。更完整的 Event 示例、错误处理和各端职责见 [Agent 接入与跨端协作指南](docs/agent-integration-guide.md)。
+这是一个共享单实例 Demo：所有伙伴看到同一个 Session 和 World State。不要在其他人联调时调用 `/v1/session/reset`；控制台、手机和车机也不得直接修改 World State。旧版 `https://auri-agent-api.onrender.com` 仅保留作回退。更完整的 Event 示例、错误处理和各端职责见 [Agent 接入与跨端协作指南](docs/agent-integration-guide.md)。
 
 新成员或 AI 编程助手开始工作前，按这个顺序阅读：
 
@@ -186,7 +186,7 @@ wss://auri-agent-api.onrender.com/v1/ws?access_token=<AGENT_SHARED_TOKEN>
 - `apps/watch/active2-pressure-watch/`：已有 Active 2 466×466 静态框架与状态映射，Side Service、真实震动、ACK 和新触觉编码仍待实现。
 - `apps/mobile/`：目前仅有模块说明，业务 UI 与连接层待开发。
 - `apps/demo-console/`：目前仅有模块说明，场景事件、服务异常和重置控制台待开发。
-- `services/agent-api/`：已有 FastAPI v0.2 基础版，包含事件幂等、World State、L0-L3、主交互端、Profile、动作规划、确认幂等、Mock Adapter、Ledger、SSE/WebSocket 和 OpenAI 兼容适配器；当前使用进程内存存储，适合单实例 Demo。
+- `services/agent-api/`：已有 FastAPI v0.2 基础版，包含事件幂等、World State、L0-L3、主交互端、Profile、动作规划、确认幂等、Mock Adapter、Ledger、SSE/WebSocket，以及 LangChain `create_agent + ToolStrategy` 任务解析；LangChain 只输出结构化任务，L0-L3、安全权限、金额、确认和执行仍由确定性后端控制。当前使用进程内存存储，适合单实例 Demo。
 - `contracts/`：已有 v0.2 候选 Schema、OpenAPI、正向样例和标准事件序列，等待跨端共同评审后冻结。
 
 ## AI Agent 开工与完成检查

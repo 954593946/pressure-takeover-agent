@@ -52,6 +52,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "schema_version": "0.2.0",
             "demo_mode": current_settings.demo_mode,
             "llm_configured": current_settings.llm_configured,
+            "llm_framework": current_runtime.task_parser.framework,
             "llm_model": current_settings.openai_model,
             "llm_last_mode": current_runtime.task_parser.last_mode,
             "shared_access_enabled": current_settings.shared_access_enabled,
