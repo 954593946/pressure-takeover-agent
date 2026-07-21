@@ -5,7 +5,14 @@ const DEFAULT_CONFIG = {
   stream: true
 };
 
-const CONFIG = { ...DEFAULT_CONFIG, ...(window.AURI_CONFIG || {}) };
+const PUBLIC_AGENT_API = "https://auri-agent-api.onrender.com";
+const storedConfig = JSON.parse(localStorage.getItem("auri-hmi-config") || "{}");
+const queryParams = new URLSearchParams(window.location.search);
+const queryConfig = {
+  ...(queryParams.get("apiBase") ? { apiBase: queryParams.get("apiBase") } : {}),
+  ...(queryParams.get("streamUrl") ? { streamUrl: queryParams.get("streamUrl") } : {})
+};
+let CONFIG = normalizeConfig({ ...DEFAULT_CONFIG, ...storedConfig, ...(window.AURI_CONFIG || {}), ...queryConfig });
 
 const DRAFTS = {
   teacher: "老师您好，我这边路况拥堵，预计会晚到约 18 分钟。请您帮忙照看一下孩子，我到达后会立即联系您。（模拟消息）",
@@ -51,7 +58,9 @@ const ui = {
   syncWatch: $("#syncWatch"), syncWatchDot: $("#syncWatchDot"), syncCar: $("#syncCar"), voiceHint: $("#voiceHint"),
   confirmBtn: $("#confirmBtn"), confirmLabel: $("#confirmLabel"), confirmSub: $("#confirmSub"), timeline: $("#timeline"),
   speedLimit: $("#speedLimit"), lightCountdown: $("#lightCountdown"), turnDistance: $("#turnDistance"), routeProgress: $("#routeProgress"),
-  amapRemain: $("#amapRemain"), amapDuration: $("#amapDuration"), amapArrival: $("#amapArrival")
+  amapRemain: $("#amapRemain"), amapDuration: $("#amapDuration"), amapArrival: $("#amapArrival"), configBtn: $("#configBtn"),
+  configPanel: $("#configPanel"), configForm: $("#configForm"), closeConfig: $("#closeConfig"), configApiBase: $("#configApiBase"),
+  configToken: $("#configToken"), usePublicAgent: $("#usePublicAgent"), useLocalAgent: $("#useLocalAgent")
 };
 
 let worldState = null;
@@ -59,6 +68,16 @@ let activeDraft = "teacher";
 let lastRevision = -1;
 let eventSeq = 0;
 const timeline = [];
+
+function normalizeConfig(config) {
+  const apiBase = (config.apiBase || DEFAULT_CONFIG.apiBase).replace(/\/$/, "");
+  return {
+    ...config,
+    apiBase,
+    streamUrl: config.streamUrl || `${apiBase}/v1/stream`,
+    token: config.token || ""
+  };
+}
 
 function authHeaders(extra = {}) {
   return CONFIG.token ? { ...extra, "X-Agent-Token": CONFIG.token } : extra;
@@ -78,6 +97,28 @@ function log(type, detail = "") {
 function setConnection(text) {
   ui.consoleStatus.textContent = text;
   log("connection", text);
+}
+
+function initConfigPanel() {
+  ui.configApiBase.value = CONFIG.apiBase;
+  ui.configToken.value = CONFIG.token;
+}
+
+function openConfig() {
+  initConfigPanel();
+  ui.configPanel.hidden = false;
+}
+
+function closeConfig() {
+  ui.configPanel.hidden = true;
+}
+
+function saveConfig(apiBase, token) {
+  const next = normalizeConfig({ apiBase: apiBase.trim(), token: token.trim(), stream: true });
+  localStorage.setItem("auri-hmi-config", JSON.stringify(next));
+  CONFIG = next;
+  log("config", `saved ${CONFIG.apiBase}`);
+  window.location.reload();
 }
 
 function friendlyError(error) {
@@ -343,6 +384,23 @@ ui.tabs.addEventListener("click", (event) => {
   activeDraft = button.dataset.draft;
   ui.tabs.querySelectorAll("button").forEach((item) => item.classList.toggle("active", item === button));
   renderDraft();
+});
+
+ui.configBtn.addEventListener("click", openConfig);
+ui.closeConfig.addEventListener("click", closeConfig);
+ui.configPanel.addEventListener("click", (event) => {
+  if (event.target === ui.configPanel) closeConfig();
+});
+ui.usePublicAgent.addEventListener("click", () => {
+  ui.configApiBase.value = PUBLIC_AGENT_API;
+});
+ui.useLocalAgent.addEventListener("click", () => {
+  ui.configApiBase.value = DEFAULT_CONFIG.apiBase;
+  ui.configToken.value = "";
+});
+ui.configForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  saveConfig(ui.configApiBase.value, ui.configToken.value);
 });
 
 window.AURI_HMI = {

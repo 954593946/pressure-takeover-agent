@@ -230,6 +230,7 @@
     <footer class="vehicle-bar">
       <div class="climate"><button>−</button><strong>22.0°</strong><button>+</button><span>AUTO · 座椅低</span></div>
       <div class="voice"><i></i><strong id="voiceHint">手机端可语音创建任务</strong></div>
+      <button id="configBtn" class="config-entry" type="button">Agent</button>
       <button id="confirmBtn" class="confirm" disabled><strong id="confirmLabel">无需确认</strong><span id="confirmSub">等待风险成立</span></button>
     </footer>
 
@@ -250,6 +251,32 @@
       <div class="timeline" id="timeline"></div>
     </section>
   </main>
+
+  <section class="config-panel" id="configPanel" aria-label="Agent 连接配置" hidden>
+    <form class="config-card" id="configForm">
+      <header>
+        <div>
+          <span>Agent Connection</span>
+          <strong>连接配置</strong>
+        </div>
+        <button id="closeConfig" type="button" aria-label="关闭">×</button>
+      </header>
+      <label>
+        <span>Agent API</span>
+        <input id="configApiBase" autocomplete="off" placeholder="https://auri-agent-api.onrender.com" />
+      </label>
+      <label>
+        <span>Team Token</span>
+        <input id="configToken" type="password" autocomplete="off" placeholder="仅保存在本浏览器，不写入仓库" />
+      </label>
+      <div class="config-actions">
+        <button id="usePublicAgent" type="button">公网 Agent</button>
+        <button id="useLocalAgent" type="button">本地 Agent</button>
+        <button class="primary" type="submit">保存并重连</button>
+      </div>
+      <p>团队协同时页面可以公网访问，但 Agent API 不能使用 127.0.0.1。Team Token 只保存在本浏览器。</p>
+    </form>
+  </section>
 
   <div class="portrait"><strong>请横屏展示 AURI 车机 HMI</strong><span>推荐 16:9 大屏或平板横屏。</span></div>
 

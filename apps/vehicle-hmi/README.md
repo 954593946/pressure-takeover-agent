@@ -23,6 +23,16 @@ HMI 是 World State 渲染器，不是状态机。页面启动后读取 `/v1/sta
 
 如果使用云端 Agent，可在本地调试页注入 `apiBase` 和 `token`。不要把团队 Token 或 API Key 提交到代码仓库。
 
+当前 HMI 底部提供 `Agent` 配置入口。团队协同时：
+
+1. 打开车机 HMI 页面。
+2. 点击底部 `Agent`。
+3. 选择 `公网 Agent` 或手动填写 `Agent API`。
+4. 在 `Team Token` 输入框填写团队令牌。
+5. 点击 `保存并重连`。
+
+配置保存在当前浏览器 `localStorage`，不会写入仓库。公网页面不能继续使用 `127.0.0.1` 作为 Agent API，因为那只代表访问者自己的电脑。
+
 ## 允许的写操作
 
 - 标准事件：`POST /v1/event`
