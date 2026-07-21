@@ -12,7 +12,7 @@ AURI 是一个面向车机、手机与腕上设备的多端 Agent。它在驾驶
 
 ## 团队同步：当前开发基线
 
-> 最后更新：2026-07-21。[Agent / contracts v0.2 基础 PR #4](https://github.com/954593946/pressure-takeover-agent/pull/4) 与 [Render 共享后端 PR #5](https://github.com/954593946/pressure-takeover-agent/pull/5) 已合并；[LangChain Agent PR #11](https://github.com/954593946/pressure-takeover-agent/pull/11) 的独立公网实例已通过真实调用验收。`contracts v0.2` 是当前共享实现基线，仍需各端逐字段评审；发现问题必须通过契约变更 PR 处理，不得在端内复制后自行修改。
+> 最后更新：2026-07-21。[Agent / contracts v0.2 基础 PR #4](https://github.com/954593946/pressure-takeover-agent/pull/4) 与 [Render 共享后端 PR #5](https://github.com/954593946/pressure-takeover-agent/pull/5) 已合并；[LangChain Agent PR #11](https://github.com/954593946/pressure-takeover-agent/pull/11) 的独立公网实例已通过真实调用验收；[完整 LangChain 工具编排 PR #15](https://github.com/954593946/pressure-takeover-agent/pull/15) 已提交团队评审。`contracts v0.2` 是当前共享实现基线，仍需各端逐字段评审；发现问题必须通过契约变更 PR 处理，不得在端内复制后自行修改。
 
 | 模块 | 当前可用状态 | 其他成员现在可以做什么 |
 |---|---|---|
@@ -25,6 +25,8 @@ AURI 是一个面向车机、手机与腕上设备的多端 Agent。它在驾驶
 ## 团队快速接入：公网 Agent
 
 当前推荐的 LangChain 共享后端：
+
+> PR #15 合并并由 Render 完成部署后，才可在共享实例使用完整工具编排。伙伴可通过 `/health` 的 `agent_tools_enabled=true` 和 `agent_last_tools` 判断新版本是否已经上线；部署前共享实例仍可能运行 PR #11 的任务解析版本。
 
 ```text
 API Base URL: https://auri-langchain-agent-api.onrender.com
