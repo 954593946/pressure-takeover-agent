@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.pressureagent.mobile.data.repository.ConnectionStatus
 import com.pressureagent.mobile.domain.model.*
 import com.pressureagent.mobile.ui.theme.*
 import java.util.Locale
@@ -112,7 +113,36 @@ fun ChatScreen(
                         }
                         Spacer(Modifier.width(10.dp))
                         Column {
-                            Text("AURI", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = AuriNavy)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("AURI", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = AuriNavy)
+                                Spacer(Modifier.width(6.dp))
+                                // Connection status dot
+                                val connColor = when (state.connectionStatus) {
+                                    ConnectionStatus.CONNECTED -> AuriSuccess
+                                    ConnectionStatus.POLLING -> AuriWarning
+                                    ConnectionStatus.DISCONNECTED -> AuriCritical
+                                    ConnectionStatus.INITIALIZING -> Color.Gray
+                                }
+                                val connLabel = when (state.connectionStatus) {
+                                    ConnectionStatus.CONNECTED -> "已连接"
+                                    ConnectionStatus.POLLING -> "轮询中"
+                                    ConnectionStatus.DISCONNECTED -> "已断开"
+                                    ConnectionStatus.INITIALIZING -> "连接中"
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(connColor)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    connLabel,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = connColor,
+                                    fontSize = 10.sp,
+                                )
+                            }
                             if (!state.isCompanionMode && state.stage != Stage.OFF_VEHICLE_IDLE) {
                                 Text(state.stageLabel, style = MaterialTheme.typography.labelSmall, color = AuriNavy.copy(alpha = 0.5f))
                             }

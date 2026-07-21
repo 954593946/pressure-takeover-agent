@@ -5,14 +5,18 @@
 ## 快速开始
 
 ```bash
-# Android Studio 打开 apps/mobile/ 目录，Sync Gradle，Run 'app'
-# 或命令行：
-./gradlew assembleDebug      # 编译
+# 1. 下载 sherpa-onnx 离线 ASR 模型（~80MB，只需一次）
+bash setup-sherpa.sh
+
+# 2. 编译 & 安装
+./gradlew assembleDebug      # 编译 APK
 ./gradlew installDebug       # 安装到模拟器/设备
 ./gradlew test               # 运行单元测试
 ```
 
-**Debug 构建自动启用 MockAgent**——无需后端即可看到完整 9 步 Demo 故事线。语音输入可通过 Mock 模拟。
+> **模型和 APK 都不入 git**（`.gitignore` 已排除 `assets/models/` 和 `/app/build`）。克隆后必须跑 `setup-sherpa.sh` 才能编译。
+
+**Debug 构建默认连接 Render 后端**，也可切回本地 MockAgent（修改 `app/build.gradle.kts` 中 `USE_MOCK_AGENT` 为 `true`）。
 
 ---
 
