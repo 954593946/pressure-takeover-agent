@@ -13,6 +13,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.isActive
@@ -35,11 +36,27 @@ class DefaultWorldStateRepository(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _worldState = MutableStateFlow<WorldState?>(null)
+    private val _connectionStatus = MutableStateFlow(ConnectionStatus.INITIALIZING)
 
     override val worldState: Flow<WorldState> = _worldState.filterNotNull()
+    override val connectionStatus: StateFlow<ConnectionStatus> = _connectionStatus.asStateFlow()
 
     private var sseActive = false
+    private var pollingActive = false
     private var pollingJob: kotlinx.coroutines.Job? = null
+    private var lastDataTimestamp = 0L
+
+    private fun updateConnectionStatus() {
+        val now = System.currentTimeMillis()
+        val stale = now - lastDataTimestamp > 15_000L
+        _connectionStatus.value = when {
+            sseActive -> ConnectionStatus.CONNECTED
+            pollingActive && !stale -> ConnectionStatus.POLLING
+            pollingActive && stale -> ConnectionStatus.DISCONNECTED
+            !sseActive && !pollingActive -> ConnectionStatus.INITIALIZING
+            else -> ConnectionStatus.DISCONNECTED
+        }
+    }
 
     init {
         connectSse()
@@ -69,13 +86,17 @@ class DefaultWorldStateRepository(
             try {
                 sseClient.observe().collect { state ->
                     sseActive = true
+                    lastDataTimestamp = System.currentTimeMillis()
                     _worldState.value = state
+                    updateConnectionStatus()
                     // Cancel polling once SSE is healthy
                     pollingJob?.cancel()
                     pollingJob = null
+                    pollingActive = false
                 }
             } catch (_: Exception) {
                 sseActive = false
+                updateConnectionStatus()
                 // Reconnect will be attempted on next Flow retry
             }
         }
@@ -87,9 +108,12 @@ class DefaultWorldStateRepository(
             delay(3_000L)
             while (isActive) {
                 if (!sseActive) {
+                    pollingActive = true
                     try {
                         _worldState.value = api.getWorldState()
+                        lastDataTimestamp = System.currentTimeMillis()
                     } catch (_: Exception) { /* keep last value */ }
+                    updateConnectionStatus()
                 }
                 delay(pollingIntervalMs)
             }

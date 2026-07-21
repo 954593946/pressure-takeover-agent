@@ -2,6 +2,7 @@ package com.pressureagent.mobile.ui.chat
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.pressureagent.mobile.data.repository.ConnectionStatus
 import com.pressureagent.mobile.data.repository.WorldStateRepository
 import com.pressureagent.mobile.domain.model.*
 import com.pressureagent.mobile.domain.voice.VoiceInputEvent
@@ -27,6 +28,8 @@ data class ChatUiState(
     val primarySurface: PrimarySurface = PrimarySurface.MOBILE,
     val stageLabel: String = "",
     val isCompanionMode: Boolean = false,
+    // Connection
+    val connectionStatus: ConnectionStatus = ConnectionStatus.INITIALIZING,
     // Chat
     val chatMessages: List<ChatItem> = emptyList(),
     // Input
@@ -64,7 +67,16 @@ class ChatViewModel @Inject constructor(
 
     init {
         observeWorldState()
+        observeConnectionStatus()
         refresh()
+    }
+
+    private fun observeConnectionStatus() {
+        viewModelScope.launch {
+            repository.connectionStatus.collect { status ->
+                _uiState.update { it.copy(connectionStatus = status) }
+            }
+        }
     }
 
     private fun observeWorldState() {
