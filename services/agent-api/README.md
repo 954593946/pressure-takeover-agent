@@ -1,12 +1,14 @@
 # AURI Agent API
 
-本服务是 AURI World State 的唯一写入者。v0.2 基础版已经实现事件幂等、确定性 L0-L3、主交互端、Profile、动作规划、一次性确认、模拟订单、Action Ledger、SSE/WebSocket 和 Bosch OpenAI 兼容适配器。
+本服务是 AURI World State 的唯一写入者。v0.2 基础版已经实现事件幂等、确定性 L0-L3、主交互端、Profile、动作规划、一次性确认、模拟订单、Action Ledger、SSE/WebSocket，以及基于 LangChain `create_agent` 的 Bosch 模型适配器。
+
+LangChain 只负责把自然语言拆成结构化 `Task`。它不拥有业务工具，也不决定压力等级、权限、金额、确认归属或执行；这些仍由可测试的确定性状态机负责。因此切换框架不会改变手机、车机、腕上和控制台使用的 v0.2 API。
 
 ## 运行环境
 
 - Python 3.11（不要使用当前尚未纳入项目支持范围的 Python 3.14）
 - 配置从仓库根目录 `.env` 或本目录 `.env` 读取
-- 外部 LLM 失败、超时或不支持 `response_format` 时自动回退到固定任务解析；安全等级、权限、金额和执行从不交给 LLM
+- 外部 LLM 失败或超时时自动回退到确定性任务解析；安全等级、权限、金额和执行从不交给 LLM
 
 ## 安装与启动
 
@@ -24,6 +26,8 @@ py -3.11 -m venv .venv
 - `GET http://127.0.0.1:8000/v1/state`
 - `GET http://127.0.0.1:8000/v1/stream`（SSE）
 - `WS  ws://127.0.0.1:8000/v1/ws`
+
+`GET /health` 中的 `llm_framework=langchain` 表示本构建使用 LangChain；提交过一次 `task.created` 后，`llm_last_mode=langchain_agent` 表示本次真实走过 Agent，`fallback` 表示模型失败后使用了安全降级。
 
 ## 配置
 
@@ -80,6 +84,8 @@ AGENT_STREAM_URL=https://auri-agent-api.onrender.com/v1/stream
 
 实际子域名以 Render 分配结果为准。所有 `/v1/*` 请求继续携带 `X-Agent-Token`；WebSocket 使用 `wss://<Render 域名>/v1/ws`。
 
+仓库根目录的 `render-langchain.yaml` 用于创建不影响现有共享后端的独立验证服务。创建 Blueprint 时选择分支 `codex/langchain-agent`、Blueprint Path `render-langchain.yaml`，并填写与现有服务相同的两个 Secret。验证完成并合并后，再把该服务分支切到 `main`；不要把 Bosch Key 写进 YAML、README 或客户端。
+
 免费实例适合团队开发联调，但空闲后会休眠，首次请求可能需要约一分钟唤醒；休眠、重启或重新部署都会清空当前进程内 World State。正式演示前应提前唤醒并执行一次标准场景重置，或临时升级到不会空闲休眠的实例。
 
 ## 最小测试
@@ -95,3 +101,4 @@ AGENT_STREAM_URL=https://auri-agent-api.onrender.com/v1/stream
 - 当前状态存储为进程内存，适合六周单实例 Demo；生产化前需换成持久存储并增加事务锁。
 - 消息、商品、库存、价格和订单均为显著标注的模拟数据。
 - SSE 是 P0 主实时通道，同时提供 `/v1/ws` 供需要 WebSocket 的客户端联调。
+- 当前 LangChain Agent 没有业务执行工具，仅承担结构化理解；后续增加工具时必须先定义权限、幂等键和确认边界。
