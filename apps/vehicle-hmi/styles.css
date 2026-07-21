@@ -384,9 +384,9 @@ svg { display: block; }
 
 .vehicle-bar {
   grid-column: 2 / 5; border-radius: 26px; background: #0b111a;
-  display: grid; grid-template-columns: 250px minmax(350px,1fr) 390px; gap: 10px; padding: 10px;
+  display: grid; grid-template-columns: 250px minmax(320px,1fr) 92px 390px; gap: 10px; padding: 10px;
 }
-.climate,.voice,.confirm { height: 62px; border: 1px solid rgba(255,255,255,.12); border-radius: 20px; background: rgba(255,255,255,.07); color: white; }
+.climate,.voice,.confirm,.config-entry { height: 62px; border: 1px solid rgba(255,255,255,.12); border-radius: 20px; background: rgba(255,255,255,.07); color: white; }
 .climate { display: flex; align-items: center; gap: 10px; padding: 0 12px; }
 .climate button { width: 36px; height: 36px; border-radius: 12px; background: rgba(255,255,255,.12); color: #fff; }
 .climate strong { font-size: 23px; }
@@ -394,10 +394,91 @@ svg { display: block; }
 .voice { display: flex; align-items: center; gap: 13px; padding: 0 18px; }
 .voice i { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(90deg,transparent 30%,#35d8ff 30% 38%,transparent 38% 46%,#35d8ff 46% 54%,transparent 54% 62%,#35d8ff 62% 70%,transparent 70%),rgba(53,216,255,.12); border: 1px solid rgba(53,216,255,.4); }
 .voice strong { font-size: 17px; }
+.config-entry { cursor: pointer; font-weight: 900; letter-spacing: 0; }
 .confirm { text-align: left; color: #aeb8c7; padding: 0 19px; }
 .confirm strong { display: block; font-size: 21px; }
 .confirm span { display: block; margin-top: 3px; font-size: 13px; }
 .confirm.enabled { cursor: pointer; color: #06111d; background: linear-gradient(135deg,#32e39d,#22c88d); border-color: rgba(50,227,157,.5); }
+
+.config-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: rgba(5, 7, 10, .58);
+  backdrop-filter: blur(14px);
+}
+.config-panel[hidden] { display: none; }
+.config-card {
+  width: min(520px, calc(100vw - 36px));
+  border-radius: 24px;
+  padding: 22px;
+  display: grid;
+  gap: 16px;
+  background: rgba(255,255,255,.96);
+  border: 1px solid rgba(255,255,255,.6);
+  box-shadow: 0 30px 90px rgba(0,0,0,.4);
+}
+.config-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.config-card header span,.config-card label span {
+  display: block;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.config-card header strong { display: block; margin-top: 4px; font-size: 24px; }
+.config-card header button {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  color: var(--text);
+  background: #eef3f8;
+  cursor: pointer;
+  font-size: 24px;
+}
+.config-card label { display: grid; gap: 8px; }
+.config-card input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+  color: var(--text);
+  background: white;
+  font: inherit;
+  outline: none;
+}
+.config-card input:focus {
+  border-color: rgba(22,119,255,.7);
+  box-shadow: 0 0 0 4px rgba(22,119,255,.12);
+}
+.config-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.2fr;
+  gap: 10px;
+}
+.config-actions button {
+  min-height: 46px;
+  border-radius: 14px;
+  color: #18304e;
+  background: #edf3f8;
+  cursor: pointer;
+}
+.config-actions .primary {
+  color: white;
+  background: linear-gradient(135deg,var(--blue),#0c55c2);
+}
+.config-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
 
 .demo {
   position: fixed; left: auto; right: 18px; bottom: 104px; top: auto;
@@ -420,4 +501,4 @@ svg { display: block; }
 
 .portrait { display: none; }
 @media(max-aspect-ratio:1/1){.screen{display:none}.portrait{min-height:100vh;display:grid;place-content:center;text-align:center;gap:12px;padding:32px;background:#07111d;color:#fff}.portrait strong{font-size:24px}.portrait span{color:#aeb8c7}}
-@media(max-width:1380px){.screen{grid-template-columns:68px 230px minmax(560px,1fr) 330px}.topbar{grid-template-columns:minmax(280px,1fr) 440px}.vehicle-bar{grid-template-columns:230px minmax(310px,1fr) 350px}.demo{width:320px}}
+@media(max-width:1380px){.screen{grid-template-columns:68px 230px minmax(560px,1fr) 330px}.topbar{grid-template-columns:minmax(280px,1fr) 440px}.vehicle-bar{grid-template-columns:230px minmax(270px,1fr) 82px 330px}.demo{width:320px}}
