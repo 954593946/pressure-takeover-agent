@@ -30,6 +30,8 @@ data class ChatUiState(
     val isCompanionMode: Boolean = false,
     // Connection
     val connectionStatus: ConnectionStatus = ConnectionStatus.INITIALIZING,
+    // TTS
+    val isTtsEnabled: Boolean = false,
     // Chat
     val chatMessages: List<ChatItem> = emptyList(),
     // Input
@@ -104,7 +106,7 @@ class ChatViewModel @Inject constructor(
                 val conclusion = ws.output?.conclusion.orEmpty()
                 if (conclusion.isNotBlank() && conclusion != lastConclusion) {
                     newChats.add(ChatItem(id = "msg_${ws.revision}", text = conclusion, isUser = false))
-                    voiceOutput.speak(conclusion)
+                    if (_uiState.value.isTtsEnabled) voiceOutput.speak(conclusion)
                     lastConclusion = conclusion
                 }
 
@@ -153,8 +155,12 @@ class ChatViewModel @Inject constructor(
     // ─── Voice ─────────────────────────────────────────────────────────────
 
     fun onVoiceToggle() {
-        android.util.Log.d("AURI-VOICE", "onVoiceToggle called, isListening=${voiceInput.isListening}")
-        if (voiceInput.isListening) {
+        // ★ Use UI state as the single source of truth — voiceInput.isListening
+        //   is only set after the mic actually opens, which creates a race window
+        //   where the UI shows "stop" but the guard thinks we're starting.
+        val currentlyListening = _uiState.value.isListening
+        android.util.Log.d("AURI-VOICE", "onVoiceToggle called, uiState.isListening=$currentlyListening, provider.isListening=${voiceInput.isListening}")
+        if (currentlyListening) {
             // Stop recognition and send whatever was recognized so far
             voiceInput.stop()
             voiceJob?.cancel()
@@ -260,6 +266,8 @@ class ChatViewModel @Inject constructor(
             }
         }
     }
+
+    fun toggleTts() { _uiState.update { it.copy(isTtsEnabled = !it.isTtsEnabled) } }
 
     fun dismissError() { _uiState.update { it.copy(error = null) } }
 
