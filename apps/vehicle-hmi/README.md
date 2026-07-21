@@ -14,7 +14,6 @@ HMI 是 World State 渲染器，不是状态机。页面启动后读取 `/v1/sta
 <script>
   window.AURI_CONFIG = {
     apiBase: "http://127.0.0.1:8000",
-    streamUrl: "http://127.0.0.1:8000/v1/stream",
     token: "",
     stream: true
   };
