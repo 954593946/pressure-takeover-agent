@@ -1,8 +1,8 @@
 const DEFAULT_CONFIG = {
   apiBase: "http://127.0.0.1:8000",
-  streamUrl: "http://127.0.0.1:8000/v1/stream",
   token: "",
-  stream: true
+  stream: true,
+  pollIntervalMs: 3000
 };
 
 const PUBLIC_AGENT_API = "https://auri-agent-api.onrender.com";
@@ -12,7 +12,9 @@ const queryConfig = {
   ...(queryParams.get("apiBase") ? { apiBase: queryParams.get("apiBase") } : {}),
   ...(queryParams.get("streamUrl") ? { streamUrl: queryParams.get("streamUrl") } : {})
 };
-let CONFIG = normalizeConfig({ ...DEFAULT_CONFIG, ...storedConfig, ...(window.AURI_CONFIG || {}), ...queryConfig });
+const windowConfig = window.AURI_CONFIG || {};
+const hasExplicitStreamUrl = Boolean(windowConfig.streamUrl || queryConfig.streamUrl);
+let CONFIG = normalizeConfig({ ...DEFAULT_CONFIG, ...storedConfig, ...windowConfig, ...queryConfig }, hasExplicitStreamUrl);
 
 const DRAFTS = {
   teacher: "老师您好，我这边路况拥堵，预计会晚到约 18 分钟。请您帮忙照看一下孩子，我到达后会立即联系您。（模拟消息）",
@@ -67,15 +69,17 @@ let worldState = null;
 let activeDraft = "teacher";
 let lastRevision = -1;
 let eventSeq = 0;
+let pollTimer = null;
 const timeline = [];
 
-function normalizeConfig(config) {
+function normalizeConfig(config, useProvidedStreamUrl = false) {
   const apiBase = (config.apiBase || DEFAULT_CONFIG.apiBase).replace(/\/$/, "");
   return {
     ...config,
     apiBase,
-    streamUrl: config.streamUrl || `${apiBase}/v1/stream`,
-    token: config.token || ""
+    streamUrl: useProvidedStreamUrl && config.streamUrl ? config.streamUrl : `${apiBase}/v1/stream`,
+    token: config.token || "",
+    pollIntervalMs: Number(config.pollIntervalMs || DEFAULT_CONFIG.pollIntervalMs)
   };
 }
 
@@ -115,7 +119,12 @@ function closeConfig() {
 
 function saveConfig(apiBase, token) {
   const next = normalizeConfig({ apiBase: apiBase.trim(), token: token.trim(), stream: true });
-  localStorage.setItem("auri-hmi-config", JSON.stringify(next));
+  localStorage.setItem("auri-hmi-config", JSON.stringify({
+    apiBase: next.apiBase,
+    token: next.token,
+    stream: true,
+    pollIntervalMs: next.pollIntervalMs
+  }));
   CONFIG = next;
   log("config", `saved ${CONFIG.apiBase}`);
   window.location.reload();
@@ -157,7 +166,7 @@ async function loadState(reason = "load") {
 
 function consumeWorldState(next, reason = "state") {
   if (!next || next.schema_version !== "0.2.0") return;
-  if (worldState && next.session_id === worldState.session_id && next.revision < lastRevision) return;
+  if (worldState && next.session_id === worldState.session_id && next.revision <= lastRevision) return;
   worldState = next;
   lastRevision = next.revision;
   log(reason, `${next.stage} r${next.revision}`);
@@ -207,7 +216,7 @@ async function resetSession() {
 async function connectStream() {
   if (!CONFIG.stream) return;
   try {
-    const response = await fetch(CONFIG.streamUrl || `${CONFIG.apiBase}/v1/stream`, {
+    const response = await fetch(CONFIG.streamUrl, {
       headers: authHeaders({ Accept: "text/event-stream" })
     });
     if (!response.ok || !response.body) throw new Error(`stream ${response.status}`);
@@ -227,6 +236,13 @@ async function connectStream() {
     setConnection(`状态流断开：${friendlyError(error)}`);
     setTimeout(connectStream, 2500);
   }
+}
+
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(() => {
+    loadState("poll").catch((error) => log("poll-error", friendlyError(error)));
+  }, CONFIG.pollIntervalMs);
 }
 
 function parseStreamChunk(chunk) {
@@ -413,7 +429,11 @@ window.AURI_HMI = {
 };
 
 render();
-loadState("load").then(connectStream).catch((error) => {
+loadState("load").then(() => {
+  connectStream();
+  startPolling();
+}).catch((error) => {
   setConnection(`连接失败：${friendlyError(error)}`);
+  startPolling();
   render();
 });

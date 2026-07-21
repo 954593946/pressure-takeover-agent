@@ -33,6 +33,13 @@ HMI 是 World State 渲染器，不是状态机。页面启动后读取 `/v1/sta
 
 配置保存在当前浏览器 `localStorage`，不会写入仓库。公网页面不能继续使用 `127.0.0.1` 作为 Agent API，因为那只代表访问者自己的电脑。
 
+HMI 同时兼容本地 Agent 和公网 Agent：
+
+- 本地开发：`http://127.0.0.1:8000`
+- 团队公网联调：`https://auri-agent-api.onrender.com`
+
+状态同步采用 SSE `/v1/stream` 加 `/v1/state` 轮询兜底。公网环境中如果 SSE 被浏览器、代理或部署平台中断，HMI 仍会通过轮询更新状态。
+
 ## 允许的写操作
 
 - 标准事件：`POST /v1/event`
