@@ -1,14 +1,16 @@
 services:
   - type: web
-    name: auri-agent-api
+    name: auri-langchain-agent-api
     runtime: python
     plan: free
     region: singapore
+    repo: https://github.com/954593946/pressure-takeover-agent.git
+    branch: codex/langchain-agent
     rootDir: services/agent-api
     buildCommand: python -m pip install .
     startCommand: python -m uvicorn auri_agent.app:app --host 0.0.0.0 --port $PORT --no-access-log
     healthCheckPath: /health
-    autoDeployTrigger: checksPass
+    autoDeployTrigger: commit
     numInstances: 1
     envVars:
       - key: PYTHON_VERSION
