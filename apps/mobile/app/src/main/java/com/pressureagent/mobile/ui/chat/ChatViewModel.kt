@@ -2,6 +2,8 @@ package com.pressureagent.mobile.ui.chat
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.pressureagent.mobile.data.repository.ChatRepository
+import com.pressureagent.mobile.data.repository.ChatStreamEvent
 import com.pressureagent.mobile.data.repository.ConnectionStatus
 import com.pressureagent.mobile.data.repository.WorldStateRepository
 import com.pressureagent.mobile.domain.model.*
@@ -48,6 +50,7 @@ data class ChatUiState(
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     private val repository: WorldStateRepository,
+    private val chatRepository: ChatRepository,
     private val voiceInput: VoiceInputProvider,
     private val voiceOutput: VoiceOutputProvider,
 ) : ViewModel() {
@@ -64,6 +67,8 @@ class ChatViewModel @Inject constructor(
     private var lastConfirmationId: String? = null
     private var currentSessionId: String = ""
     private var voiceJob: Job? = null
+    private var chatJob: Job? = null
+    private var chatConfirmationId: String? = null
 
     private var firstStateReceived = false
 
@@ -214,6 +219,70 @@ class ChatViewModel @Inject constructor(
     }
 
     private fun submitUtterance(text: String) {
+        chatJob?.cancel()
+        chatJob = viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            val aiId = UUID.randomUUID().toString()
+            val aiPlaceholder = ChatItem(id = aiId, text = "", isUser = false)
+            _uiState.update { it.copy(chatMessages = it.chatMessages + aiPlaceholder) }
+
+            try {
+                chatRepository.sendMessage(
+                    message = text,
+                    inputMode = "text",
+                    sessionId = currentSessionId,
+                ).collect { event ->
+                    when (event) {
+                        is ChatStreamEvent.TextDelta -> _uiState.update { state ->
+                            val msgs = state.chatMessages.toMutableList()
+                            val idx = msgs.indexOfLast { it.id == aiId }
+                            if (idx >= 0) msgs[idx] = msgs[idx].copy(text = msgs[idx].text + event.content)
+                            state.copy(chatMessages = msgs)
+                        }
+                        is ChatStreamEvent.ToolCallStarted -> _uiState.update { state ->
+                            val msgs = state.chatMessages.toMutableList()
+                            val idx = msgs.indexOfLast { it.id == aiId }
+                            if (idx >= 0) msgs[idx] = msgs[idx].copy(text = msgs[idx].text + "\n\n🔧 ${event.functionName}")
+                            state.copy(chatMessages = msgs)
+                        }
+                        is ChatStreamEvent.ToolCallResult -> _uiState.update { state ->
+                            val msgs = state.chatMessages.toMutableList()
+                            val idx = msgs.indexOfLast { it.id == aiId }
+                            if (idx >= 0 && event.summary.isNotBlank()) msgs[idx] = msgs[idx].copy(text = msgs[idx].text + "\n✅ ${event.summary}")
+                            state.copy(chatMessages = msgs)
+                        }
+                        is ChatStreamEvent.ConfirmationRequired -> {
+                            chatConfirmationId = event.confirmationId
+                            _uiState.update { state ->
+                                state.copy(
+                                    pendingConfirmation = Confirmation(
+                                        confirmationId = event.confirmationId,
+                                        actionIds = event.actionIds,
+                                        expiresAt = "", status = ConfirmationStatus.PENDING,
+                                        confirmedBy = null, ownerSurface = "mobile",
+                                    ),
+                                    conclusion = event.prompt,
+                                )
+                            }
+                        }
+                        is ChatStreamEvent.Done -> {
+                            if (event.sessionId.isNotBlank()) currentSessionId = event.sessionId
+                            _uiState.update { it.copy(isLoading = false) }
+                        }
+                        is ChatStreamEvent.Error -> {
+                            _uiState.update { it.copy(isLoading = false) }
+                            submitEventFallback(text)
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                _uiState.update { it.copy(isLoading = false) }
+                submitEventFallback(text)
+            }
+        }
+    }
+
+    private fun submitEventFallback(text: String) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             try {
@@ -237,12 +306,32 @@ class ChatViewModel @Inject constructor(
 
     fun confirm() {
         val c = _uiState.value.pendingConfirmation ?: return
-        submitConfirmation(c.confirmationId, "accepted")
+        if (chatConfirmationId != null) {
+            submitChatConfirmation(c.confirmationId, "accept")
+        } else {
+            submitConfirmation(c.confirmationId, "accepted")
+        }
     }
 
     fun reject() {
         val c = _uiState.value.pendingConfirmation ?: return
-        submitConfirmation(c.confirmationId, "rejected")
+        if (chatConfirmationId != null) {
+            submitChatConfirmation(c.confirmationId, "reject")
+        } else {
+            submitConfirmation(c.confirmationId, "rejected")
+        }
+    }
+
+    private fun submitChatConfirmation(confirmationId: String, decision: String) {
+        viewModelScope.launch {
+            try {
+                chatRepository.confirmAction(currentSessionId, confirmationId, decision)
+                chatConfirmationId = null
+                _uiState.update { it.copy(pendingConfirmation = null) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = e.message) }
+            }
+        }
     }
 
     private fun submitConfirmation(confirmationId: String, decision: String) {
