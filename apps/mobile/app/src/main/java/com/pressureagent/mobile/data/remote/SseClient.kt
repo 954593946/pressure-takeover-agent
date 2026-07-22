@@ -1,5 +1,6 @@
 package com.pressureagent.mobile.data.remote
 
+import com.pressureagent.mobile.data.local.AppLogger
 import com.pressureagent.mobile.domain.model.WorldState
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
@@ -46,7 +47,8 @@ class SseClient(
         engine {
             config {
                 connectTimeout(30, TimeUnit.SECONDS)
-                readTimeout(0, TimeUnit.MILLISECONDS) // unlimited for SSE
+                readTimeout(300, TimeUnit.SECONDS) // 5 min SSE timeout, reconnect on expiry
+                retryOnConnectionFailure(true)
             }
         }
     }
@@ -57,8 +59,12 @@ class SseClient(
      */
     fun observe(): Flow<WorldState> = callbackFlow {
         var delayMs = reconnectDelayMs
+        var attemptCount = 0
+        AppLogger.i("StateSSE", "GET /v1/stream starting, token=${if (token.isNotBlank()) "yes" else "no"}")
         while (isActive) {
+            attemptCount++
             try {
+                AppLogger.d("StateSSE", "SSE connect attempt #$attemptCount")
                 client.get("$baseUrl/v1/stream") {
                     headers {
                         append("Accept", "text/event-stream")
@@ -67,6 +73,8 @@ class SseClient(
                         }
                     }
                 }.let { response ->
+                    AppLogger.i("StateSSE", "SSE connected, status=${response.status.value}")
+                    var frameCount = 0
                     val channel = response.bodyAsChannel()
                     while (isActive && !channel.isClosedForRead) {
                         val line = channel.readUTF8Line() ?: continue
@@ -76,17 +84,20 @@ class SseClient(
                                 try {
                                     val ws = json.decodeFromString(WorldState.serializer(), data)
                                     trySend(ws)
+                                    frameCount++
                                 } catch (_: Exception) { /* skip malformed frames */ }
                             }
                         }
                     }
+                    AppLogger.i("StateSSE", "SSE stream ended, frames=$frameCount")
                 }
                 // Connection ended cleanly — reset backoff
                 delayMs = reconnectDelayMs
-            } catch (_: Exception) {
-                // Connection error — retry with backoff
+            } catch (e: Exception) {
+                AppLogger.w("StateSSE", "SSE error (attempt #$attemptCount): ${e.javaClass.simpleName}: ${e.message}")
             }
             if (isActive) {
+                AppLogger.d("StateSSE", "Reconnecting in ${delayMs}ms")
                 delay(delayMs)
                 delayMs = (delayMs * 2).coerceAtMost(maxReconnectDelayMs)
             }

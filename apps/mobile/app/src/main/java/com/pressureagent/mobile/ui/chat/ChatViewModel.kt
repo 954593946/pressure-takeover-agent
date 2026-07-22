@@ -2,6 +2,7 @@ package com.pressureagent.mobile.ui.chat
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.pressureagent.mobile.data.local.AppLogger
 import com.pressureagent.mobile.data.repository.ChatRepository
 import com.pressureagent.mobile.data.repository.ChatStreamEvent
 import com.pressureagent.mobile.data.repository.ConnectionStatus
@@ -88,7 +89,8 @@ class ChatViewModel @Inject constructor(
 
     private fun observeWorldState() {
         viewModelScope.launch {
-            repository.worldState.collect { ws ->
+            try {
+                repository.worldState.collect { ws ->
                 // Auto-reset stale session on first connect
                 if (!firstStateReceived) {
                     firstStateReceived = true
@@ -145,6 +147,9 @@ class ChatViewModel @Inject constructor(
                         chatMessages = if (newChats.isNotEmpty()) it.chatMessages + newChats else it.chatMessages,
                     )
                 }
+            }
+            } catch (e: Exception) {
+                AppLogger.e("ChatVM", "WorldState collection error", e)
             }
         }
     }
@@ -227,31 +232,44 @@ class ChatViewModel @Inject constructor(
             _uiState.update { it.copy(chatMessages = it.chatMessages + aiPlaceholder) }
 
             try {
+                var receivedContent = false
+                AppLogger.i("ChatVM", "sendMessage via ChatRepository: '${text.take(50)}'")
                 chatRepository.sendMessage(
                     message = text,
                     inputMode = "text",
                     sessionId = currentSessionId,
                 ).collect { event ->
+                    AppLogger.d("ChatVM", "ChatStreamEvent: ${event::class.simpleName}")
                     when (event) {
-                        is ChatStreamEvent.TextDelta -> _uiState.update { state ->
+                        is ChatStreamEvent.TextDelta -> {
+                            receivedContent = true
+                            _uiState.update { state ->
                             val msgs = state.chatMessages.toMutableList()
                             val idx = msgs.indexOfLast { it.id == aiId }
                             if (idx >= 0) msgs[idx] = msgs[idx].copy(text = msgs[idx].text + event.content)
                             state.copy(chatMessages = msgs)
                         }
-                        is ChatStreamEvent.ToolCallStarted -> _uiState.update { state ->
+                        }
+                        is ChatStreamEvent.ToolCallStarted -> {
+                            receivedContent = true
+                            _uiState.update { state ->
                             val msgs = state.chatMessages.toMutableList()
                             val idx = msgs.indexOfLast { it.id == aiId }
                             if (idx >= 0) msgs[idx] = msgs[idx].copy(text = msgs[idx].text + "\n\n🔧 ${event.functionName}")
                             state.copy(chatMessages = msgs)
                         }
-                        is ChatStreamEvent.ToolCallResult -> _uiState.update { state ->
+                        }
+                        is ChatStreamEvent.ToolCallResult -> {
+                            receivedContent = true
+                            _uiState.update { state ->
                             val msgs = state.chatMessages.toMutableList()
                             val idx = msgs.indexOfLast { it.id == aiId }
                             if (idx >= 0 && event.summary.isNotBlank()) msgs[idx] = msgs[idx].copy(text = msgs[idx].text + "\n✅ ${event.summary}")
                             state.copy(chatMessages = msgs)
                         }
+                        }
                         is ChatStreamEvent.ConfirmationRequired -> {
+                            receivedContent = true
                             chatConfirmationId = event.confirmationId
                             _uiState.update { state ->
                                 state.copy(
@@ -275,7 +293,18 @@ class ChatViewModel @Inject constructor(
                         }
                     }
                 }
-            } catch (_: Exception) {
+                // If flow completed without any content or Done, fall back to Event API
+                if (!receivedContent) {
+                    AppLogger.w("ChatVM", "Chat stream returned no content, falling back to Event API")
+                    _uiState.update { it.copy(isLoading = false) }
+                    // Remove the empty AI placeholder
+                    _uiState.update { state ->
+                        state.copy(chatMessages = state.chatMessages.filter { it.id != aiId })
+                    }
+                    submitEventFallback(text)
+                }
+            } catch (e: Exception) {
+                AppLogger.e("ChatVM", "Chat stream exception, falling back to Event API", e)
                 _uiState.update { it.copy(isLoading = false) }
                 submitEventFallback(text)
             }
@@ -286,6 +315,7 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             try {
+                AppLogger.i("ChatVM", "submitEvent USER_UTTERANCE via Event API")
                 repository.submitEvent(
                     Event(
                         eventId = UUID.randomUUID().toString(),
@@ -296,7 +326,16 @@ class ChatViewModel @Inject constructor(
                         payload = buildJsonObject { put("text", text) },
                     )
                 )
+                AppLogger.i("ChatVM", "Event submitted OK, listening for world state update")
+                // Loading will be cleared by observeWorldState when the response arrives.
+                // Set a safety timeout to clear loading if no response within 15s.
+                kotlinx.coroutines.delay(15_000L)
+                if (_uiState.value.isLoading) {
+                    AppLogger.w("ChatVM", "No world state update within 15s of event submit")
+                    _uiState.update { it.copy(isLoading = false, error = "响应超时，请重试") }
+                }
             } catch (e: Exception) {
+                AppLogger.e("ChatVM", "submitEvent failed", e)
                 _uiState.update { it.copy(isLoading = false, error = e.message) }
             }
         }

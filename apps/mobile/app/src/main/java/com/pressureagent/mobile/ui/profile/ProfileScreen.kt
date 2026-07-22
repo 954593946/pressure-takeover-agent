@@ -24,6 +24,7 @@ fun ProfileScreen(
     viewModel: ProfileViewModel = hiltViewModel(),
     onNavigateToReview: () -> Unit = {},
     onNavigateToDebug: () -> Unit = {},
+    onNavigateToLogViewer: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
 
@@ -92,6 +93,16 @@ fun ProfileScreen(
             title = "调试模式",
             subtitle = "Mock 状态跳转、事件手动提交",
             onClick = onNavigateToDebug,
+        )
+
+        Spacer(Modifier.height(10.dp))
+
+        // ─── 日志查看器 ──────────────────────────────────────────────────────
+        EntryCard(
+            icon = "📋",
+            title = "日志查看器",
+            subtitle = "查看 App 运行日志，排查问题",
+            onClick = onNavigateToLogViewer,
         )
 
         Spacer(Modifier.height(10.dp))

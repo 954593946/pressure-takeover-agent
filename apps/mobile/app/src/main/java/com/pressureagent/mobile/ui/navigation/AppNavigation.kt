@@ -19,6 +19,7 @@ import androidx.navigation.compose.rememberNavController
 import com.pressureagent.mobile.ui.calendar.CalendarScreen
 import com.pressureagent.mobile.ui.chat.ChatScreen
 import com.pressureagent.mobile.ui.debug.DebugScreen
+import com.pressureagent.mobile.ui.log.LogViewerScreen
 import com.pressureagent.mobile.ui.profile.ProfileScreen
 import com.pressureagent.mobile.ui.review.ReviewScreen
 import com.pressureagent.mobile.ui.splash.SplashScreen
@@ -94,6 +95,7 @@ fun AppNavigation() {
                 ProfileScreen(
                     onNavigateToReview = { navController.navigate(Screen.Review.route) },
                     onNavigateToDebug = { navController.navigate(Screen.Debug.route) },
+                    onNavigateToLogViewer = { navController.navigate(Screen.LogViewer.route) },
                 )
             }
 
@@ -106,6 +108,9 @@ fun AppNavigation() {
             }
             composable(Screen.Debug.route) {
                 DebugScreen()
+            }
+            composable(Screen.LogViewer.route) {
+                LogViewerScreen(onNavigateBack = { navController.popBackStack() })
             }
         }
     }
