@@ -1,5 +1,6 @@
 package com.pressureagent.mobile.data.remote
 
+import com.pressureagent.mobile.data.local.AppLogger
 import com.pressureagent.mobile.data.repository.ChatStreamEvent
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
@@ -52,6 +53,7 @@ private data class ChatStreamRequest(
 class ChatSseClient(
     private val baseUrl: String,
     private val json: Json = Json { ignoreUnknownKeys = true },
+    private val token: String = "",
 ) {
 
     private val client = HttpClient(OkHttp) {
@@ -61,7 +63,8 @@ class ChatSseClient(
         engine {
             config {
                 connectTimeout(10, TimeUnit.SECONDS)
-                readTimeout(0, TimeUnit.MILLISECONDS) // unlimited for SSE streaming
+                readTimeout(120, TimeUnit.SECONDS) // finite timeout to prevent thread leak on cancel
+                retryOnConnectionFailure(true)
             }
         }
     }
@@ -75,6 +78,7 @@ class ChatSseClient(
         inputMode: String = "text",
         sessionId: String? = null,
     ): Flow<ChatStreamEvent> = callbackFlow {
+        AppLogger.i("ChatSSE", "POST /v1/chat msg='${message.take(50)}' session=$sessionId token=${if (token.isNotBlank()) "yes" else "no"}")
         try {
             val requestBody = ChatStreamRequest(
                 message = message,
@@ -83,10 +87,22 @@ class ChatSseClient(
             )
             client.post("$baseUrl/v1/chat") {
                 contentType(ContentType.Application.Json)
-                headers { append("Accept", "text/event-stream") }
+                headers {
+                    append("Accept", "text/event-stream")
+                    if (token.isNotBlank()) {
+                        append("X-Agent-Token", token)
+                    }
+                }
                 setBody(json.encodeToString(requestBody))
             }.let { response ->
+                AppLogger.i("ChatSSE", "Response status=${response.status.value}")
+                if (response.status.value !in 200..299) {
+                    AppLogger.e("ChatSSE", "Non-2xx status: ${response.status.value}")
+                    trySend(ChatStreamEvent.Error("Chat endpoint returned ${response.status.value}"))
+                    return@callbackFlow
+                }
                 val channel = response.bodyAsChannel()
+                var eventCount = 0
                 while (isActive && !channel.isClosedForRead) {
                     val line = channel.readUTF8Line() ?: continue
                     if (line.startsWith("data: ")) {
@@ -94,16 +110,19 @@ class ChatSseClient(
                         if (data.isNotEmpty()) {
                             val event = parseEvent(data)
                             if (event != null) {
+                                eventCount++
                                 trySend(event)
                             }
                         }
                     }
                 }
+                AppLogger.i("ChatSSE", "Stream ended, events=$eventCount")
             }
         } catch (e: Exception) {
+            AppLogger.e("ChatSSE", "Connection failed", e)
             trySend(ChatStreamEvent.Error(e.message ?: "Connection error"))
         }
-        awaitClose { client.close() }
+        awaitClose { AppLogger.d("ChatSSE", "Flow closed") }
     }
 
     private fun parseEvent(data: String): ChatStreamEvent? {

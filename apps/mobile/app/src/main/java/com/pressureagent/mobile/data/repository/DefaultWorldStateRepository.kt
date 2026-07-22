@@ -31,7 +31,7 @@ import java.io.Closeable
 class DefaultWorldStateRepository(
     private val api: AgentApiService,
     private val sseClient: SseClient,
-    private val pollingIntervalMs: Long = 1_000L,
+    private val pollingIntervalMs: Long = 5_000L,
 ) : WorldStateRepository, Closeable {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

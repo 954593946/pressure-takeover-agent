@@ -94,7 +94,11 @@ fun ChatScreen(
 
     LaunchedEffect(state.chatMessages.size) {
         if (state.chatMessages.isNotEmpty()) {
-            listState.animateScrollToItem(0)
+            // Scroll to the last item (bottom of chat) when new messages arrive
+            val lastIndex = listState.layoutInfo.totalItemsCount - 1
+            if (lastIndex >= 0) {
+                listState.animateScrollToItem(lastIndex)
+            }
         }
     }
 
