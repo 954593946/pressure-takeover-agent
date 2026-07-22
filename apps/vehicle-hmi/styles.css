@@ -77,14 +77,48 @@ svg { display: block; }
   align-items: center;
   gap: 9px;
 }
-.brand-mark {
-  width: 50px; height: 50px; border-radius: 17px;
-  display: grid; place-items: center;
-  color: var(--auri-ivory); font-weight: 900;
+.auri-logo { display: inline-flex; align-items: center; gap: 10px; }
+.logo-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 17px;
+  color: var(--auri-ivory);
   background: var(--auri-navy);
-  border: 1px solid rgba(212,175,122,.5);
+  border: 1px solid rgba(212,175,122,.52);
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.06), 0 0 24px rgba(212,175,122,.16);
 }
+.logo-icon b {
+  position: relative;
+  z-index: 2;
+  font-size: 31px;
+  line-height: 1;
+  font-weight: 900;
+  transform: scaleX(1.08);
+}
+.logo-icon i {
+  position: absolute;
+  z-index: 3;
+  width: 50px;
+  height: 15px;
+  border: 2px solid var(--auri-gold);
+  border-left-color: transparent;
+  border-right-color: transparent;
+  border-radius: 50%;
+  transform: rotate(-16deg) translateY(2px);
+  box-shadow: 0 0 10px rgba(212,175,122,.2);
+}
+.logo-word {
+  color: var(--auri-navy);
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+.brand-mark { width: 52px; height: 52px; }
+.brand-mark .logo-icon { width: 52px; height: 52px; }
 .launch {
   width: 55px; height: 58px; border-radius: 18px;
   display: grid; place-items: center; gap: 1px;
@@ -365,10 +399,26 @@ svg { display: block; }
   padding: 10px; display: grid; grid-template-rows: auto auto minmax(180px,1fr) auto auto; gap: 9px;
 }
 .agent-state,.conclusion,.actions,.drafts,.sync { border: 1px solid rgba(11,27,51,.12); border-radius: 18px; background: rgba(255,255,255,.72); padding: 12px; box-shadow: 0 10px 28px rgba(11,27,51,.08); }
-.agent-state { display: grid; grid-template-columns: 70px 1fr; gap: 12px; align-items: center; }
-.auri-orbit { position: relative; width: 64px; height: 64px; border-radius: 20px; display: grid; place-items: center; color: var(--auri-ivory); background: var(--auri-navy); border: 1px solid rgba(212,175,122,.5); box-shadow: 0 14px 32px rgba(11,27,51,.22); }
-.auri-orbit strong { font-size: 30px; line-height: 1; font-weight: 900; }
-.auri-orbit i { position: absolute; width: 58px; height: 18px; border: 2px solid var(--auri-gold); border-left-color: transparent; border-right-color: transparent; border-radius: 50%; transform: rotate(-18deg); opacity: .9; }
+.agent-state { display: grid; grid-template-columns: 118px 1fr; gap: 12px; align-items: center; }
+.panel-logo {
+  width: 108px;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+.panel-logo .logo-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  box-shadow: 0 14px 32px rgba(11,27,51,.22);
+}
+.panel-logo .logo-icon b { font-size: 38px; }
+.panel-logo .logo-icon i { width: 62px; height: 18px; }
+.panel-logo .logo-word {
+  color: var(--auri-navy);
+  font-size: 16px;
+  letter-spacing: 0;
+}
 .agent-state span,.section-head span { color: var(--muted); font-size: 12px; }
 .agent-state h2 { margin: 4px 0 5px; font-size: 23px; line-height: 1.1; }
 .agent-state p,.conclusion p,.drafts p { margin: 0; color: #526174; font-size: 13px; line-height: 1.42; }
@@ -506,8 +556,8 @@ svg { display: block; }
 .demo-grid button:hover { background: var(--auri-navy); color: #fff; }
 .timeline { max-height: 54px; overflow: hidden; color: var(--muted); font-size: 11px; line-height: 1.45; }
 
-.state-risk .auri-orbit,.state-takeover .auri-orbit,.state-confirm .auri-orbit { border-color: var(--state-warning); box-shadow: 0 14px 34px rgba(230,167,0,.18); }
-.state-done .auri-orbit { border-color: var(--state-success); box-shadow: 0 14px 34px rgba(46,157,111,.22); }
+.state-risk .panel-logo .logo-icon,.state-takeover .panel-logo .logo-icon,.state-confirm .panel-logo .logo-icon { border-color: var(--state-warning); box-shadow: 0 14px 34px rgba(230,167,0,.18); }
+.state-done .panel-logo .logo-icon { border-color: var(--state-success); box-shadow: 0 14px 34px rgba(46,157,111,.22); }
 .state-risk #etaNote,.state-risk #windowState,.state-takeover #etaNote,.state-takeover #windowState,.state-confirm #etaNote,.state-confirm #windowState { color: #9a6b00; }
 .state-done #etaNote,.state-done #windowState { color: var(--state-success); }
 

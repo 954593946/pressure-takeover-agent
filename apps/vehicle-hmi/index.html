@@ -7,12 +7,14 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>AURI 车机 HMI | 随行压力接管 Agent</title>
-  <link rel="stylesheet" href="./styles.css?v=auri-brand-20260722" />
+  <link rel="stylesheet" href="./styles.css?v=auri-logo-20260722" />
 </head>
 <body>
   <main class="screen" aria-label="AURI 车机 HMI">
     <aside class="launcher" aria-label="车机快捷栏">
-      <div class="brand-mark"><span>A</span></div>
+      <div class="brand-mark auri-logo compact" aria-label="AURI">
+        <span class="logo-icon"><b>A</b><i></i></span>
+      </div>
       <button class="launch active" title="导航"><span>⌖</span><em>导航</em></button>
       <button class="launch" title="任务"><span>☑</span><em>任务</em></button>
       <button class="launch" title="消息"><span>✉</span><em>消息</em></button>
@@ -195,7 +197,10 @@
 
     <aside class="agent" aria-label="Agent 接管面板">
       <section class="agent-state" id="agentState">
-        <div class="auri-orbit" aria-hidden="true"><strong>A</strong><i></i></div>
+        <div class="auri-logo panel-logo" aria-label="AURI">
+          <span class="logo-icon"><b>A</b><i></i></span>
+          <span class="logo-word">AURI</span>
+        </div>
         <div>
           <span>AURI 当前判断</span>
           <h2 id="agentTitle">等待任务创建</h2>

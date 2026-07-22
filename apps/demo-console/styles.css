@@ -94,6 +94,59 @@ button {
   opacity: .42;
 }
 
+.auri-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border: 1px solid rgba(212, 175, 122, 0.52);
+  border-radius: 18px;
+  color: var(--auri-ivory);
+  background: var(--auri-navy);
+  box-shadow: 0 18px 36px rgba(11, 27, 51, 0.16), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.logo-icon b {
+  position: relative;
+  z-index: 2;
+  font-size: 35px;
+  line-height: 1;
+  font-weight: 900;
+  transform: scaleX(1.08);
+}
+
+.logo-icon i {
+  position: absolute;
+  z-index: 3;
+  width: 58px;
+  height: 17px;
+  border: 2px solid var(--auri-gold);
+  border-left-color: transparent;
+  border-right-color: transparent;
+  border-radius: 50%;
+  transform: rotate(-16deg) translateY(2px);
+  box-shadow: 0 0 10px rgba(212, 175, 122, 0.24);
+}
+
+.logo-word {
+  color: var(--auri-navy);
+  font-size: 30px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.hero-logo {
+  margin-bottom: 20px;
+}
+
 .eyebrow,
 .panel-head span,
 .status-grid span,
