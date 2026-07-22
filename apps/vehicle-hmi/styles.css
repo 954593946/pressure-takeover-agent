@@ -14,18 +14,18 @@
   --road-minor: #dfe8ed;
   --building: #d8e1e6;
   --green-road: #76c999;
-  --blue: var(--state-processing);
-  --cyan: #4d8dff;
+  --blue: #0B1B33;
+  --cyan: #6f8fc5;
   --green: var(--state-success);
   --amber: var(--state-warning);
   --red: var(--state-critical);
   --text: var(--auri-navy);
-  --muted: #657184;
+  --muted: #77808c;
   --dark: #101a2b;
   --white: #ffffff;
-  --glass: rgba(255, 255, 255, 0.86);
-  --line: rgba(17, 24, 39, 0.12);
-  --shadow: 0 18px 44px rgba(11, 27, 51, 0.22);
+  --glass: rgba(255, 255, 255, 0.9);
+  --line: rgba(11, 27, 51, 0.12);
+  --shadow: 0 14px 34px rgba(11, 27, 51, 0.12);
   --radius: 18px;
   --font: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
 }
@@ -35,7 +35,7 @@ html, body { width: 100%; height: 100%; }
 body {
   margin: 0;
   overflow: hidden;
-  background: radial-gradient(circle at 50% 0, rgba(212,175,122,.18), transparent 30%), #050b14;
+  background: var(--auri-ivory);
   color: var(--text);
   font-family: var(--font);
   letter-spacing: 0;
@@ -54,8 +54,8 @@ svg { display: block; }
   gap: 10px;
   padding: 12px;
   background:
-    radial-gradient(circle at 72% 0, rgba(212,175,122,.08), transparent 28%),
-    linear-gradient(180deg, var(--auri-navy), #07111f);
+    radial-gradient(circle at 72% 0, rgba(212,175,122,.14), transparent 28%),
+    linear-gradient(180deg, #f8f6f1, var(--auri-ivory));
 }
 
 .launcher,
@@ -64,13 +64,14 @@ svg { display: block; }
 .agent,
 .vehicle-bar {
   border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow);
 }
 
 .launcher {
   grid-row: 1 / 3;
   border-radius: 28px;
-  background: #07111f;
+  background: rgba(255,255,255,.72);
+  border-color: rgba(11,27,51,.08);
   padding: 11px 8px;
   display: flex;
   flex-direction: column;
@@ -108,7 +109,7 @@ svg { display: block; }
 .launch {
   width: 55px; height: 58px; border-radius: 18px;
   display: grid; place-items: center; gap: 1px;
-  color: #a8b3c3; background: transparent; cursor: pointer;
+  color: #5f6875; background: transparent; cursor: pointer;
 }
 .launch span { font-size: 21px; }
 .launch em { font-size: 10px; font-style: normal; }
@@ -116,7 +117,8 @@ svg { display: block; }
 
 .drive-card {
   border-radius: 28px;
-  background: #09172a;
+  background: rgba(255,255,255,.76);
+  border-color: rgba(11,27,51,.08);
   padding: 12px;
   display: grid;
   grid-template-rows: 70px minmax(0, 1fr) 210px;
@@ -125,21 +127,21 @@ svg { display: block; }
 .mini-status { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .mini-status div,
 .device {
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(11,27,51,.1);
   border-radius: 18px;
-  background: rgba(255,255,255,.06);
-  color: white;
+  background: rgba(245,242,236,.84);
+  color: var(--auri-navy);
 }
 .mini-status div { padding: 9px; text-align: center; }
 .mini-status strong { display: block; font-size: 31px; line-height: 1; }
-.mini-status span { color: #aeb8c7; font-size: 12px; }
+.mini-status span { color: var(--muted); font-size: 12px; }
 .vehicle-view {
   position: relative;
   overflow: hidden;
   border-radius: 24px;
   background:
-    radial-gradient(circle at 50% 86%, rgba(212,175,122,.16), transparent 42%),
-    linear-gradient(180deg, #20304a 0%, #102139 52%, #07111f 100%);
+    radial-gradient(circle at 50% 86%, rgba(212,175,122,.18), transparent 42%),
+    linear-gradient(180deg, #f4f1eb 0%, #e8edf1 52%, #dce4ea 100%);
 }
 .road-perspective {
   position: absolute;
@@ -156,8 +158,8 @@ svg { display: block; }
   transform: translateX(-50%) rotateX(58deg);
   transform-origin: bottom center;
   background:
-    linear-gradient(90deg, transparent 0 13%, rgba(255,255,255,.2) 14% 15%, transparent 16% 48%, rgba(255,255,255,.28) 49% 51%, transparent 52% 84%, rgba(255,255,255,.2) 85% 86%, transparent 87%),
-    linear-gradient(180deg, transparent 0 18%, rgba(255,255,255,.18) 19% 21%, transparent 22% 40%, rgba(255,255,255,.18) 41% 43%, transparent 44% 62%, rgba(255,255,255,.18) 63% 65%, transparent 66%);
+    linear-gradient(90deg, transparent 0 13%, rgba(11,27,51,.14) 14% 15%, transparent 16% 48%, rgba(11,27,51,.18) 49% 51%, transparent 52% 84%, rgba(11,27,51,.14) 85% 86%, transparent 87%),
+    linear-gradient(180deg, transparent 0 18%, rgba(11,27,51,.12) 19% 21%, transparent 22% 40%, rgba(11,27,51,.12) 41% 43%, transparent 44% 62%, rgba(11,27,51,.12) 63% 65%, transparent 66%);
   opacity: .9;
 }
 .road-line {
@@ -165,7 +167,7 @@ svg { display: block; }
   top: 12%;
   bottom: -16%;
   width: 2px;
-  background: linear-gradient(transparent, rgba(255,255,255,.55), transparent);
+  background: linear-gradient(transparent, rgba(11,27,51,.24), transparent);
 }
 .road-line.l1 { left: 28%; transform: skewX(-10deg); }
 .road-line.l2 { left: 42%; transform: skewX(-3deg); opacity: 0; }
@@ -227,7 +229,7 @@ svg { display: block; }
   font-size: 18px;
 }
 .vehicle-label span {
-  color: #cbd5e1;
+  color: var(--muted);
   font-size: 11px;
 }
 .front-object {
@@ -253,9 +255,9 @@ svg { display: block; }
 }
 .device-stack { display: grid; gap: 8px; }
 .device { padding: 11px; }
-.device span { color: #aeb8c7; font-size: 12px; }
+.device span { color: var(--muted); font-size: 12px; }
 .device strong { display: block; margin: 4px 0 2px; font-size: 16px; }
-.device small { color: #cbd5e1; }
+.device small { color: #6b7280; }
 .device.warn { border-color: rgba(255,176,0,.6); background: rgba(255,176,0,.15); }
 .device.done { border-color: rgba(32,199,115,.55); background: rgba(32,199,115,.15); }
 
@@ -303,7 +305,7 @@ svg { display: block; }
 .amap-roads .road-main { stroke: #ffffff; stroke-width: 70; filter: drop-shadow(0 2px 3px rgba(100,120,140,.35)); }
 .amap-roads .road-side { stroke: #ffffff; stroke-width: 26; opacity: .92; }
 .route-green-wave { fill: none; stroke: #6fd18e; stroke-width: 48; stroke-linecap: round; stroke-linejoin: round; opacity: .82; }
-.route-line { fill: none; stroke: var(--state-processing); stroke-width: 14; stroke-linecap: round; stroke-linejoin: round; }
+.route-line { fill: none; stroke: #2f6bff; stroke-width: 14; stroke-linecap: round; stroke-linejoin: round; }
 .lane-dashes path { fill: none; stroke: rgba(255,255,255,.9); stroke-width: 4; stroke-linecap: round; stroke-dasharray: 16 22; }
 .pin circle,.car-pin circle { fill: #fff; stroke: var(--state-processing); stroke-width: 5; }
 .pin.end circle { stroke: var(--state-critical); }
@@ -318,10 +320,10 @@ svg { display: block; }
 .amap-turn-card {
   position: absolute; left: 16px; top: 18px; width: 390px; height: 94px;
   display: grid; grid-template-columns: 76px 1fr 32px; align-items: center;
-  padding: 0 14px; border-radius: 12px; color: #fff;
-  background: rgba(12,17,23,.94); box-shadow: var(--shadow);
+  padding: 0 14px; border-radius: 18px; color: var(--auri-ivory);
+  background: var(--auri-navy); box-shadow: var(--shadow);
 }
-.turn-symbol { font-size: 58px; font-weight: 900; line-height: 1; }
+.turn-symbol { color: var(--auri-gold); font-size: 58px; font-weight: 900; line-height: 1; }
 .turn-copy strong { display: block; font-size: 38px; line-height: .95; }
 .turn-copy small { font-size: 20px; margin-left: 5px; }
 .turn-copy em { display: block; margin-top: 6px; font-style: normal; font-size: 20px; }
@@ -329,7 +331,7 @@ svg { display: block; }
 .lane-board {
   position: absolute; left: 420px; top: 22px; height: 56px;
   display: flex; overflow: hidden; border-radius: 10px;
-  background: linear-gradient(180deg,var(--state-processing),#173a8a); box-shadow: var(--shadow);
+  background: var(--auri-navy); box-shadow: var(--shadow);
 }
 .lane-cell { width: 58px; display: grid; place-items: center; border-left: 1px solid rgba(255,255,255,.18); color: rgba(255,255,255,.58); font-size: 28px; font-weight: 900; }
 .lane-cell:first-child { border-left: 0; }
@@ -337,21 +339,21 @@ svg { display: block; }
 .lane-cell.bus { font-size: 13px; color: #fff; }
 .speed-card {
   position: absolute; left: 18px; top: 128px; width: 82px;
-  border-radius: 40px; background: var(--state-success); color: #fff; padding: 11px 8px; text-align: center; box-shadow: var(--shadow);
+  border-radius: 40px; background: var(--auri-navy); color: #fff; padding: 11px 8px; text-align: center; box-shadow: var(--shadow);
 }
 .speed-card strong { display: block; font-size: 32px; line-height: 1; }
 .speed-card span { font-size: 12px; }
 .speed-card em { display: block; margin-top: 7px; font-size: 11px; font-style: normal; }
 .signal-countdown { position: absolute; right: 72px; top: 294px; height: 54px; display: flex; align-items: center; gap: 9px; padding: 0 14px; border-radius: 27px; background: #fff; box-shadow: var(--shadow); }
-.signal-countdown span { color: #15803d; font-size: 12px; }
-.signal-countdown strong { color: #16a34a; font-size: 34px; }
+.signal-countdown span { color: #8a6a30; font-size: 12px; }
+.signal-countdown strong { color: var(--auri-gold); font-size: 34px; }
 .right-progress { position: absolute; right: 18px; top: 96px; bottom: 176px; width: 34px; display: grid; justify-items: center; grid-template-rows: 1fr 24px; gap: 7px; }
 .progress-track { width: 10px; height: 100%; border-radius: 999px; background: linear-gradient(#22c55e 0 55%, #facc15 55% 72%, #ef4444 72%); position: relative; overflow: hidden; }
 .progress-track i { position: absolute; left: 0; right: 0; bottom: 0; height: 62%; background: rgba(255,255,255,.46); }
 .right-progress span { color: #334155; font-size: 11px; }
-.overview-btn,.parking-btn,.map-tools button { background: #fff; color: #111827; box-shadow: var(--shadow); font-weight: 800; }
+.overview-btn,.parking-btn,.map-tools button { background: #fff; color: var(--auri-navy); box-shadow: var(--shadow); font-weight: 800; }
 .overview-btn { position: absolute; right: 12px; bottom: 106px; width: 58px; height: 50px; border-radius: 14px; }
-.parking-btn { position: absolute; left: 16px; top: 260px; width: 76px; height: 68px; border-radius: 14px; color: #0b3b75; }
+.parking-btn { position: absolute; left: 16px; top: 260px; width: 76px; height: 68px; border-radius: 14px; color: var(--auri-navy); }
 .parking-btn span { font-size: 11px; }
 .map-tools { position: absolute; right: 13px; top: 16px; display: grid; gap: 6px; }
 .map-tools button { width: 42px; height: 38px; border-radius: 12px; }
@@ -429,22 +431,23 @@ svg { display: block; }
 .sync-row em { font-style: normal; text-align: right; color: var(--muted); }
 
 .vehicle-bar {
-  grid-column: 2 / 5; border-radius: 26px; background: #07111f;
+  grid-column: 2 / 5; border-radius: 26px; background: rgba(255,255,255,.82);
+  border-color: rgba(11,27,51,.08);
   display: grid; grid-template-columns: 250px minmax(320px,1fr) 92px 390px; gap: 10px; padding: 10px;
 }
-.climate,.voice,.confirm,.config-entry { height: 62px; border: 1px solid rgba(255,255,255,.12); border-radius: 20px; background: rgba(255,255,255,.07); color: white; }
+.climate,.voice,.confirm,.config-entry { height: 62px; border: 1px solid rgba(11,27,51,.1); border-radius: 20px; background: rgba(245,242,236,.86); color: var(--auri-navy); }
 .climate { display: flex; align-items: center; gap: 10px; padding: 0 12px; }
-.climate button { width: 36px; height: 36px; border-radius: 12px; background: rgba(255,255,255,.12); color: #fff; }
+.climate button { width: 36px; height: 36px; border-radius: 12px; background: rgba(11,27,51,.08); color: var(--auri-navy); }
 .climate strong { font-size: 23px; }
-.climate span { margin-left: auto; color: #aeb8c7; font-size: 12px; }
+.climate span { margin-left: auto; color: var(--muted); font-size: 12px; }
 .voice { display: flex; align-items: center; gap: 13px; padding: 0 18px; }
 .voice i { width: 36px; height: 36px; border-radius: 50%; background: radial-gradient(circle, var(--auri-gold) 0 18%, transparent 19%), rgba(212,175,122,.12); border: 1px solid rgba(212,175,122,.45); }
 .voice strong { font-size: 17px; }
 .config-entry { cursor: pointer; font-weight: 900; letter-spacing: 0; }
-.confirm { text-align: left; color: #aeb8c7; padding: 0 19px; }
+.confirm { text-align: left; color: #7a828d; padding: 0 19px; }
 .confirm strong { display: block; font-size: 21px; }
 .confirm span { display: block; margin-top: 3px; font-size: 13px; }
-.confirm.enabled { cursor: pointer; color: #fff; background: var(--state-success); border-color: rgba(46,157,111,.55); }
+.confirm.enabled { cursor: pointer; color: #fff; background: var(--auri-navy); border-color: rgba(11,27,51,.42); }
 
 .config-panel {
   position: fixed;
