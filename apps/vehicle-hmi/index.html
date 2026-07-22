@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>AURI 车机 HMI | 随行压力接管 Agent</title>
-  <link rel="stylesheet" href="./styles.css?v=auri-mobile-palette-20260722" />
+  <link rel="stylesheet" href="./styles.css?v=auri-nav-map-20260722" />
 </head>
 <body>
   <main class="screen" aria-label="AURI 车机 HMI">
@@ -87,49 +87,74 @@
       </header>
 
       <section class="map-wrap amap daynav" aria-label="高德风格车机导航">
-        <svg class="map" viewBox="0 0 1200 720">
+        <svg class="map nav-map" viewBox="0 0 1200 720" role="img" aria-label="车机导航地图">
           <defs>
-            <linearGradient id="route" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stop-color="#2ddcff"/>
-              <stop offset="55%" stop-color="#2678ff"/>
-              <stop offset="100%" stop-color="#ffb21d"/>
+            <linearGradient id="mapSurface" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#eef4f6"/>
+              <stop offset="100%" stop-color="#dfe9ed"/>
             </linearGradient>
-            <filter id="glow"><feGaussianBlur stdDeviation="10" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+            <linearGradient id="routeMain" x1="0" y1="1" x2="1" y2="0">
+              <stop offset="0%" stop-color="#2f6bff"/>
+              <stop offset="68%" stop-color="#2f6bff"/>
+              <stop offset="100%" stop-color="#e6a700"/>
+            </linearGradient>
+            <filter id="softMapShadow" x="-20%" y="-20%" width="140%" height="140%">
+              <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#0b1b33" flood-opacity=".16"/>
+            </filter>
           </defs>
-          <g class="grid">
-            <path d="M55 85 H1150 M40 205 H1100 M90 330 H1180 M50 465 H1120 M100 605 H1170"/>
-            <path d="M140 35 V690 M300 0 V710 M480 40 V690 M660 0 V720 M850 45 V700 M1040 0 V720"/>
+          <rect class="map-surface" width="1200" height="720"/>
+          <g class="map-grid">
+            <path d="M0 120 H1200 M0 250 H1200 M0 385 H1200 M0 520 H1200 M185 0 V720 M372 0 V720 M560 0 V720 M748 0 V720 M936 0 V720"/>
           </g>
-          <g class="amap-buildings">
-            <path d="M118 160h128v82H118zM274 116h142v110H274zM468 92h120v88H468zM708 126h156v104H708zM934 92h132v118H934zM160 430h150v104H160zM760 468h190v110H760zM972 392h112v88H972z"/>
+          <g class="city-blocks" filter="url(#softMapShadow)">
+            <path d="M72 74h122v68H72zM260 42h150v86H260zM644 58h170v104H644zM902 54h142v92H902z"/>
+            <path d="M70 430h150v96H70zM684 392h214v112H684zM938 310h138v112H938zM982 536h152v94H982z"/>
+            <path d="M328 556h176v78H328zM512 256h126v70H512zM794 214h124v70H794z"/>
           </g>
-          <g class="roads amap-roads">
-            <path class="road-main" d="M105 664 C224 558 296 510 412 520 C538 531 560 384 660 338 C770 286 840 394 948 332 C1044 278 1074 208 1140 122"/>
-            <path class="road-side" d="M68 254 C218 170 352 220 470 150 S700 105 798 182 960 256 1136 232"/>
-            <path class="road-side" d="M170 680 C330 566 440 548 566 584 S832 626 1028 520 1130 430 1190 438"/>
-            <path class="road-side" d="M42 392 C210 358 292 310 426 330 S620 438 780 312 998 105 1190 88"/>
+          <g class="minor-roads">
+            <path d="M-80 176 C170 150 302 194 484 154 C642 120 718 118 842 172 S1040 220 1280 178"/>
+            <path d="M-60 332 C144 286 302 280 472 308 S802 390 1010 346 1180 292 1260 286"/>
+            <path d="M92 720 C206 610 336 566 516 588 S828 664 1136 522"/>
+            <path d="M-20 610 C156 522 272 506 414 512 S642 546 812 484 1060 326 1240 250"/>
           </g>
-          <path class="route-green-wave" d="M105 664 C224 558 296 510 412 520 C538 531 560 384 660 338 C770 286 840 394 948 332 C1044 278 1074 208 1140 122"/>
-          <path class="route-line" d="M105 664 C224 558 296 510 412 520 C538 531 560 384 660 338 C770 286 840 394 948 332 C1044 278 1074 208 1140 122"/>
-          <g class="lane-dashes">
-            <path d="M148 622 C242 548 314 514 406 520"/>
-            <path d="M500 475 C562 394 594 360 654 338"/>
-            <path d="M760 334 C842 386 904 358 948 332"/>
-            <path d="M1012 282 C1062 234 1090 186 1140 122"/>
+          <g class="route-road" filter="url(#softMapShadow)">
+            <path class="route-casing" d="M70 668 C202 568 296 526 430 530 C564 534 592 410 704 354 C820 296 898 396 1010 312 C1082 258 1124 174 1174 54"/>
+            <path class="route-passed" d="M70 668 C202 568 296 526 430 530"/>
+            <path class="route-live" d="M430 530 C564 534 592 410 704 354 C820 296 898 396 1010 312 C1082 258 1124 174 1174 54"/>
+            <path class="route-congested" d="M1010 312 C1082 258 1124 174 1174 54"/>
+            <path class="route-lane" d="M454 520 C568 512 604 402 706 356 C810 310 892 386 990 322"/>
           </g>
-          <g class="pin start" transform="translate(105 664)"><circle r="24"/><path d="M-8 4 0-11 8 4z"/></g>
-          <g class="pin end" transform="translate(1140 122)"><circle r="30"/><path d="M-10-8h20v16h-20z"/></g>
-          <g class="traffic" id="traffic" transform="translate(820 410)">
-            <rect x="-92" y="-28" width="184" height="56" rx="28"/>
-            <text y="8" text-anchor="middle">拥堵 · 晚到 18 分钟</text>
+          <g class="road-labels">
+            <text x="604" y="438">学院路高架</text>
+            <text x="870" y="224">育才路</text>
+            <text x="260" y="612">当前道路</text>
           </g>
-          <g class="traffic-light" transform="translate(915 354)">
-            <rect x="-11" y="-30" width="22" height="60" rx="11"/>
-            <circle cx="0" cy="-17" r="6"/>
+          <g class="camera-poi" transform="translate(914 330)">
+            <circle r="18"/>
+            <path d="M-8-3h16v10h-16zM-4-7h8l3 4h-14z"/>
+          </g>
+          <g class="traffic-light" transform="translate(832 340)">
+            <rect x="-12" y="-31" width="24" height="62" rx="12"/>
+            <circle cx="0" cy="-18" r="6"/>
             <circle cx="0" cy="0" r="6"/>
-            <circle cx="0" cy="17" r="6"/>
+            <circle cx="0" cy="18" r="6"/>
           </g>
-          <g class="car-pin" transform="translate(412 520)"><circle r="28"/><path d="M-13 4h26M-8-6h16l6 10h-28z"/></g>
+          <g class="traffic" id="traffic" transform="translate(910 280)">
+            <rect x="-104" y="-27" width="208" height="54" rx="27"/>
+            <text y="7" text-anchor="middle">前方拥堵 · 晚到 18 分钟</text>
+          </g>
+          <g class="car-pin" transform="translate(430 530) rotate(-86)">
+            <circle r="31"/>
+            <path d="M0-18 15 18 0 11 -15 18z"/>
+          </g>
+          <g class="pin end" transform="translate(1174 54)">
+            <circle r="30"/>
+            <path d="M-10-8h20v16h-20z"/>
+          </g>
+          <g class="school-label" transform="translate(1010 74)">
+            <rect x="-68" y="-22" width="136" height="44" rx="22"/>
+            <text y="7" text-anchor="middle">阳光小学</text>
+          </g>
         </svg>
 
         <div class="amap-turn-card">

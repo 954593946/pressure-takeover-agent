@@ -297,25 +297,67 @@ svg { display: block; }
 .top-metrics span, .top-metrics em { display: block; color: var(--muted); font-size: 12px; font-style: normal; }
 .top-metrics strong { display: block; margin: 4px 0 2px; font-size: 24px; }
 
-.map-wrap { position: relative; overflow: hidden; background: #edf3f6; }
+.map-wrap { position: relative; overflow: hidden; background: #e7f0f3; }
 .map { position: absolute; inset: 0; width: 100%; height: 100%; }
-.grid path { fill: none; stroke: rgba(110,130,150,.16); stroke-width: 1; }
-.amap-buildings path { fill: var(--building); stroke: #c9d3db; stroke-width: 2; }
-.roads path { fill: none; stroke-linecap: round; }
-.amap-roads .road-main { stroke: #ffffff; stroke-width: 70; filter: drop-shadow(0 2px 3px rgba(100,120,140,.35)); }
-.amap-roads .road-side { stroke: #ffffff; stroke-width: 26; opacity: .92; }
-.route-green-wave { fill: none; stroke: #6fd18e; stroke-width: 48; stroke-linecap: round; stroke-linejoin: round; opacity: .82; }
-.route-line { fill: none; stroke: #2f6bff; stroke-width: 14; stroke-linecap: round; stroke-linejoin: round; }
-.lane-dashes path { fill: none; stroke: rgba(255,255,255,.9); stroke-width: 4; stroke-linecap: round; stroke-dasharray: 16 22; }
-.pin circle,.car-pin circle { fill: #fff; stroke: var(--state-processing); stroke-width: 5; }
+.map-surface { fill: url(#mapSurface); }
+.map-grid path { fill: none; stroke: rgba(104,124,138,.16); stroke-width: 1; }
+.city-blocks path { fill: #cfdae0; stroke: #b9c7cf; stroke-width: 2; opacity: .82; }
+.minor-roads path {
+  fill: none;
+  stroke: rgba(255,255,255,.96);
+  stroke-width: 28;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.route-road path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.route-casing { stroke: #ffffff; stroke-width: 72; }
+.route-passed { stroke: #a7b2bd; stroke-width: 36; opacity: .72; }
+.route-live { stroke: #66ca8b; stroke-width: 48; }
+.route-live + .route-congested { stroke: #e6a700; stroke-width: 48; }
+.route-road .route-live { stroke: #67ca8e; }
+.route-road .route-congested { stroke: #e6a700; }
+.route-road:after { content: ""; }
+.route-lane {
+  stroke: #ffffff;
+  stroke-width: 6;
+  stroke-dasharray: 22 24;
+  opacity: .9;
+}
+.route-road .route-live,
+.route-road .route-congested,
+.route-road .route-passed {
+  paint-order: stroke;
+}
+.route-road .route-live { filter: drop-shadow(0 2px 3px rgba(47,107,255,.18)); }
+.route-road .route-live,
+.route-road .route-congested {
+  stroke-linecap: round;
+}
+.route-road .route-live { stroke: url(#routeMain); stroke-width: 24; }
+.route-road .route-congested { stroke-width: 24; }
+.road-labels text {
+  fill: #617080;
+  font-size: 20px;
+  font-weight: 700;
+}
+.camera-poi circle { fill: #ffffff; stroke: #2f6bff; stroke-width: 4; }
+.camera-poi path { fill: none; stroke: var(--auri-navy); stroke-width: 3; stroke-linejoin: round; }
+.pin circle,.car-pin circle { fill: #fff; stroke: #2f6bff; stroke-width: 5; }
 .pin.end circle { stroke: var(--state-critical); }
-.pin path,.car-pin path { fill: none; stroke: #111827; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+.pin path,.car-pin path { fill: var(--auri-navy); stroke: var(--auri-navy); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.car-pin circle { filter: drop-shadow(0 8px 14px rgba(11,27,51,.2)); }
 .traffic { opacity: 0; transition: .2s; }
 .state-risk .traffic,.state-takeover .traffic,.state-confirm .traffic,.state-done .traffic { opacity: 1; }
 .traffic rect { fill: var(--state-warning); }
-.traffic text { fill: var(--auri-navy); font-size: 22px; font-weight: 850; }
-.traffic-light rect { fill: #1f2937; stroke: rgba(0,0,0,.2); stroke-width: 2; }
+.traffic text { fill: var(--auri-navy); font-size: 20px; font-weight: 850; }
+.traffic-light rect { fill: #26313c; stroke: rgba(0,0,0,.16); stroke-width: 2; }
 .traffic-light circle:nth-child(2){ fill:var(--state-critical); } .traffic-light circle:nth-child(3){ fill:var(--state-warning); } .traffic-light circle:nth-child(4){ fill:var(--state-success); }
+.school-label rect { fill: rgba(255,255,255,.92); stroke: rgba(11,27,51,.12); }
+.school-label text { fill: var(--auri-navy); font-size: 18px; font-weight: 850; }
 
 .amap-turn-card {
   position: absolute; left: 16px; top: 18px; width: 390px; height: 94px;
