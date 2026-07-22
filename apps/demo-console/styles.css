@@ -1,16 +1,23 @@
 :root {
   color-scheme: light;
-  --bg: #eef3f8;
-  --panel: rgba(255, 255, 255, 0.9);
-  --line: rgba(44, 65, 92, 0.14);
-  --ink: #172235;
-  --muted: #647187;
-  --blue: #1776ff;
-  --deep: #0d2e5f;
-  --orange: #ff9f1a;
-  --green: #13b981;
-  --red: #ef4444;
-  --shadow: 0 18px 45px rgba(27, 46, 76, 0.13);
+  --auri-navy: #0B1B33;
+  --auri-gold: #D4AF7A;
+  --auri-ivory: #F5F2EC;
+  --state-processing: #2F6BFF;
+  --state-warning: #E6A700;
+  --state-success: #2E9D6F;
+  --state-critical: #D1495B;
+  --bg: var(--auri-ivory);
+  --panel: rgba(255, 255, 255, 0.78);
+  --line: rgba(11, 27, 51, 0.14);
+  --ink: var(--auri-navy);
+  --muted: #667184;
+  --blue: var(--state-processing);
+  --deep: var(--auri-navy);
+  --orange: var(--state-warning);
+  --green: var(--state-success);
+  --red: var(--state-critical);
+  --shadow: 0 18px 45px rgba(11, 27, 51, 0.12);
 }
 
 * {
@@ -23,8 +30,8 @@ body {
   color: var(--ink);
   font-family: Inter, "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
   background:
-    linear-gradient(135deg, rgba(23, 118, 255, 0.12), transparent 34%),
-    linear-gradient(160deg, rgba(255, 159, 26, 0.13), transparent 42%),
+    radial-gradient(circle at 18% 0, rgba(212, 175, 122, 0.18), transparent 32%),
+    linear-gradient(135deg, rgba(11, 27, 51, 0.08), transparent 34%),
     var(--bg);
 }
 
@@ -68,13 +75,30 @@ button {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero > div:after {
+  content: "";
+  position: absolute;
+  right: 34px;
+  top: 34px;
+  width: 118px;
+  height: 34px;
+  border: 2px solid var(--auri-gold);
+  border-left-color: transparent;
+  border-right-color: transparent;
+  border-radius: 50%;
+  transform: rotate(-16deg);
+  opacity: .42;
 }
 
 .eyebrow,
 .panel-head span,
 .status-grid span,
 label span {
-  color: var(--blue);
+  color: var(--auri-gold);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -100,6 +124,10 @@ h1 {
   font-size: 17px;
 }
 
+.hero p strong {
+  color: var(--auri-navy);
+}
+
 .connection-card {
   border-radius: 20px;
   padding: 22px;
@@ -123,8 +151,8 @@ input {
 }
 
 input:focus {
-  border-color: rgba(23, 118, 255, 0.62);
-  box-shadow: 0 0 0 4px rgba(23, 118, 255, 0.12);
+  border-color: rgba(212, 175, 122, 0.8);
+  box-shadow: 0 0 0 4px rgba(212, 175, 122, 0.16);
 }
 
 .connection-actions,
@@ -142,8 +170,8 @@ button {
   min-height: 44px;
   border-radius: 12px;
   padding: 10px 14px;
-  color: #17304f;
-  background: #e8f0fb;
+  color: var(--auri-navy);
+  background: #f1eee7;
   transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
 
@@ -162,16 +190,16 @@ button:disabled {
 .primary,
 .confirm-action {
   color: #fff;
-  background: linear-gradient(135deg, var(--blue), #0f57c4);
+  background: var(--auri-navy);
 }
 
 .ghost {
-  background: #f3f7fc;
+  background: #f3efe7;
 }
 
 .danger {
   color: #fff;
-  background: linear-gradient(135deg, var(--red), #c52828);
+  background: var(--state-critical);
 }
 
 .status-grid {
@@ -256,7 +284,7 @@ button:disabled {
   grid-row: span 2;
   border-radius: 11px;
   color: #fff;
-  background: var(--deep);
+  background: var(--auri-navy);
 }
 
 .script-list span {
@@ -272,7 +300,8 @@ button:disabled {
 }
 
 .confirm-action b {
-  background: var(--orange);
+  background: var(--auri-gold);
+  color: var(--auri-navy);
 }
 
 .confirm-action span,
@@ -307,8 +336,8 @@ button:disabled {
 .mini-state li {
   padding: 10px 12px;
   border-radius: 12px;
-  color: #32445f;
-  background: #f4f7fb;
+  color: #304158;
+  background: #f7f4ee;
   font-size: 13px;
   line-height: 1.45;
 }
@@ -331,7 +360,7 @@ button:disabled {
   align-items: start;
   padding: 10px 12px;
   border-radius: 12px;
-  background: #f7f9fc;
+  background: #f8f5ef;
   color: #31445e;
   font-size: 13px;
 }

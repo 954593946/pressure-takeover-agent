@@ -161,7 +161,7 @@ function render() {
   ui.revision.textContent = `revision ${worldState?.revision ?? "--"}`;
   ui.stage.textContent = worldState?.stage || "--";
   ui.scene.textContent = `scene ${worldState?.scene || "--"}`;
-  ui.pressure.textContent = worldState?.risk?.pressure_level || "L0";
+  ui.pressure.textContent = pressureLabel(worldState?.risk?.pressure_level || "L0");
   ui.late.textContent = `late ${worldState?.risk?.late_minutes || 0} min`;
   ui.surface.textContent = worldState?.primary_surface || "--";
   ui.confirmOwner.textContent = worldState?.confirmation
@@ -169,6 +169,14 @@ function render() {
     : "confirm --";
   renderTasks();
   renderActions();
+}
+
+function pressureLabel(level) {
+  if (level === "L3") return "⚠ L3";
+  if (level === "L2") return "⚠ L2";
+  if (level === "L1") return "⏱ L1";
+  if (level === "Recovery") return "✓ Recovery";
+  return "○ L0";
 }
 
 function renderTasks() {

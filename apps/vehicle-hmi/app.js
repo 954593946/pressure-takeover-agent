@@ -259,6 +259,14 @@ function stageView() {
   return STAGE_VIEW[worldState?.stage] || STAGE_VIEW.error;
 }
 
+function riskLabel(stage, risk) {
+  if (["action_completed", "cooldown", "parked_review"].includes(stage)) return "✓ 已处理";
+  if (risk.pressure_level === "L3") return "⚠ L3 高负荷";
+  if (risk.pressure_level === "L2") return "⚠ L2 接管";
+  if (risk.pressure_level === "L1") return "⏱ L1 注意";
+  return "○ L0 低干扰";
+}
+
 function formatTime(value) {
   if (!value) return "--:--";
   const date = new Date(value);
@@ -345,7 +353,7 @@ function render() {
   ui.agentTitle.textContent = title;
   ui.agentText.textContent = text;
   ui.realConclusion.textContent = worldState?.output?.conclusion || (order?.error_code ? `服务异常：${order.error_code}，驾驶中不展开复杂选择。` : conclusion);
-  ui.riskBadge.textContent = ["action_completed", "cooldown"].includes(worldState?.stage) ? "已处理" : risk.pressure_level || "L0";
+  ui.riskBadge.textContent = riskLabel(worldState?.stage, risk);
   ui.actionState.textContent = actionState;
   renderActions();
   renderDraft();
