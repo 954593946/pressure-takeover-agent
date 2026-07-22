@@ -62,7 +62,13 @@ Team Token: 留空，除非本地后端开启共享访问
 
 ## 连接团队公网 Agent
 
-公网 Agent 地址：
+推荐公网 Agent 地址：
+
+```text
+https://auri-langchain-agent-api.onrender.com
+```
+
+旧版回退地址：
 
 ```text
 https://auri-agent-api.onrender.com
@@ -71,7 +77,7 @@ https://auri-agent-api.onrender.com
 控制台顶部填写：
 
 ```text
-Agent API: https://auri-agent-api.onrender.com
+Agent API: https://auri-langchain-agent-api.onrender.com
 Team Token: 使用团队负责人单独提供的令牌
 ```
 
@@ -87,6 +93,49 @@ Team Token: 使用团队负责人单独提供的令牌
 - Team Token 只保存在当前浏览器 `localStorage`。
 - 不要把 Team Token 写入仓库、PR、截图或公开文档。
 - 公网 Agent 是共享 Demo 后端，多人同时操作会影响同一个状态。
+- 旧版回退地址只在新版 LangChain 服务不可用时使用。
+
+## Agent Health 展示
+
+控制台连接 Agent 时会读取：
+
+```http
+GET /health
+```
+
+页面顶部 `Agent Health` 卡片会展示：
+
+```text
+llm_framework
+llm_last_mode
+agent_tools_enabled
+agent_last_tools
+```
+
+用途：
+
+- 判断当前连接的是新版 LangChain Agent，还是旧版回退 Agent。
+- 通过 `agent_tools_enabled=true` 判断工具编排是否上线。
+- 通过 `agent_last_tools` 查看最近一轮实际调用过哪些工具。
+
+注意：`/health` 不返回 Team Token 或 OpenAI API Key。
+
+## 与 LangChain 工具的边界
+
+控制台仍然只上传标准 Event，不直接调用 LangChain 工具。
+
+控制台负责注入这些外部事实：
+
+```text
+scene.vehicle_entered
+scene.parked
+traffic.updated
+wearable.signal
+driving.signal
+service.mock.config
+```
+
+这些事实不能因为用户在聊天里说“我上车了”就由 LLM 伪造。Agent 会在收到标准 Event 后更新 `WorldState`。
 
 ## 控制台标准按钮
 

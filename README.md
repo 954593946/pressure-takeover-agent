@@ -24,21 +24,21 @@ AURI 是一个面向车机、手机与腕上设备的多端 Agent。它在驾驶
 
 ## 团队快速接入：公网 Agent
 
-当前共享后端：
+当前推荐的 LangChain 共享后端：
 
 ```text
-API Base URL: https://auri-agent-api.onrender.com
-Health:       https://auri-agent-api.onrender.com/health
-Swagger:      https://auri-agent-api.onrender.com/docs
-SSE:          https://auri-agent-api.onrender.com/v1/stream
-WebSocket:    wss://auri-agent-api.onrender.com/v1/ws
+API Base URL: https://auri-langchain-agent-api.onrender.com
+Health:       https://auri-langchain-agent-api.onrender.com/health
+Swagger:      https://auri-langchain-agent-api.onrender.com/docs
+SSE:          https://auri-langchain-agent-api.onrender.com/v1/stream
+WebSocket:    wss://auri-langchain-agent-api.onrender.com/v1/ws
 ```
 
 伙伴不需要 Bosch API Key。请向 Agent Owner 单独索取 `AGENT_SHARED_TOKEN`，只放在自己未提交的本地环境变量中：
 
 ```dotenv
-AGENT_API_BASE_URL=https://auri-agent-api.onrender.com
-AGENT_STREAM_URL=https://auri-agent-api.onrender.com/v1/stream
+AGENT_API_BASE_URL=https://auri-langchain-agent-api.onrender.com
+AGENT_STREAM_URL=https://auri-langchain-agent-api.onrender.com/v1/stream
 AGENT_SHARED_TOKEN=向项目负责人索取，禁止提交
 ```
 
@@ -57,17 +57,17 @@ X-Agent-Token: <AGENT_SHARED_TOKEN>
 5. 通过 SSE 或 WebSocket 接收完整 World State 快照，刷新或断线后重新请求 `GET /v1/state` 对账。
 
 ```bash
-curl https://auri-agent-api.onrender.com/v1/state \
+curl https://auri-langchain-agent-api.onrender.com/v1/state \
   -H "X-Agent-Token: $AGENT_SHARED_TOKEN"
 ```
 
 浏览器原生 `EventSource` 不能设置自定义请求头，因此 Web 客户端应使用带请求头的流式 `fetch`，或使用 WebSocket。浏览器原生 WebSocket 不能设置请求头时，Demo 联调可使用：
 
 ```text
-wss://auri-agent-api.onrender.com/v1/ws?access_token=<AGENT_SHARED_TOKEN>
+wss://auri-langchain-agent-api.onrender.com/v1/ws?access_token=<AGENT_SHARED_TOKEN>
 ```
 
-这是一个共享单实例 Demo：所有伙伴看到同一个 Session 和 World State。不要在其他人联调时调用 `/v1/session/reset`；控制台、手机和车机也不得直接修改 World State。更完整的 Event 示例、错误处理和各端职责见 [Agent 接入与跨端协作指南](docs/agent-integration-guide.md)。
+这是一个共享单实例 Demo：所有伙伴看到同一个 Session 和 World State。不要在其他人联调时调用 `/v1/session/reset`；控制台、手机和车机也不得直接修改 World State。旧版 `https://auri-agent-api.onrender.com` 仅保留作回退。更完整的 Event 示例、错误处理和各端职责见 [Agent 接入与跨端协作指南](docs/agent-integration-guide.md)。
 
 新成员或 AI 编程助手开始工作前，按这个顺序阅读：
 

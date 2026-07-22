@@ -550,7 +550,7 @@ svg { display: block; }
 }
 .config-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr 1.2fr;
+  grid-template-columns: 1fr 1fr;
   gap: 10px;
 }
 .config-actions button {
@@ -561,6 +561,7 @@ svg { display: block; }
   cursor: pointer;
 }
 .config-actions .primary {
+  grid-column: span 2;
   color: white;
   background: var(--auri-navy);
 }

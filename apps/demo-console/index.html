@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>AURI Demo 控制台</title>
-  <link rel="stylesheet" href="./styles.css?v=auri-logo-20260722" />
+  <link rel="stylesheet" href="./styles.css?v=auri-langchain-agent-20260722" />
 </head>
 <body>
   <main class="console-shell">
@@ -31,6 +31,9 @@
           <input id="token" type="password" placeholder="仅本地运行时填写，不提交仓库" autocomplete="off" />
         </label>
         <div class="connection-actions">
+          <button id="usePublicAgent" type="button">LangChain 公网</button>
+          <button id="useLegacyAgent" type="button">旧版回退</button>
+          <button id="useLocalAgent" type="button">本地 Agent</button>
           <button id="saveConfig" type="button">保存配置</button>
           <button id="connectBtn" class="primary" type="button">连接 Agent</button>
         </div>
@@ -57,6 +60,11 @@
         <span>Primary Surface</span>
         <strong id="surface">--</strong>
         <em id="confirmOwner">confirm --</em>
+      </article>
+      <article>
+        <span>Agent Health</span>
+        <strong id="agentHealth">未检查</strong>
+        <em id="agentTools">tools --</em>
       </article>
     </section>
 
@@ -124,6 +132,6 @@
     </section>
   </main>
 
-  <script src="./app.js?v=auri-brand-20260722"></script>
+  <script src="./app.js?v=auri-langchain-agent-20260722"></script>
 </body>
 </html>

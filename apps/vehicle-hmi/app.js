@@ -5,7 +5,8 @@ const DEFAULT_CONFIG = {
   pollIntervalMs: 3000
 };
 
-const PUBLIC_AGENT_API = "https://auri-agent-api.onrender.com";
+const PUBLIC_AGENT_API = "https://auri-langchain-agent-api.onrender.com";
+const LEGACY_AGENT_API = "https://auri-agent-api.onrender.com";
 const storedConfig = JSON.parse(localStorage.getItem("auri-hmi-config") || "{}");
 const queryParams = new URLSearchParams(window.location.search);
 const queryConfig = {
@@ -62,7 +63,7 @@ const ui = {
   speedLimit: $("#speedLimit"), lightCountdown: $("#lightCountdown"), turnDistance: $("#turnDistance"), routeProgress: $("#routeProgress"),
   amapRemain: $("#amapRemain"), amapDuration: $("#amapDuration"), amapArrival: $("#amapArrival"), configBtn: $("#configBtn"),
   configPanel: $("#configPanel"), configForm: $("#configForm"), closeConfig: $("#closeConfig"), configApiBase: $("#configApiBase"),
-  configToken: $("#configToken"), usePublicAgent: $("#usePublicAgent"), useLocalAgent: $("#useLocalAgent")
+  configToken: $("#configToken"), usePublicAgent: $("#usePublicAgent"), useLegacyAgent: $("#useLegacyAgent"), useLocalAgent: $("#useLocalAgent")
 };
 
 let worldState = null;
@@ -417,6 +418,9 @@ ui.configPanel.addEventListener("click", (event) => {
 });
 ui.usePublicAgent.addEventListener("click", () => {
   ui.configApiBase.value = PUBLIC_AGENT_API;
+});
+ui.useLegacyAgent.addEventListener("click", () => {
+  ui.configApiBase.value = LEGACY_AGENT_API;
 });
 ui.useLocalAgent.addEventListener("click", () => {
   ui.configApiBase.value = DEFAULT_CONFIG.apiBase;

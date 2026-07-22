@@ -3,6 +3,9 @@ const DEFAULT_CONFIG = {
   stream: true
 };
 
+const PUBLIC_AGENT_API = "https://auri-langchain-agent-api.onrender.com";
+const LEGACY_AGENT_API = "https://auri-agent-api.onrender.com";
+
 const storedConfig = JSON.parse(localStorage.getItem("auri-demo-console-config") || "{}");
 const CONFIG = { ...DEFAULT_CONFIG, ...storedConfig, ...(window.AURI_CONFIG || {}) };
 
@@ -26,6 +29,9 @@ const $ = (selector) => document.querySelector(selector);
 const ui = {
   apiBase: $("#apiBase"),
   token: $("#token"),
+  usePublicAgent: $("#usePublicAgent"),
+  useLegacyAgent: $("#useLegacyAgent"),
+  useLocalAgent: $("#useLocalAgent"),
   saveConfig: $("#saveConfig"),
   connectBtn: $("#connectBtn"),
   resetBtn: $("#resetBtn"),
@@ -38,6 +44,8 @@ const ui = {
   late: $("#late"),
   surface: $("#surface"),
   confirmOwner: $("#confirmOwner"),
+  agentHealth: $("#agentHealth"),
+  agentTools: $("#agentTools"),
   tasks: $("#tasks"),
   actions: $("#actions"),
   eventLog: $("#eventLog")
@@ -92,6 +100,35 @@ async function apiFetch(path, options = {}) {
     throw new Error(`${code}: ${data?.detail?.message || response.statusText}`);
   }
   return data;
+}
+
+async function loadHealth(reason = "health") {
+  const response = await fetch(`${CONFIG.apiBase}/health`, {
+    headers: { Accept: "application/json" }
+  });
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!response.ok) throw new Error(`${response.status}: ${data?.detail?.message || response.statusText}`);
+  renderHealth(data);
+  log(reason, data.llm_framework || "agent", healthSummary(data));
+  return data;
+}
+
+function healthSummary(health) {
+  const tools = Array.isArray(health?.agent_last_tools) && health.agent_last_tools.length
+    ? health.agent_last_tools.join(",")
+    : "none";
+  return `mode ${health?.llm_last_mode || "--"} · tools ${tools}`;
+}
+
+function renderHealth(health) {
+  const framework = health?.llm_framework || "unknown";
+  const toolsEnabled = health?.agent_tools_enabled === true ? "tools on" : "tools off";
+  ui.agentHealth.textContent = `${framework} · ${toolsEnabled}`;
+  const tools = Array.isArray(health?.agent_last_tools) && health.agent_last_tools.length
+    ? health.agent_last_tools.join(", ")
+    : "tools --";
+  ui.agentTools.textContent = `${health?.llm_last_mode || "mode --"} · ${tools}`;
 }
 
 function eventId(type) {
@@ -167,6 +204,10 @@ function render() {
   ui.confirmOwner.textContent = worldState?.confirmation
     ? `${worldState.confirmation.owner_surface} · ${worldState.confirmation.status}`
     : "confirm --";
+  if (!ui.agentHealth.textContent || ui.agentHealth.textContent === "未检查") {
+    ui.agentHealth.textContent = "未检查";
+    ui.agentTools.textContent = "tools --";
+  }
   renderTasks();
   renderActions();
 }
@@ -258,9 +299,20 @@ document.addEventListener("click", async (event) => {
 });
 
 ui.saveConfig.addEventListener("click", saveConfig);
+ui.usePublicAgent.addEventListener("click", () => {
+  ui.apiBase.value = PUBLIC_AGENT_API;
+});
+ui.useLegacyAgent.addEventListener("click", () => {
+  ui.apiBase.value = LEGACY_AGENT_API;
+});
+ui.useLocalAgent.addEventListener("click", () => {
+  ui.apiBase.value = DEFAULT_CONFIG.apiBase;
+  ui.token.value = "";
+});
 ui.connectBtn.addEventListener("click", async () => {
   saveConfig();
   try {
+    await loadHealth("health");
     await loadState("connect");
     connectStream();
   } catch (error) {
@@ -274,4 +326,5 @@ ui.clearLog.addEventListener("click", () => {
 
 initConfig();
 render();
+loadHealth("health").catch((error) => log("error", "health", friendlyError(error)));
 loadState("load").then(connectStream).catch((error) => log("error", "initial load", friendlyError(error)));

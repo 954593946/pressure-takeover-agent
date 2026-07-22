@@ -28,7 +28,7 @@ HMI 是 World State 渲染器，不是状态机。页面启动后读取 `/v1/sta
 
 1. 打开车机 HMI 页面。
 2. 点击底部 `Agent`。
-3. 选择 `公网 Agent` 或手动填写 `Agent API`。
+3. 选择 `LangChain 公网` 或手动填写 `Agent API`。
 4. 在 `Team Token` 输入框填写团队令牌。
 5. 点击 `保存并重连`。
 
@@ -37,9 +37,12 @@ HMI 是 World State 渲染器，不是状态机。页面启动后读取 `/v1/sta
 HMI 同时兼容本地 Agent 和公网 Agent：
 
 - 本地开发：`http://127.0.0.1:8000`
-- 团队公网联调：`https://auri-agent-api.onrender.com`
+- 团队公网联调：`https://auri-langchain-agent-api.onrender.com`
+- 旧版回退：`https://auri-agent-api.onrender.com`
 
 状态同步采用 SSE `/v1/stream` 加 `/v1/state` 轮询兜底。公网环境中如果 SSE 被浏览器、代理或部署平台中断，HMI 仍会通过轮询更新状态。
+
+新版公网 Agent 使用 LangChain 工具编排自然语言，但 HMI 不直接调用工具。HMI 仍只消费 `WorldState`，并通过 `/v1/confirm` 处理车机确认。
 
 ## 允许的写操作
 

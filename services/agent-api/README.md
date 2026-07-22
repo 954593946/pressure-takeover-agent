@@ -74,11 +74,13 @@ WebSocket 客户端优先使用 `X-Agent-Token` 请求头；浏览器原生 WebS
 部署完成后，客户端配置改为：
 
 ```dotenv
-AGENT_API_BASE_URL=https://auri-agent-api.onrender.com
-AGENT_STREAM_URL=https://auri-agent-api.onrender.com/v1/stream
+AGENT_API_BASE_URL=https://auri-langchain-agent-api.onrender.com
+AGENT_STREAM_URL=https://auri-langchain-agent-api.onrender.com/v1/stream
 ```
 
 实际子域名以 Render 分配结果为准。所有 `/v1/*` 请求继续携带 `X-Agent-Token`；WebSocket 使用 `wss://<Render 域名>/v1/ws`。
+
+旧版 `https://auri-agent-api.onrender.com` 仅作为回退服务；新联调默认使用 LangChain 公网服务。
 
 免费实例适合团队开发联调，但空闲后会休眠，首次请求可能需要约一分钟唤醒；休眠、重启或重新部署都会清空当前进程内 World State。正式演示前应提前唤醒并执行一次标准场景重置，或临时升级到不会空闲休眠的实例。
 

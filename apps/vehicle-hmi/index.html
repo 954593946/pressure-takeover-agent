@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>AURI 车机 HMI | 随行压力接管 Agent</title>
-  <link rel="stylesheet" href="./styles.css?v=auri-nav-map-20260722" />
+  <link rel="stylesheet" href="./styles.css?v=auri-langchain-agent-20260722" />
 </head>
 <body>
   <main class="screen" aria-label="AURI 车机 HMI">
@@ -296,23 +296,24 @@
       </header>
       <label>
         <span>Agent API</span>
-        <input id="configApiBase" autocomplete="off" placeholder="https://auri-agent-api.onrender.com" />
+        <input id="configApiBase" autocomplete="off" placeholder="https://auri-langchain-agent-api.onrender.com" />
       </label>
       <label>
         <span>Team Token</span>
         <input id="configToken" type="password" autocomplete="off" placeholder="仅保存在本浏览器，不写入仓库" />
       </label>
       <div class="config-actions">
-        <button id="usePublicAgent" type="button">公网 Agent</button>
+        <button id="usePublicAgent" type="button">LangChain 公网</button>
+        <button id="useLegacyAgent" type="button">旧版回退</button>
         <button id="useLocalAgent" type="button">本地 Agent</button>
         <button class="primary" type="submit">保存并重连</button>
       </div>
-      <p>团队协同时页面可以公网访问，但 Agent API 不能使用 127.0.0.1。Team Token 只保存在本浏览器。</p>
+      <p>默认公网 Agent 使用 LangChain 工具编排服务；旧版 Render 地址仅作为回退。Team Token 只保存在本浏览器。</p>
     </form>
   </section>
 
   <div class="portrait"><strong>请横屏展示 AURI 车机 HMI</strong><span>推荐 16:9 大屏或平板横屏。</span></div>
 
-  <script src="./app.js?v=auri-brand-20260722"></script>
+  <script src="./app.js?v=auri-langchain-agent-20260722"></script>
 </body>
 </html>

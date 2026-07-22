@@ -56,7 +56,13 @@ python -m uvicorn \
 
 ## 连接团队公网 Agent
 
-公网 Agent 地址：
+推荐公网 Agent 地址：
+
+```text
+https://auri-langchain-agent-api.onrender.com
+```
+
+旧版回退地址：
 
 ```text
 https://auri-agent-api.onrender.com
@@ -65,7 +71,7 @@ https://auri-agent-api.onrender.com
 打开车机 HMI 后：
 
 1. 点击底部 `Agent`。
-2. 点击 `公网 Agent`。
+2. 点击 `LangChain 公网`。
 3. 在 `Team Token` 输入框填写团队负责人提供的令牌。
 4. 点击 `保存并重连`。
 
@@ -75,6 +81,8 @@ https://auri-agent-api.onrender.com
 - 不要把 Team Token 写入仓库、截图、PR 描述或聊天记录。
 - 不要把 OpenAI API Key 写入任何前端文件。
 - 如果页面部署在公网，Agent API 不能填 `127.0.0.1`，否则会访问使用者自己的电脑。
+- HMI 不直接调用 LangChain 工具，只消费 Agent 返回的 `WorldState`。
+- 旧版回退地址只在新版 LangChain 服务不可用时使用。
 
 ## 状态同步机制
 
@@ -86,6 +94,18 @@ HMI 使用两种方式同步 Agent 状态：
 客户端只接受相同 `session_id` 且更高 `revision` 的快照。
 
 如果公网 SSE 被代理或浏览器中断，HMI 会通过轮询继续更新，不需要手动保存重连。
+
+## 与 LangChain Agent 的关系
+
+新版公网 Agent 使用 LangChain 做自然语言工具编排，但 HMI 的接入方式不变：
+
+```text
+GET /v1/state
+GET /v1/stream
+POST /v1/confirm
+```
+
+HMI 不读取工具调用细节，不从聊天回复反推状态，也不直接调用 `create_tasks`、`prepare_assistance` 等工具。工具结果最终会体现在 `WorldState.tasks`、`actions`、`confirmation` 和 `output.conclusion` 中，HMI 只按这些字段渲染。
 
 ## 车机确认规则
 
