@@ -43,8 +43,6 @@ data class VehicleUiState(
     val hmiPrimarySurface: PrimarySurface = PrimarySurface.MOBILE,
     val hmiRisk: Risk = Risk(pressureLevel = PressureLevel.L0),
     val hmiEta: String? = null,
-    // AC control (from shared WorldState — Agent writes, phone + HMI both read)
-    val vehicleControl: VehicleControl = VehicleControl(),
     val isLoading: Boolean = false,
     val error: String? = null,
 )
@@ -72,7 +70,6 @@ class VehicleViewModel @Inject constructor(
                         hmiPrimarySurface = ws.primarySurface,
                         hmiRisk = ws.risk,
                         hmiEta = ws.eta,
-                        vehicleControl = ws.vehicleState,
                     )
                 }
             }

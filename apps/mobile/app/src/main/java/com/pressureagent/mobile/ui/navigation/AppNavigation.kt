@@ -25,7 +25,6 @@ import com.pressureagent.mobile.ui.review.ReviewScreen
 import com.pressureagent.mobile.ui.splash.SplashScreen
 import com.pressureagent.mobile.ui.task.CreateTaskScreen
 import com.pressureagent.mobile.ui.vehicle.VehicleScreen
-import com.pressureagent.mobile.ui.wearable.WearableScreen
 
 @Composable
 fun AppNavigation() {
@@ -95,7 +94,6 @@ fun AppNavigation() {
             composable(Screen.Profile.route) {
                 ProfileScreen(
                     onNavigateToReview = { navController.navigate(Screen.Review.route) },
-                    onNavigateToWearable = { navController.navigate(Screen.Wearable.route) },
                     onNavigateToDebug = { navController.navigate(Screen.Debug.route) },
                     onNavigateToLogViewer = { navController.navigate(Screen.LogViewer.route) },
                 )
@@ -107,9 +105,6 @@ fun AppNavigation() {
             }
             composable(Screen.Review.route) {
                 ReviewScreen()
-            }
-            composable(Screen.Wearable.route) {
-                WearableScreen()
             }
             composable(Screen.Debug.route) {
                 DebugScreen()

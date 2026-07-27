@@ -2,7 +2,6 @@ import * as hmUI from "@zos/ui";
 import { log as Logger } from "@zos/utils";
 import { playHaptic, stopHaptics } from "../../../utils/haptics";
 import { collectHealthSnapshot } from "../../../utils/health-sensors";
-import { normalizeWearableCommand } from "../../../utils/state-map";
 import {
   BACKGROUND_STYLE,
   CORE_STYLE,
@@ -99,7 +98,6 @@ let processedCommandIds = [];
 let offlineTimer = null;
 let offlineShown = false;
 let localCommandSeq = 0;
-let lastPingId = "";
 
 function getGlobalData() {
   return getApp()._options.globalData || {};
@@ -129,15 +127,13 @@ function updateSubtitle(text) {
 
 function sendToSide(method, params) {
   try {
-    const globalData = getGlobalData();
-    if (globalData && typeof globalData.notifySide === "function") {
-      return globalData.notifySide(method, params);
+    const app = getApp()._options;
+    if (app && typeof app.notifySide === "function") {
+      app.notifySide(method, params);
     }
   } catch (error) {
-    logger.debug(`side send failed: ${method} ${error && error.message ? error.message : error}`);
+    logger.debug(`side send failed: ${method}`);
   }
-
-  return false;
 }
 
 function sendAck(commandId, result, reason = "") {
@@ -201,48 +197,31 @@ function renderWearableState(command) {
   getGlobalData().currentState = command;
 }
 
-function executeStateChange(command, options = {}) {
-  const playFeedback = options.playFeedback !== false;
-
-  lastCommandId = command.command_id;
-  renderWearableState(command);
-
-  if (playFeedback && lastHapticCommandId !== command.command_id) {
-    playHaptic(command.haptic || "none");
-    lastHapticCommandId = command.command_id;
-  }
-}
-
-function handleRemoteSetState(rawCommand) {
-  if (!rawCommand || !rawCommand.command_id) {
+function handleSetState(command) {
+  if (!command || !command.command_id) {
     updateDebug("ack: error / missing id");
     return { ack: sendAck("", "error", "missing command_id") };
   }
 
-  if (hasProcessed(rawCommand.command_id)) {
-    updateDebug(`ack: duplicate / ${rawCommand.command_id}`);
-    return { ack: sendAck(rawCommand.command_id, "duplicate") };
+  if (hasProcessed(command.command_id)) {
+    updateDebug(`ack: duplicate / ${command.command_id}`);
+    return { ack: sendAck(command.command_id, "duplicate") };
   }
 
-  if (!rawCommand.mode && !rawCommand.state) {
-    rememberCommand(rawCommand.command_id);
-    updateDebug("ack: unsupported / missing mode");
-    return { ack: sendAck(rawCommand.command_id, "unsupported", "missing mode") };
+  if (!VALID_MODES[command.mode]) {
+    rememberCommand(command.command_id);
+    updateDebug(`ack: unsupported / ${command.mode || "none"}`);
+    return { ack: sendAck(command.command_id, "unsupported", "unsupported mode") };
   }
 
-  if (rawCommand.mode && !VALID_MODES[rawCommand.mode]) {
-    rememberCommand(rawCommand.command_id);
-    updateDebug(`ack: unsupported / ${rawCommand.mode || "none"}`);
-    return { ack: sendAck(rawCommand.command_id, "unsupported", "unsupported mode") };
-  }
-
-  const command = normalizeWearableCommand({
-    ...rawCommand,
-    source: "remote"
-  });
-
+  lastCommandId = command.command_id;
   rememberCommand(command.command_id);
-  executeStateChange(command);
+  renderWearableState(command);
+
+  if (lastHapticCommandId !== command.command_id) {
+    playHaptic(command.haptic || "none");
+    lastHapticCommandId = command.command_id;
+  }
 
   updateDebug(`ack: ok / ${command.command_id}`);
   return { ack: sendAck(command.command_id, "ok") };
@@ -256,8 +235,7 @@ function showNextLocalState() {
     command_id: `local-${baseCommand.mode}-${localCommandSeq}`
   };
   stateIndex = (stateIndex + 1) % LOCAL_STATES.length;
-  executeStateChange(command);
-  updateDebug(`debug: local / ${command.mode}`);
+  handleSetState(command);
 }
 
 function formatHealthSummary(snapshot) {
@@ -268,10 +246,15 @@ function formatHealthSummary(snapshot) {
 }
 
 function collectLocalHealth() {
+  updateDebug("sensor: reading...");
+
   const snapshot = collectHealthSnapshot();
   getGlobalData().lastSensor = snapshot;
   updateSubtitle(formatHealthSummary(snapshot));
+  updateDebug(`sensor: ${snapshot.result}`);
   sendToSide("watch.sensor", snapshot);
+
+  logger.log("health snapshot", JSON.stringify(snapshot));
   return snapshot;
 }
 
@@ -280,7 +263,7 @@ function handleBridgeMessage(message = {}) {
   getGlobalData().lastMessageAt = Date.now();
 
   if (message.method === "watch.setState" || message.type === "SET_STATE") {
-    return handleRemoteSetState(message.params || message);
+    return handleSetState(message.params || message);
   }
 
   if (message.method === "watch.sensorRequest" || message.type === "SENSOR_REQUEST") {
@@ -288,16 +271,9 @@ function handleBridgeMessage(message = {}) {
   }
 
   if (message.method === "watch.ping" || message.type === "PING") {
-    const pingId = message.ping_id || (message.params && message.params.ping_id) || "";
-    if (pingId && pingId === lastPingId) {
-      updateDebug("pong: duplicate ignored");
-      return { type: "PONG", result: "duplicate", timestamp: Date.now() };
-    }
-
-    lastPingId = pingId;
     sendToSide("watch.pong", {
       type: "PONG",
-      ping_id: pingId,
+      ping_id: message.ping_id || (message.params && message.params.ping_id) || "",
       timestamp: Date.now()
     });
     updateDebug("pong: local");
@@ -306,15 +282,6 @@ function handleBridgeMessage(message = {}) {
 
   updateDebug("ack: unsupported");
   return { result: "unsupported" };
-}
-
-function flushPendingSideMessages() {
-  const globalData = getGlobalData();
-  const pending = globalData.pendingIncomingMessages || [];
-
-  while (pending.length) {
-    handleBridgeMessage(pending.shift());
-  }
 }
 
 function checkOffline() {
@@ -339,9 +306,11 @@ function checkOffline() {
 
 Page({
   onInit() {
+    logger.debug("home onInit");
   },
 
   build() {
+    logger.debug("home build");
     this.createStaticLayout();
 
     const globalData = getGlobalData();
@@ -351,7 +320,6 @@ Page({
     globalData.lastMessageAt = Date.now();
 
     renderWearableState(LOCAL_STATES[0]);
-    flushPendingSideMessages();
     updateDebug("短按状态 / 长按健康");
     offlineTimer = setInterval(checkOffline, 15000);
   },
@@ -378,6 +346,7 @@ Page({
   },
 
   onDestroy() {
+    logger.debug("home onDestroy");
     if (offlineTimer) {
       clearInterval(offlineTimer);
       offlineTimer = null;

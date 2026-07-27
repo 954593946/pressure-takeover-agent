@@ -10,9 +10,6 @@
   },
   "author": "",
   "license": "UNLICENSED",
-  "dependencies": {
-    "@zeppos/zml": "^0.0.38"
-  },
   "devDependencies": {
     "@zeppos/device-types": "^3.0.0"
   }

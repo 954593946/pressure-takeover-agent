@@ -150,76 +150,6 @@ class AgentToolbox:
             "status": task.status,
         }
 
-    def delete_task(self, task_reference: str) -> dict[str, object]:
-        """Remove a task by ID or title match. Rigid tasks cannot be deleted."""
-        reference = task_reference.strip().lower()
-        task = next(
-            (
-                item
-                for item in self.state.tasks
-                if item.task_id.lower() == reference or reference in item.title.lower()
-            ),
-            None,
-        )
-        if task is None:
-            return {"ok": False, "error": "未找到对应任务"}
-        if task.task_type == "rigid":
-            return {"ok": False, "error": "该任务是刚性任务，不能删除。如需调整请直接说明。"}
-        self.state.tasks = [t for t in self.state.tasks if t.task_id != task.task_id]
-        self._record("delete_task")
-        return {
-            "ok": True,
-            "deleted_task_id": task.task_id,
-            "title": task.title,
-            "remaining_tasks": len(self.state.tasks),
-        }
-
-    def control_ac(
-        self,
-        *,
-        ac_on: bool | None = None,
-        target_temp: float | None = None,
-        mode: str | None = None,
-        fan_speed: str | None = None,
-    ) -> dict[str, object]:
-        """Control vehicle AC. Changes write to shared WorldState, both phone and HMI see them."""
-        vs = self.state.vehicle_state
-
-        if ac_on is not None:
-            vs.ac_on = ac_on
-        if target_temp is not None:
-            vs.ac_target_temp = max(16.0, min(30.0, target_temp))
-        if mode is not None and mode in ("auto", "cool", "heat", "fan"):
-            vs.ac_mode = mode
-        if fan_speed is not None and fan_speed in ("low", "medium", "high"):
-            vs.fan_speed = fan_speed
-
-        # When AC is turned on and scene is off_vehicle, switch to approaching_vehicle
-        if vs.ac_on and self.state.scene == Scene.OFF_VEHICLE:
-            self.state.scene = Scene.APPROACHING_VEHICLE
-
-        self._record("control_ac")
-        return {
-            "ok": True,
-            "ac_on": vs.ac_on,
-            "target_temp": vs.ac_target_temp,
-            "mode": vs.ac_mode,
-            "fan_speed": vs.fan_speed,
-            "summary": (
-                f"空调已{'开启' if vs.ac_on else '关闭'}，"
-                f"{vs.ac_target_temp:.0f}°C，{self._ac_mode_label(vs.ac_mode)}，"
-                f"风量{self._ac_fan_label(vs.fan_speed)}"
-            ),
-        }
-
-    @staticmethod
-    def _ac_mode_label(mode: str) -> str:
-        return {"auto": "自动", "cool": "制冷", "heat": "制热", "fan": "送风"}.get(mode, mode)
-
-    @staticmethod
-    def _ac_fan_label(speed: str) -> str:
-        return {"low": "低", "medium": "中", "high": "高"}.get(speed, speed)
-
     def prepare_assistance(self, *, include_messages: bool, include_grocery: bool) -> dict[str, object]:
         if self.state.confirmation is not None and self.state.confirmation.status == "pending":
             self._record("prepare_assistance")
@@ -343,32 +273,6 @@ def reschedule_task(
 
 
 @tool
-def delete_task(
-    task_reference: Annotated[str, "任务 ID 或足以唯一识别任务的标题"],
-    runtime: ToolRuntime[AgentToolContext],
-) -> dict[str, object]:
-    """删除用户指定的弹性任务；刚性任务会被确定性规则拒绝。删除前会确认。"""
-    return runtime.context.toolbox.delete_task(task_reference)
-
-
-@tool
-def control_ac(
-    runtime: ToolRuntime[AgentToolContext],
-    ac_on: Annotated[bool | None, "是否开启空调，true 为开 false 为关，不传则保持当前状态"] = None,
-    target_temp: Annotated[float | None, "目标温度（℃），范围 16-30"] = None,
-    mode: Annotated[str | None, "模式：auto（自动）/ cool（制冷）/ heat（制热）/ fan（送风）"] = None,
-    fan_speed: Annotated[str | None, "风量：low（低）/ medium（中）/ high（高）"] = None,
-) -> dict[str, object]:
-    """控制车载空调；写入共享 WorldState，手机和车机屏幕会同步显示空调状态变化。"""
-    return runtime.context.toolbox.control_ac(
-        ac_on=ac_on,
-        target_temp=target_temp,
-        mode=mode,
-        fan_speed=fan_speed,
-    )
-
-
-@tool
 def prepare_assistance(
     runtime: ToolRuntime[AgentToolContext],
     include_messages: Annotated[bool, "是否为已有刚性任务的等待方准备模拟消息"] = True,
@@ -395,8 +299,6 @@ AURI_TOOLS = [
     get_status,
     report_meeting_delay,
     reschedule_task,
-    delete_task,
-    control_ac,
     prepare_assistance,
     confirm_current_actions,
 ]

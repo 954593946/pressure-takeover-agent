@@ -45,8 +45,6 @@ data class ChatUiState(
     val error: String? = null,
     // Confirmation (lifted to top-level for quick access)
     val pendingConfirmation: Confirmation? = null,
-    val isConfirmationBlocked: Boolean = false,
-    val blockedReason: String? = null,
     val conclusion: String = "",
 )
 
@@ -72,9 +70,8 @@ class ChatViewModel @Inject constructor(
     private var voiceJob: Job? = null
     private var chatJob: Job? = null
     private var chatConfirmationId: String? = null
-    // Tracks whether the current chat SSE already delivered a response.
-    // Prevents WorldState conclusion from creating a duplicate chat item.
-    private var sseResponseReceived = false
+
+    private var firstStateReceived = false
 
     init {
         observeWorldState()
@@ -94,21 +91,30 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 repository.worldState.collect { ws ->
+                // Auto-reset stale session on first connect
+                if (!firstStateReceived) {
+                    firstStateReceived = true
+                    val isStale = ws.confirmation != null ||
+                        ws.stage != Stage.OFF_VEHICLE_IDLE ||
+                        ws.primarySurface != PrimarySurface.MOBILE
+                    if (isStale) {
+                        viewModelScope.launch {
+                            try {
+                                repository.resetSession()
+                            } catch (_: Exception) { /* non-critical */ }
+                        }
+                        return@collect
+                    }
+                }
+
                 val newChats = mutableListOf<ChatItem>()
 
                 // 1) Conclusion change → AURI text response (like normal AI chat)
                 val conclusion = ws.output?.conclusion.orEmpty()
                 if (conclusion.isNotBlank() && conclusion != lastConclusion) {
-                    // Only create conclusion chat item if SSE didn't already deliver the response
-                    if (!sseResponseReceived) {
-                        newChats.add(ChatItem(id = "msg_${ws.revision}", text = conclusion, isUser = false))
-                    }
-                    // Only speak when mobile is the primary surface
-                    if (_uiState.value.isTtsEnabled && ws.primarySurface == PrimarySurface.MOBILE) {
-                        voiceOutput.speak(conclusion)
-                    }
+                    newChats.add(ChatItem(id = "msg_${ws.revision}", text = conclusion, isUser = false))
+                    if (_uiState.value.isTtsEnabled) voiceOutput.speak(conclusion)
                     lastConclusion = conclusion
-                    sseResponseReceived = false // reset for next turn
                 }
 
                 // 2) Confirmation → actionable card
@@ -127,15 +133,6 @@ class ChatViewModel @Inject constructor(
                 lastStage = ws.stage
                 currentSessionId = ws.sessionId
 
-                // Check if any service order is over-budget (blocks confirmation)
-                val overBudget = ws.serviceOrders.any { it.budgetStatus == BudgetStatus.OVER_BUDGET }
-                val blocked = ws.serviceOrders.any { it.status == ServiceOrderStatus.BLOCKED }
-                val blockedReason = when {
-                    blocked -> "订单已被阻止"
-                    overBudget -> "超出预算 ¥${ws.serviceOrders.firstOrNull { it.budgetStatus == BudgetStatus.OVER_BUDGET }?.budgetLimit?.toInt() ?: 0}，无法执行"
-                    else -> null
-                }
-
                 _uiState.update {
                     it.copy(
                         isLoading = false,
@@ -147,8 +144,6 @@ class ChatViewModel @Inject constructor(
                         isCompanionMode = ws.primarySurface != PrimarySurface.MOBILE,
                         conclusion = conclusion,
                         pendingConfirmation = ws.confirmation,
-                        isConfirmationBlocked = overBudget || blocked,
-                        blockedReason = blockedReason,
                         chatMessages = if (newChats.isNotEmpty()) it.chatMessages + newChats else it.chatMessages,
                     )
                 }
@@ -219,11 +214,6 @@ class ChatViewModel @Inject constructor(
 
     fun onTextSubmit(text: String) {
         if (text.isBlank()) return
-        // Defense-in-depth: block input when mobile is not the primary surface
-        if (_uiState.value.isCompanionMode) {
-            _uiState.update { it.copy(error = "当前由车机主控，请在车机屏幕操作") }
-            return
-        }
         addUserChat(text)
         submitUtterance(text)
     }
@@ -253,7 +243,6 @@ class ChatViewModel @Inject constructor(
                     when (event) {
                         is ChatStreamEvent.TextDelta -> {
                             receivedContent = true
-                            sseResponseReceived = true
                             _uiState.update { state ->
                             val msgs = state.chatMessages.toMutableList()
                             val idx = msgs.indexOfLast { it.id == aiId }
@@ -272,7 +261,6 @@ class ChatViewModel @Inject constructor(
                         }
                         is ChatStreamEvent.ToolCallResult -> {
                             receivedContent = true
-                            sseResponseReceived = true
                             _uiState.update { state ->
                             val msgs = state.chatMessages.toMutableList()
                             val idx = msgs.indexOfLast { it.id == aiId }
@@ -282,7 +270,6 @@ class ChatViewModel @Inject constructor(
                         }
                         is ChatStreamEvent.ConfirmationRequired -> {
                             receivedContent = true
-                            sseResponseReceived = true
                             chatConfirmationId = event.confirmationId
                             _uiState.update { state ->
                                 state.copy(
@@ -297,7 +284,6 @@ class ChatViewModel @Inject constructor(
                             }
                         }
                         is ChatStreamEvent.Done -> {
-                            sseResponseReceived = true
                             if (event.sessionId.isNotBlank()) currentSessionId = event.sessionId
                             _uiState.update { it.copy(isLoading = false) }
                         }
@@ -359,16 +345,6 @@ class ChatViewModel @Inject constructor(
 
     fun confirm() {
         val c = _uiState.value.pendingConfirmation ?: return
-        // Guard: only confirm when mobile is the primary surface
-        if (_uiState.value.primarySurface != PrimarySurface.MOBILE) {
-            _uiState.update { it.copy(error = "当前由车机主控，请在车机屏幕确认") }
-            return
-        }
-        // Guard: don't confirm over-budget or blocked orders
-        if (_uiState.value.isConfirmationBlocked) {
-            _uiState.update { it.copy(error = _uiState.value.blockedReason ?: "订单状态异常，无法确认") }
-            return
-        }
         if (chatConfirmationId != null) {
             submitChatConfirmation(c.confirmationId, "accept")
         } else {
@@ -378,11 +354,6 @@ class ChatViewModel @Inject constructor(
 
     fun reject() {
         val c = _uiState.value.pendingConfirmation ?: return
-        // Guard: only reject when mobile is the primary surface
-        if (_uiState.value.primarySurface != PrimarySurface.MOBILE) {
-            _uiState.update { it.copy(error = "当前由车机主控，请在车机屏幕操作") }
-            return
-        }
         if (chatConfirmationId != null) {
             submitChatConfirmation(c.confirmationId, "reject")
         } else {

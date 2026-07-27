@@ -8,7 +8,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,10 +17,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.pressureagent.mobile.ui.theme.AuriCritical
 import com.pressureagent.mobile.ui.theme.AuriIvory
 import com.pressureagent.mobile.ui.theme.AuriNavy
-import com.pressureagent.mobile.ui.theme.AuriSuccess
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -36,9 +33,8 @@ fun CreateTaskScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
 
-    // Navigate back on successful sync
-    LaunchedEffect(state.syncStatus) {
-        if (state.syncStatus == SyncStatus.SYNCED) {
+    LaunchedEffect(state.submitSuccess) {
+        if (state.submitSuccess) {
             viewModel.onNavigatedAfterSuccess()
             onNavigateBack()
         }
@@ -80,7 +76,6 @@ fun CreateTaskScreen(
                 placeholder = { Text("接孩子", color = Color.Gray) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
-                enabled = state.syncStatus != SyncStatus.SYNCING,
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = AuriNavy,
@@ -98,7 +93,6 @@ fun CreateTaskScreen(
             OutlinedButton(
                 onClick = { showDatePicker = true },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = state.syncStatus != SyncStatus.SYNCING,
                 shape = RoundedCornerShape(12.dp),
             ) {
                 Icon(Icons.Filled.CalendarMonth, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -150,58 +144,22 @@ fun CreateTaskScreen(
 
             Spacer(Modifier.height(20.dp))
 
-            // ─── Sync status indicator ────────────────────────────────
-            when (state.syncStatus) {
-                SyncStatus.SYNCING -> {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = AuriNavy)
-                        Spacer(Modifier.width(8.dp))
-                        Text("正在同步到服务器…", style = MaterialTheme.typography.bodySmall, color = AuriNavy)
-                    }
-                }
-                SyncStatus.FAILED -> {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        color = AuriCritical.copy(alpha = 0.1f),
-                    ) {
-                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("⚠️", fontSize = 16.sp)
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                state.error ?: "同步失败",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = AuriCritical,
-                                modifier = Modifier.weight(1f),
-                            )
-                            TextButton(onClick = {
-                                viewModel.retrySync()
-                            }) {
-                                Icon(Icons.Filled.Refresh, contentDescription = "重试", modifier = Modifier.size(16.dp), tint = AuriCritical)
-                                Spacer(Modifier.width(4.dp))
-                                Text("重试", color = AuriCritical, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            }
-                        }
-                    }
-                }
-                else -> { /* idle or synced — no indicator */ }
-            }
-
             // ─── Create button ───────────────────────────────────────
             Button(
                 onClick = viewModel::onQuickCreate,
                 modifier = Modifier.fillMaxWidth().height(48.dp),
-                enabled = state.quickTitle.isNotBlank() && state.syncStatus != SyncStatus.SYNCING,
+                enabled = state.quickTitle.isNotBlank(),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = AuriNavy),
             ) {
                 Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(if (state.syncStatus == SyncStatus.SYNCING) "提交中…" else "创建任务")
+                Text("创建任务")
+            }
+
+            if (state.error != null) {
+                Spacer(Modifier.height(12.dp))
+                Text(state.error!!, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
             }
         }
     }

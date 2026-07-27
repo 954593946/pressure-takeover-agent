@@ -170,7 +170,7 @@ fun CalendarScreen(
                 }
             } else {
                 items(state.tasksOnSelectedDate.distinctBy { it.taskId }, key = { it.taskId }) { task ->
-                    TaskCard(task = task)
+                    TaskCard(task = task, onDelete = { viewModel.removeTask(task.taskId) })
                 }
             }
 
@@ -182,7 +182,7 @@ fun CalendarScreen(
                     Text("未安排日期", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = AuriWarning)
                 }
                 items(state.unscheduledTasks.distinctBy { it.taskId }, key = { it.taskId }) { task ->
-                    TaskCard(task = task)
+                    TaskCard(task = task, onDelete = { viewModel.removeTask(task.taskId) })
                 }
             }
 
