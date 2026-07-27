@@ -98,6 +98,7 @@ let processedCommandIds = [];
 let offlineTimer = null;
 let offlineShown = false;
 let localCommandSeq = 0;
+let lastPingId = "";
 
 function getGlobalData() {
   return getApp()._options.globalData || {};
@@ -127,13 +128,15 @@ function updateSubtitle(text) {
 
 function sendToSide(method, params) {
   try {
-    const app = getApp()._options;
-    if (app && typeof app.notifySide === "function") {
-      app.notifySide(method, params);
+    const globalData = getGlobalData();
+    if (globalData && typeof globalData.notifySide === "function") {
+      return globalData.notifySide(method, params);
     }
   } catch (error) {
-    logger.debug(`side send failed: ${method}`);
+    logger.debug(`side send failed: ${method} ${error && error.message ? error.message : error}`);
   }
+
+  return false;
 }
 
 function sendAck(commandId, result, reason = "") {
@@ -246,15 +249,10 @@ function formatHealthSummary(snapshot) {
 }
 
 function collectLocalHealth() {
-  updateDebug("sensor: reading...");
-
   const snapshot = collectHealthSnapshot();
   getGlobalData().lastSensor = snapshot;
   updateSubtitle(formatHealthSummary(snapshot));
-  updateDebug(`sensor: ${snapshot.result}`);
   sendToSide("watch.sensor", snapshot);
-
-  logger.log("health snapshot", JSON.stringify(snapshot));
   return snapshot;
 }
 
@@ -271,9 +269,16 @@ function handleBridgeMessage(message = {}) {
   }
 
   if (message.method === "watch.ping" || message.type === "PING") {
+    const pingId = message.ping_id || (message.params && message.params.ping_id) || "";
+    if (pingId && pingId === lastPingId) {
+      updateDebug("pong: duplicate ignored");
+      return { type: "PONG", result: "duplicate", timestamp: Date.now() };
+    }
+
+    lastPingId = pingId;
     sendToSide("watch.pong", {
       type: "PONG",
-      ping_id: message.ping_id || (message.params && message.params.ping_id) || "",
+      ping_id: pingId,
       timestamp: Date.now()
     });
     updateDebug("pong: local");
@@ -282,6 +287,15 @@ function handleBridgeMessage(message = {}) {
 
   updateDebug("ack: unsupported");
   return { result: "unsupported" };
+}
+
+function flushPendingSideMessages() {
+  const globalData = getGlobalData();
+  const pending = globalData.pendingIncomingMessages || [];
+
+  while (pending.length) {
+    handleBridgeMessage(pending.shift());
+  }
 }
 
 function checkOffline() {
@@ -306,11 +320,9 @@ function checkOffline() {
 
 Page({
   onInit() {
-    logger.debug("home onInit");
   },
 
   build() {
-    logger.debug("home build");
     this.createStaticLayout();
 
     const globalData = getGlobalData();
@@ -320,6 +332,7 @@ Page({
     globalData.lastMessageAt = Date.now();
 
     renderWearableState(LOCAL_STATES[0]);
+    flushPendingSideMessages();
     updateDebug("短按状态 / 长按健康");
     offlineTimer = setInterval(checkOffline, 15000);
   },
@@ -346,7 +359,6 @@ Page({
   },
 
   onDestroy() {
-    logger.debug("home onDestroy");
     if (offlineTimer) {
       clearInterval(offlineTimer);
       offlineTimer = null;

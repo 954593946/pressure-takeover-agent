@@ -1,5 +1,8 @@
 import * as ble from "@zos/ble";
 
+// Experimental low-level BLE bridge. P0 communication uses @zeppos/zml only;
+// do not start this bridge at the same time as BaseApp/BaseSideService.
+
 function toBuffer(message) {
   const text = JSON.stringify(message);
   return Buffer.from(text, "utf-8");
