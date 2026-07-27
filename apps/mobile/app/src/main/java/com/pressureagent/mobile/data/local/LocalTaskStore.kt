@@ -45,7 +45,7 @@ class LocalTaskStore @Inject constructor(
         }
     }
 
-    fun addTask(title: String, scheduledAtIso: String?): String {
+    fun addTask(title: String, scheduledAtIso: String?) {
         val task = Task(
             taskId = "local_${UUID.randomUUID().toString().take(8)}",
             title = title,
@@ -57,7 +57,6 @@ class LocalTaskStore @Inject constructor(
         )
         _tasks.update { it + task }
         saveToDisk()
-        return task.taskId
     }
 
     fun removeTask(taskId: String) {

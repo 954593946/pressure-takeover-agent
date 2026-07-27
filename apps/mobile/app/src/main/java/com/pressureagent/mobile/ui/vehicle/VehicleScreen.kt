@@ -130,102 +130,6 @@ fun VehicleScreen(viewModel: VehicleViewModel = hiltViewModel()) {
             }
         }
 
-        // ─── AC Control (shared state: Agent writes, phone + HMI both read) ─
-        item {
-            val ac = state.vehicleControl
-            Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (ac.acOn) "❄️" else "🌡", fontSize = 24.sp)
-                            Spacer(Modifier.width(10.dp))
-                            Column {
-                                Text("车载空调", fontWeight = FontWeight.SemiBold, color = AuriNavy, style = MaterialTheme.typography.bodyLarge)
-                                Text(
-                                    if (ac.acOn) "已开启 · 手机车机同步" else "已关闭",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (ac.acOn) AuriSuccess else Color.Gray,
-                                )
-                            }
-                        }
-                        // On/Off indicator
-                        Surface(
-                            shape = CircleShape,
-                            color = if (ac.acOn) AuriSuccess.copy(alpha = 0.15f) else Color(0xFFEEEEEE),
-                            modifier = Modifier.size(44.dp),
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    if (ac.acOn) "ON" else "OFF",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    color = if (ac.acOn) AuriSuccess else Color.Gray,
-                                )
-                            }
-                        }
-                    }
-
-                    if (ac.acOn) {
-                        Spacer(Modifier.height(16.dp))
-                        HorizontalDivider(color = Color(0xFFF0F0F0))
-                        Spacer(Modifier.height(12.dp))
-
-                        // Temperature
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                            AcInfoChip("温度", "${ac.acTargetTemp.toInt()}°C")
-                            AcInfoChip("模式", when (ac.acMode) {
-                                AcMode.AUTO -> "自动"
-                                AcMode.COOL -> "制冷"
-                                AcMode.HEAT -> "制热"
-                                AcMode.FAN -> "送风"
-                            })
-                            AcInfoChip("风量", when (ac.fanSpeed) {
-                                FanSpeed.LOW -> "低"
-                                FanSpeed.MEDIUM -> "中"
-                                FanSpeed.HIGH -> "高"
-                            })
-                        }
-
-                        Spacer(Modifier.height(12.dp))
-                        // Temperature bar
-                        Text("目标温度", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                        Spacer(Modifier.height(6.dp))
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text("16°", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(8.dp)
-                                    .padding(horizontal = 8.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(Color(0xFFEEEEEE))
-                            ) {
-                                val tempFraction = ((ac.acTargetTemp - 16) / 14.0).toFloat().coerceIn(0f, 1f)
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth(fraction = tempFraction)
-                                        .fillMaxHeight()
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(
-                                            Brush.horizontalGradient(
-                                                colors = listOf(Color(0xFF4FC3F7), Color(0xFFFF8A65))
-                                            )
-                                        )
-                                )
-                            }
-                            Text("30°", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                        }
-                    }
-                }
-            }
-        }
-
-        item { Spacer(Modifier.height(4.dp)) }
-
         // ─── HMI link panel ────────────────────────────────────────────────
         item {
             Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = AuriNavy)) {
@@ -278,17 +182,6 @@ fun VehicleScreen(viewModel: VehicleViewModel = hiltViewModel()) {
         }
 
         item { Spacer(Modifier.height(16.dp)) }
-    }
-}
-
-// ─── AC chip ─────────────────────────────────────────────────────────────
-
-@Composable
-private fun AcInfoChip(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, fontWeight = FontWeight.Bold, color = AuriNavy, fontSize = 16.sp)
-        Spacer(Modifier.height(2.dp))
-        Text(label, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
     }
 }
 

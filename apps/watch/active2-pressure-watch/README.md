@@ -13,26 +13,16 @@ A Zepp OS app for Amazfit Active 2 NFC (Round). The watch acts as a low-interrup
 ## Current Status
 
 - AURI UI has six modes: `idle`, `warning`, `handover`, `processing`, `completed`, `error`.
-- Short press on the `调试` button cycles local preview states and plays haptic feedback. This is a debug-only fallback path and does not send a formal `watch.ack`.
+- Short press on the `调试` button cycles local states and plays haptic feedback.
 - Long press on the `调试` button reads a health snapshot and displays `HR / O2 / S` in the subtitle.
 - Haptics have been tested on a real Active 2 device.
 - Health snapshot display has been tested on a real Active 2 device.
 - Local debug commands now generate a fresh `command_id` on each short press, so repeated debug cycles do not incorrectly show `duplicate`.
 - Duplicate command handling is still preserved for real repeated `command_id` messages.
 - The red `error` haptic no longer uses a continuous reminder scene; it uses bounded short pulses and explicitly stops.
-- Side Service is registered and uses Zepp ZML as the P0 Bluetooth bridge. The experimental raw BLE bridge remains in `utils/raw-bridge.js`, but it is not started on the P0 path.
+- Side Service is registered and uses a lightweight raw BLE/Messaging JSON bridge instead of ZML.
 
 ## Protocol
-
-Formal state changes come from the phone-side gateway via Zepp app-side:
-
-```text
-Android Wearable Gateway / Agent
-  -> Zepp app-side
-  -> watch.setState
-  -> AURI Watch render + haptic
-  -> watch.ack
-```
 
 `SET_STATE` from phone/Side Service to watch:
 
@@ -50,7 +40,7 @@ Android Wearable Gateway / Agent
 }
 ```
 
-`ACK` from watch to phone/Side Service. ACK is only emitted for remote `watch.setState` commands, not for local debug button previews:
+`ACK` from watch to phone/Side Service:
 
 ```json
 {
@@ -111,7 +101,7 @@ zeus preview -t "Amazfit Active 2 NFC (Round)"
 
 ## Debug Checklist
 
-- Short press `调试`: cycles local preview states and haptics; no formal `watch.ack` should be emitted.
+- Short press `调试`: cycles states and haptics.
 - Long press `调试`: reads health data and updates subtitle as `HR x / O2 y / S z`.
 - Check Zepp App Developer Mode logs for `ACK`, `SENSOR`, `PONG`, and Side Service messages.
 - If preview download fails, confirm the phone can access the network, Zepp is not syncing/updating the watch, and the target device source includes `10092800`.

@@ -117,6 +117,4 @@ dependencies {
 
     // Sherpa ONNX — offline speech recognition (local AAR)
     implementation(fileTree("libs") { include("*.aar") })
-
-    testImplementation(kotlin("test-junit"))
 }

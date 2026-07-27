@@ -21,7 +21,6 @@ data class Event(
 @Serializable
 enum class EventType {
     @SerialName("task.created") TASK_CREATED,
-    @SerialName("task.deleted") TASK_DELETED,
     @SerialName("meeting.overrun") MEETING_OVERRUN,
     @SerialName("scene.approaching") SCENE_APPROACHING,
     @SerialName("scene.vehicle_entered") SCENE_VEHICLE_ENTERED,
