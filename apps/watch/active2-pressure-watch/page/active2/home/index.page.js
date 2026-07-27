@@ -2,6 +2,7 @@ import * as hmUI from "@zos/ui";
 import { log as Logger } from "@zos/utils";
 import { playHaptic, stopHaptics } from "../../../utils/haptics";
 import { collectHealthSnapshot } from "../../../utils/health-sensors";
+import { normalizeWearableCommand } from "../../../utils/state-map";
 import {
   BACKGROUND_STYLE,
   CORE_STYLE,
@@ -197,31 +198,48 @@ function renderWearableState(command) {
   getGlobalData().currentState = command;
 }
 
-function handleSetState(command) {
-  if (!command || !command.command_id) {
+function executeStateChange(command, options = {}) {
+  const playFeedback = options.playFeedback !== false;
+
+  lastCommandId = command.command_id;
+  renderWearableState(command);
+
+  if (playFeedback && lastHapticCommandId !== command.command_id) {
+    playHaptic(command.haptic || "none");
+    lastHapticCommandId = command.command_id;
+  }
+}
+
+function handleRemoteSetState(rawCommand) {
+  if (!rawCommand || !rawCommand.command_id) {
     updateDebug("ack: error / missing id");
     return { ack: sendAck("", "error", "missing command_id") };
   }
 
-  if (hasProcessed(command.command_id)) {
-    updateDebug(`ack: duplicate / ${command.command_id}`);
-    return { ack: sendAck(command.command_id, "duplicate") };
+  if (hasProcessed(rawCommand.command_id)) {
+    updateDebug(`ack: duplicate / ${rawCommand.command_id}`);
+    return { ack: sendAck(rawCommand.command_id, "duplicate") };
   }
 
-  if (!VALID_MODES[command.mode]) {
-    rememberCommand(command.command_id);
-    updateDebug(`ack: unsupported / ${command.mode || "none"}`);
-    return { ack: sendAck(command.command_id, "unsupported", "unsupported mode") };
+  if (!rawCommand.mode && !rawCommand.state) {
+    rememberCommand(rawCommand.command_id);
+    updateDebug("ack: unsupported / missing mode");
+    return { ack: sendAck(rawCommand.command_id, "unsupported", "missing mode") };
   }
 
-  lastCommandId = command.command_id;
+  if (rawCommand.mode && !VALID_MODES[rawCommand.mode]) {
+    rememberCommand(rawCommand.command_id);
+    updateDebug(`ack: unsupported / ${rawCommand.mode || "none"}`);
+    return { ack: sendAck(rawCommand.command_id, "unsupported", "unsupported mode") };
+  }
+
+  const command = normalizeWearableCommand({
+    ...rawCommand,
+    source: "remote"
+  });
+
   rememberCommand(command.command_id);
-  renderWearableState(command);
-
-  if (lastHapticCommandId !== command.command_id) {
-    playHaptic(command.haptic || "none");
-    lastHapticCommandId = command.command_id;
-  }
+  executeStateChange(command);
 
   updateDebug(`ack: ok / ${command.command_id}`);
   return { ack: sendAck(command.command_id, "ok") };
@@ -235,7 +253,8 @@ function showNextLocalState() {
     command_id: `local-${baseCommand.mode}-${localCommandSeq}`
   };
   stateIndex = (stateIndex + 1) % LOCAL_STATES.length;
-  handleSetState(command);
+  executeStateChange(command);
+  updateDebug(`debug: local / ${command.mode}`);
 }
 
 function formatHealthSummary(snapshot) {
@@ -263,7 +282,7 @@ function handleBridgeMessage(message = {}) {
   getGlobalData().lastMessageAt = Date.now();
 
   if (message.method === "watch.setState" || message.type === "SET_STATE") {
-    return handleSetState(message.params || message);
+    return handleRemoteSetState(message.params || message);
   }
 
   if (message.method === "watch.sensorRequest" || message.type === "SENSOR_REQUEST") {

@@ -1,7 +1,11 @@
 package com.pressureagent.mobile.ui.wearable
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -14,40 +18,36 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.pressureagent.mobile.domain.model.*
 import com.pressureagent.mobile.ui.theme.*
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun WearableScreen(viewModel: WearableViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Text("腕上设备", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = AuriNavy)
         Spacer(Modifier.height(12.dp))
 
-        if (state.wearable == null) {
-            Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                Text("等待数据…", color = Color.Gray)
-            }
-            return@Column
-        }
-
-        state.wearable?.let { w ->
-            Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    // Connection status
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("⌚ 腕上设备", fontWeight = FontWeight.SemiBold, color = AuriNavy)
-                        Surface(shape = RoundedCornerShape(8.dp), color = if (w.connected) AuriSuccess.copy(alpha = 0.1f) else Color(0xFFF0F0F0)) {
-                            Text(
-                                if (w.connected) "已连接" else "未连接",
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (w.connected) AuriSuccess else Color.Gray,
-                            )
-                        }
+        Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("⌚ 腕上设备", fontWeight = FontWeight.SemiBold, color = AuriNavy)
+                    val connected = state.wearable?.connected == true
+                    Surface(shape = RoundedCornerShape(8.dp), color = if (connected) AuriSuccess.copy(alpha = 0.1f) else Color(0xFFF0F0F0)) {
+                        Text(
+                            if (connected) "已连接" else "未连接",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (connected) AuriSuccess else Color.Gray,
+                        )
                     }
-                    Spacer(Modifier.height(16.dp))
+                }
+                Spacer(Modifier.height(16.dp))
 
-                    // Mode
+                state.wearable?.let { w ->
                     DetailRow("模式", modeLabel(w.mode))
                     DetailRow("显示文字", w.text.ifEmpty { "—" })
                     DetailRow("颜色", w.color.name)
@@ -55,7 +55,125 @@ fun WearableScreen(viewModel: WearableViewModel = hiltViewModel()) {
                     if (w.heartRate != null) DetailRow("心率", "${w.heartRate} bpm")
                     if (w.signalConfidence != null) DetailRow("信号置信度", "%.0f%%".format(w.signalConfidence * 100))
                     if (w.commandId.isNotEmpty()) DetailRow("Command ID", w.commandId)
+                } ?: DetailRow("状态", "等待 Agent 数据，可直接使用下方调试")
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text("手动调试", fontWeight = FontWeight.SemiBold, color = AuriNavy)
+                Spacer(Modifier.height(12.dp))
+                Text("状态切换", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DebugButton("待命", Modifier.weight(1f)) { viewModel.sendDebugState(WearableMode.IDLE) }
+                    DebugButton("预警", Modifier.weight(1f)) { viewModel.sendDebugState(WearableMode.WARNING) }
+                    DebugButton("交接", Modifier.weight(1f)) { viewModel.sendDebugState(WearableMode.HANDOVER) }
                 }
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DebugButton("处理中", Modifier.weight(1f)) { viewModel.sendDebugState(WearableMode.PROCESSING) }
+                    DebugButton("完成", Modifier.weight(1f)) { viewModel.sendDebugState(WearableMode.COMPLETED) }
+                    DebugButton("异常", Modifier.weight(1f)) { viewModel.sendDebugState(WearableMode.ERROR) }
+                }
+
+                Spacer(Modifier.height(16.dp))
+                Text("触觉测试", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DebugButton("双短震", Modifier.weight(1f)) { viewModel.sendDebugHaptic(HapticPattern.DOUBLE_SHORT) }
+                    DebugButton("三拍", Modifier.weight(1f)) { viewModel.sendDebugHaptic(HapticPattern.THREE_BEAT) }
+                    DebugButton("错误震", Modifier.weight(1f)) { viewModel.sendDebugHaptic(HapticPattern.ERROR_ONCE) }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("本机网关", fontWeight = FontWeight.SemiBold, color = AuriNavy)
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (state.gateway.running) AuriSuccess.copy(alpha = 0.1f) else AuriCritical.copy(alpha = 0.08f),
+                    ) {
+                        Text(
+                            if (state.gateway.running) "运行中" else "未运行",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (state.gateway.running) AuriSuccess else AuriCritical,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+
+                DetailRow("地址", state.gateway.baseUrl)
+                DetailRow("最近命令", state.gateway.lastOutboxCommandId.ifEmpty { "—" })
+                DetailRow("最近 ACK", summarizeAck(state.gateway.lastAck))
+                DetailRow("最近 SENSOR", summarizeSensor(state.gateway.lastSensor))
+                DetailRow("最近 PONG", summarizePong(state.gateway.lastPong))
+                DetailRow("Zepp 侧连接", formatAge(state.gateway.lastSideContactAt))
+                if (state.gateway.lastError.isNotEmpty()) {
+                    DetailRow("错误", state.gateway.lastError)
+                }
+
+                Spacer(Modifier.height(16.dp))
+                HealthSnapshotPanel(
+                    sensor = state.gateway.lastSensor,
+                    onClick = viewModel::requestHealthSnapshot,
+                    onLongClick = viewModel::requestHealthSnapshot,
+                )
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = viewModel::requestHealthSnapshot,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = AuriNavy),
+                ) {
+                    Text("请求健康快照")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DebugButton(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier.height(40.dp),
+        contentPadding = PaddingValues(horizontal = 4.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.labelMedium)
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun HealthSnapshotPanel(
+    sensor: JsonObject?,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        shape = RoundedCornerShape(12.dp),
+        color = AuriNavy.copy(alpha = 0.04f),
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Text("健康数据", fontWeight = FontWeight.SemiBold, color = AuriNavy)
+            Spacer(Modifier.height(6.dp))
+            if (sensor == null) {
+                Text("点击或长按请求手表回传", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            } else {
+                DetailRow("心率", sensor.text("heart_rate").ifEmpty { "--" })
+                DetailRow("血氧", sensor.text("spo2").ifEmpty { "--" })
+                DetailRow("置信度", sensor.text("confidence").ifEmpty { "--" })
+                DetailRow("时间戳", sensor.text("timestamp").ifEmpty { "--" })
             }
         }
     }
@@ -85,4 +203,32 @@ private fun hapticLabel(h: HapticPattern): String = when (h) {
     HapticPattern.THREE_BEAT -> "三拍"
     HapticPattern.SOFT_SHORT -> "柔和短震"
     HapticPattern.ERROR_ONCE -> "错误震"
+}
+
+private fun summarizeAck(ack: JsonObject?): String {
+    if (ack == null) return "—"
+    val result = ack.text("result").ifEmpty { "unknown" }
+    val commandId = ack.text("command_id")
+    return if (commandId.isEmpty()) result else "$result · $commandId"
+}
+
+private fun summarizeSensor(sensor: JsonObject?): String {
+    if (sensor == null) return "—"
+    val heartRate = sensor.text("heart_rate").ifEmpty { "--" }
+    val spo2 = sensor.text("spo2").ifEmpty { "--" }
+    return "HR $heartRate / O2 $spo2"
+}
+
+private fun summarizePong(pong: JsonObject?): String {
+    if (pong == null) return "—"
+    return pong.text("ping_id").ifEmpty { "received" }
+}
+
+private fun JsonObject.text(key: String): String =
+    this[key]?.jsonPrimitive?.contentOrNull.orEmpty()
+
+private fun formatAge(timestamp: Long): String {
+    if (timestamp <= 0L) return "未收到"
+    val seconds = ((System.currentTimeMillis() - timestamp) / 1000).coerceAtLeast(0)
+    return "${seconds}s 前"
 }
