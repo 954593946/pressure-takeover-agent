@@ -40,4 +40,6 @@ enum class ConnectionStatus {
     POLLING,
     /** No data received for an extended period. */
     DISCONNECTED,
+    /** Authentication failed (401) — token invalid or missing. */
+    UNAUTHORIZED,
 }

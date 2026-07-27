@@ -5,8 +5,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -23,11 +23,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.pressureagent.mobile.BuildConfig
 import com.pressureagent.mobile.R
 import com.pressureagent.mobile.ui.theme.AuriGold
 import com.pressureagent.mobile.ui.theme.AuriNavy
 import kotlinx.coroutines.delay
 
+/**
+ * Splash screen — brief brand moment, then enter the app.
+ *
+ * Health check runs in background but does NOT block entry.
+ * Connection state is handled by the repository's SSE/polling fallback in the main UI.
+ */
 @Composable
 fun SplashScreen(onSplashFinished: () -> Unit) {
     var startAnimation by remember { mutableStateOf(false) }
@@ -37,10 +44,24 @@ fun SplashScreen(onSplashFinished: () -> Unit) {
         label = "splash_alpha",
     )
 
+    // Validate config — only block if URL or token is literally missing
+    val configError = remember {
+        when {
+            BuildConfig.AGENT_API_BASE_URL.isBlank() ->
+                "未配置 API 地址\n请在 build.gradle.kts 中设置 AGENT_API_BASE_URL"
+            BuildConfig.AGENT_API_TOKEN.isBlank() && !BuildConfig.USE_MOCK_AGENT ->
+                "未配置 API Token\n请在 build.gradle.kts 中设置 AGENT_API_TOKEN"
+            else -> null
+        }
+    }
+
     LaunchedEffect(Unit) {
         startAnimation = true
-        delay(2000)
-        onSplashFinished()
+        if (configError == null) {
+            delay(2000)
+            onSplashFinished()
+        }
+        // If config is broken, stay on splash and show error — user must fix and rebuild
     }
 
     Box(
@@ -52,7 +73,7 @@ fun SplashScreen(onSplashFinished: () -> Unit) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
-            modifier = Modifier.alpha(alphaAnim),
+            modifier = Modifier.alpha(alphaAnim).padding(32.dp),
         ) {
             // Logo image
             androidx.compose.foundation.Image(
@@ -78,6 +99,40 @@ fun SplashScreen(onSplashFinished: () -> Unit) {
                 fontSize = 16.sp,
                 textAlign = TextAlign.Center,
             )
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // Config error — only shown if URL/token is literally empty
+            if (configError != null) {
+                androidx.compose.material3.Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color.Red.copy(alpha = 0.25f),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("⚠️ 配置错误", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            configError ?: "",
+                            color = Color.White.copy(alpha = 0.8f),
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+            } else if (BuildConfig.USE_MOCK_AGENT) {
+                Text(
+                    "Mock 模式 · 离线演示",
+                    color = AuriGold.copy(alpha = 0.6f),
+                    fontSize = 13.sp,
+                )
+            } else {
+                Text(
+                    BuildConfig.AGENT_API_BASE_URL,
+                    color = Color.White.copy(alpha = 0.4f),
+                    fontSize = 11.sp,
+                )
+            }
         }
     }
 }

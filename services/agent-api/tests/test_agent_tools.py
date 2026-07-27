@@ -25,6 +25,8 @@ def test_public_tool_schemas_hide_runtime_context() -> None:
         "get_status",
         "report_meeting_delay",
         "reschedule_task",
+        "delete_task",
+        "control_ac",
         "prepare_assistance",
         "confirm_current_actions",
     }

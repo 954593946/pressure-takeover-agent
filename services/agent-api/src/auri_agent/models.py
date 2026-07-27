@@ -196,6 +196,15 @@ class InteractionOutput(StrictModel):
     conclusion: str
 
 
+class VehicleState(StrictModel):
+    """Phone ↔ vehicle shared control state. Agent writes, both screens read."""
+
+    ac_on: bool = False
+    ac_target_temp: float = Field(default=24.0, ge=16.0, le=30.0)
+    ac_mode: Literal["auto", "cool", "heat", "fan"] = "auto"
+    fan_speed: Literal["low", "medium", "high"] = "medium"
+
+
 class WorldState(StrictModel):
     schema_version: Literal["0.2.0"] = "0.2.0"
     session_id: str
@@ -215,6 +224,7 @@ class WorldState(StrictModel):
     output: InteractionOutput | None = None
     action_ledger: list[str] = Field(default_factory=list)
     service_mock_mode: Literal["success", "out_of_stock", "over_budget"] = "success"
+    vehicle_state: VehicleState = Field(default_factory=VehicleState)
 
 
 class ConfirmationRequest(StrictModel):

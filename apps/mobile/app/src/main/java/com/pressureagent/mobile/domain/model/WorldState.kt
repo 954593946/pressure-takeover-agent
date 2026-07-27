@@ -314,6 +314,31 @@ data class InteractionOutput(
     val conclusion: String = "",
 )
 
+// ─── Vehicle Control State (shared: Agent writes, phone + HMI both read) ─────
+
+@Serializable
+enum class AcMode {
+    @SerialName("auto") AUTO,
+    @SerialName("cool") COOL,
+    @SerialName("heat") HEAT,
+    @SerialName("fan") FAN,
+}
+
+@Serializable
+enum class FanSpeed {
+    @SerialName("low") LOW,
+    @SerialName("medium") MEDIUM,
+    @SerialName("high") HIGH,
+}
+
+@Serializable
+data class VehicleControl(
+    @SerialName("ac_on") val acOn: Boolean = false,
+    @SerialName("ac_target_temp") val acTargetTemp: Double = 24.0,
+    @SerialName("ac_mode") val acMode: AcMode = AcMode.AUTO,
+    @SerialName("fan_speed") val fanSpeed: FanSpeed = FanSpeed.MEDIUM,
+)
+
 // ─── Root World State ────────────────────────────────────────────────────────
 
 @Serializable
@@ -336,4 +361,5 @@ data class WorldState(
     val output: InteractionOutput? = null,
     @SerialName("action_ledger") val actionLedger: List<String> = emptyList(),
     @SerialName("service_mock_mode") val serviceMockMode: String? = null,
+    @SerialName("vehicle_state") val vehicleState: VehicleControl = VehicleControl(),
 )
