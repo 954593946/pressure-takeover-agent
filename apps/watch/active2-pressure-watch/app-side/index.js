@@ -1,8 +1,10 @@
 import { BaseSideService } from "@zeppos/zml/base-side";
 
-const SIDE_MOCK_ENABLED = true;
+const ANDROID_GATEWAY_BASE_URL = "http://127.0.0.1:8765";
+const SIDE_MOCK_ENABLED = false;
 const SIDE_MOCK_EDGE_CASES_ENABLED = false;
 const HEARTBEAT_MS = 30000;
+const GATEWAY_POLL_MS = 1000;
 
 const MOCK_STATE = {
   command_id: "side-mock-warning-001",
@@ -36,6 +38,10 @@ const MOCK_UNSUPPORTED_STATE = {
 
 let timers = [];
 let heartbeatTimer = null;
+let gatewayPollTimer = null;
+let lastGatewayCommandId = "";
+let lastGatewaySensorRequestId = "";
+let gatewayReachable = null;
 
 function getMethod(message = {}) {
   return message.method || message.type || "unknown";
@@ -55,6 +61,11 @@ function clearTimers() {
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
     heartbeatTimer = null;
+  }
+
+  if (gatewayPollTimer) {
+    clearInterval(gatewayPollTimer);
+    gatewayPollTimer = null;
   }
 }
 
@@ -110,6 +121,89 @@ function startHeartbeat(service) {
   }, HEARTBEAT_MS);
 }
 
+function startGatewayPolling(service) {
+  if (gatewayPollTimer) {
+    return;
+  }
+
+  gatewayPollTimer = setInterval(() => {
+    pollGateway(service);
+  }, GATEWAY_POLL_MS);
+  pollGateway(service);
+}
+
+async function pollGateway(service) {
+  const path = `/v1/watch/outbox?last_command_id=${encodeURIComponent(lastGatewayCommandId)}&last_sensor_request_id=${encodeURIComponent(lastGatewaySensorRequestId)}`;
+  const data = await gatewayRequest(service, path);
+  if (!data || data.result !== "ok") {
+    return;
+  }
+
+  if (data.set_state && data.set_state.params) {
+    const commandId = data.set_state.params.command_id || "";
+    if (commandId && commandId !== lastGatewayCommandId) {
+      if (sendToDevice(service, "watch.setState", data.set_state.params)) {
+        lastGatewayCommandId = commandId;
+      }
+    }
+  }
+
+  if (data.sensor_request && data.sensor_request.params) {
+    const requestId = data.sensor_request.params.request_id || "";
+    if (requestId && requestId !== lastGatewaySensorRequestId) {
+      if (sendToDevice(service, "watch.sensorRequest", data.sensor_request.params)) {
+        lastGatewaySensorRequestId = requestId;
+      }
+    }
+  }
+}
+
+async function postInbox(service, message) {
+  await gatewayRequest(service, "/v1/watch/inbox", {
+    method: "POST",
+    body: JSON.stringify(message)
+  });
+}
+
+async function gatewayRequest(service, path, options = {}) {
+  if (typeof fetch !== "function") {
+    setGatewayReachable(service, false, "fetch unavailable");
+    return null;
+  }
+
+  try {
+    const request = {
+      url: `${ANDROID_GATEWAY_BASE_URL}${path}`,
+      method: options.method || "GET",
+      headers: {
+        "Content-Type": "application/json"
+      }
+    };
+
+    if (options.body) {
+      request.body = options.body;
+    }
+
+    const res = await fetch(request);
+    const body = res && res.body !== undefined ? res.body : {};
+    const data = typeof body === "string" ? JSON.parse(body || "{}") : body;
+    setGatewayReachable(service, true);
+    return data || {};
+  } catch (error) {
+    setGatewayReachable(service, false, error && error.message ? error.message : "gateway request failed");
+    return null;
+  }
+}
+
+function setGatewayReachable(service, reachable, reason = "") {
+  if (gatewayReachable === reachable) {
+    return;
+  }
+
+  gatewayReachable = reachable;
+  logSide(service, reachable ? "AURI_GATEWAY_READY" : "AURI_GATEWAY_DOWN", reason);
+}
+
 AppSideService(BaseSideService({
   onInit() {
   },
@@ -117,6 +211,7 @@ AppSideService(BaseSideService({
   onRun() {
     scheduleMock(this);
     startHeartbeat(this);
+    startGatewayPolling(this);
   },
 
   onDestroy() {
@@ -125,8 +220,9 @@ AppSideService(BaseSideService({
 
   onCall(message) {
     const method = getMethod(message);
-    if (method === "watch.ack" || method === "watch.sensor" || method === "watch.pong") {
+    if (method === "watch.hello" || method === "watch.ack" || method === "watch.sensor" || method === "watch.pong") {
       logSide(this, `AURI_SIDE_CALL ${method}`, JSON.stringify(message));
+      postInbox(this, message);
     }
   },
 

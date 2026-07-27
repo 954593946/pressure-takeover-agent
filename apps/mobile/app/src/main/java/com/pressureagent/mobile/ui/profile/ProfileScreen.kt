@@ -23,6 +23,7 @@ import com.pressureagent.mobile.ui.theme.*
 fun ProfileScreen(
     viewModel: ProfileViewModel = hiltViewModel(),
     onNavigateToReview: () -> Unit = {},
+    onNavigateToWearable: () -> Unit = {},
     onNavigateToDebug: () -> Unit = {},
     onNavigateToLogViewer: () -> Unit = {},
 ) {
@@ -82,7 +83,7 @@ fun ProfileScreen(
             icon = "⌚",
             title = "腕上设备",
             subtitle = wearableSubtitle,
-            onClick = { /* TODO: wearable detail page */ },
+            onClick = onNavigateToWearable,
         )
 
         Spacer(Modifier.height(10.dp))
