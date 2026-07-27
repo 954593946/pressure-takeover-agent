@@ -18,11 +18,13 @@ import java.time.format.DateTimeFormatter
 import java.util.UUID
 import javax.inject.Inject
 
+enum class SyncStatus { IDLE, SYNCING, SYNCED, FAILED }
+
 data class CreateTaskUiState(
     val quickTitle: String = "",
     val quickTimeIso: String = "",
     val quickTimeDisplay: String = "",
-    val submitSuccess: Boolean = false,
+    val syncStatus: SyncStatus = SyncStatus.IDLE,
     val error: String? = null,
 )
 
@@ -34,6 +36,23 @@ class CreateTaskViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(CreateTaskUiState())
     val uiState: StateFlow<CreateTaskUiState> = _uiState.asStateFlow()
+
+    private var currentSessionId: String = ""
+
+    init {
+        // Observe WorldState to keep current sessionId
+        viewModelScope.launch {
+            try {
+                repository.worldState.collect { ws ->
+                    if (ws.sessionId.isNotBlank()) {
+                        currentSessionId = ws.sessionId
+                    }
+                }
+            } catch (_: Exception) {
+                // WorldState collection failed — sessionId may be stale
+            }
+        }
+    }
 
     fun onQuickTitleChange(title: String) { _uiState.update { it.copy(quickTitle = title, error = null) } }
 
@@ -49,33 +68,76 @@ class CreateTaskViewModel @Inject constructor(
         }
         val time = _uiState.value.quickTimeIso.ifBlank { null }
 
-        // 1. Save locally — instant display in calendar
-        localTasks.addTask(title, time)
+        // 1. Save locally for instant calendar display
+        val localId = localTasks.addTask(title, time)
 
-        // 2. Also tell the backend so Agent knows about it (fire-and-forget)
+        // 2. Submit to backend with proper session_id
+        _uiState.update { it.copy(syncStatus = SyncStatus.SYNCING, error = null) }
+
         val text = buildString {
             append("创建任务：$title")
             if (time != null) append("，时间：$time")
         }
+
         viewModelScope.launch {
             try {
                 repository.submitEvent(
                     Event(
                         eventId = UUID.randomUUID().toString(),
-                        sessionId = "",
-                        type = EventType.USER_UTTERANCE,
+                        sessionId = currentSessionId,
+                        type = EventType.TASK_CREATED,
                         source = EventSource.MOBILE,
                         timestamp = ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
-                        payload = buildJsonObject { put("text", text) },
+                        payload = buildJsonObject {
+                            put("title", title)
+                            if (time != null) put("scheduled_at", time)
+                            put("task_type", "flexible")
+                        },
                     )
                 )
-            } catch (_: Exception) {
-                // Backend sync is best-effort; task already saved locally
+                // Backend accepted — remove local copy since WorldState will provide the authoritative task
+                localTasks.removeTask(localId)
+                _uiState.update { it.copy(syncStatus = SyncStatus.SYNCED) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(syncStatus = SyncStatus.FAILED, error = "同步失败: ${e.message}") }
             }
         }
-
-        _uiState.update { it.copy(submitSuccess = true) }
     }
 
-    fun onNavigatedAfterSuccess() { _uiState.update { it.copy(submitSuccess = false) } }
+    /** Retry a previously failed sync — reuses event payload */
+    fun retrySync() {
+        val title = _uiState.value.quickTitle.trim()
+        if (title.isBlank()) return
+        val time = _uiState.value.quickTimeIso.ifBlank { null }
+
+        _uiState.update { it.copy(syncStatus = SyncStatus.SYNCING, error = null) }
+
+        viewModelScope.launch {
+            try {
+                val localId = localTasks.addTask(title, time)
+                repository.submitEvent(
+                    Event(
+                        eventId = UUID.randomUUID().toString(),
+                        sessionId = currentSessionId,
+                        type = EventType.TASK_CREATED,
+                        source = EventSource.MOBILE,
+                        timestamp = ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                        payload = buildJsonObject {
+                            put("title", title)
+                            if (time != null) put("scheduled_at", time)
+                            put("task_type", "flexible")
+                        },
+                    )
+                )
+                localTasks.removeTask(localId)
+                _uiState.update { it.copy(syncStatus = SyncStatus.SYNCED) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(syncStatus = SyncStatus.FAILED, error = "重试失败: ${e.message}") }
+            }
+        }
+    }
+
+    fun onNavigatedAfterSuccess() { _uiState.update { it.copy(syncStatus = SyncStatus.IDLE) } }
+
+    fun dismissError() { _uiState.update { it.copy(error = null) } }
 }
