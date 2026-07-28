@@ -282,6 +282,15 @@ def add_auxiliary_signal(state: WorldState, signal: str) -> None:
     if state.risk.pressure_level == PressureLevel.L3:
         state.scene = Scene.HIGH_LOAD_DRIVING
         state.stage = Stage.TAKEOVER_L3
+        state.wearable = WearableState(
+            connected=state.wearable.connected,
+            mode="warning",
+            text="高负荷保护",
+            color="red",
+            haptic="error_once",
+            heart_rate=state.wearable.heart_rate,
+            signal_confidence=state.wearable.signal_confidence,
+        )
         state.output = InteractionOutput(
             message_id=f"msg_{uuid4().hex[:12]}",
             priority="critical",

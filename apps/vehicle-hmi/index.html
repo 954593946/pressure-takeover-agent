@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>AURI 车机 HMI | 随行压力接管 Agent</title>
-  <link rel="stylesheet" href="./styles.css?v=auri-cockpit-20260728" />
+  <link rel="stylesheet" href="./styles.css?v=auri-cockpit-20260728b" />
 </head>
 <body>
   <main class="screen" aria-label="AURI 车机 HMI">
@@ -78,11 +78,27 @@
         <ol id="actionList"></ol>
       </section>
 
-      <section class="secondary-entry" aria-label="更多状态">
-        <button id="openSync" type="button">
-          <span><b class="status-dot"></b><strong>多端同步</strong></span>
-          <em id="syncSummary">状态一致</em>
+      <section class="continuity-entry" aria-label="手机腕上和车机联动">
+        <button id="openSync" class="continuity-card" type="button">
+          <span class="continuity-head"><strong>跨端接力</strong><em id="syncSummary">状态一致</em></span>
+          <span class="continuity-flow">
+            <span class="continuity-node phone-node" id="phoneNode">
+              <i aria-hidden="true">▯</i><strong>手机</strong><em id="phoneStatus">主端</em>
+            </span>
+            <b aria-hidden="true">›</b>
+            <span class="continuity-node watch-node" id="watchNode">
+              <i aria-hidden="true">◉</i><strong>腕上</strong><em id="watchStatus">常态</em>
+            </span>
+            <b aria-hidden="true">›</b>
+            <span class="continuity-node car-node" id="carNode">
+              <i aria-hidden="true">◇</i><strong>车机</strong><em id="carStatus">待机</em>
+            </span>
+          </span>
+          <span class="continuity-summary" id="handoffSummary">手机录入任务，腕上和车机待命</span>
         </button>
+      </section>
+
+      <section class="secondary-entry" aria-label="座舱状态">
         <button id="openVehicle" type="button">
           <span><b class="status-dot gold"></b><strong>座舱状态</strong></span>
           <em id="acState">AC 未开启</em>
@@ -166,7 +182,6 @@
           </defs>
           <rect class="map-surface" width="1200" height="720"/>
           <path class="park" d="M760 0h440v190c-80 28-160 9-222 59-52 42-130 49-226 16z"/>
-          <path class="water" d="M0 101c137 42 269 26 385 59 128 36 192 23 285-5 107-32 192-15 287 12 91 25 163 21 243-2v54c-102 26-194 20-298-4-91-21-165-20-254 8-111 35-208 47-319 10C229 200 129 194 0 160z"/>
           <g class="map-grid">
             <path d="M0 118 H1200 M0 250 H1200 M0 392 H1200 M0 535 H1200 M182 0 V720 M376 0 V720 M570 0 V720 M764 0 V720 M958 0 V720"/>
           </g>
@@ -247,19 +262,18 @@
             </g>
           </g>
           <g class="local-roads">
-            <path d="M-30 224 C162 186 286 205 438 180 S778 133 1230 184"/>
-            <path d="M-30 375 C138 335 300 335 478 372 S830 438 1230 346"/>
-            <path d="M-20 622 C156 560 286 522 454 545 S770 640 1230 488"/>
-            <path d="M137 750 C213 615 311 535 452 455 S647 310 726 184"/>
-            <path d="M898 750 C854 631 867 532 938 431 S1086 232 1167 -20"/>
+            <path d="M-30 216 L1230 166"/>
+            <path d="M-30 384 L1230 337"/>
+            <path d="M-30 563 L1230 505"/>
+            <path d="M246 -20 L184 740"/>
+            <path d="M532 -20 L468 740"/>
+            <path d="M818 -20 L760 740"/>
+            <path d="M1084 -20 L1028 740"/>
           </g>
           <g class="arterial-roads">
-            <path class="road-casing" d="M-40 609 C150 548 286 518 433 536 C568 553 616 433 715 383 C826 327 913 410 1020 320 C1080 270 1115 201 1140 128"/>
-            <path class="road-fill" d="M-40 609 C150 548 286 518 433 536 C568 553 616 433 715 383 C826 327 913 410 1020 320 C1080 270 1115 201 1140 128"/>
-            <path class="road-divider" d="M-40 609 C150 548 286 518 433 536 C568 553 616 433 715 383 C826 327 913 410 1020 320 C1080 270 1115 201 1140 128"/>
-          </g>
-          <g class="alternative-route">
-            <path d="M430 548 C510 615 635 663 752 615 C892 558 948 463 1018 319"/>
+            <path class="road-casing" d="M78 648 C184 617 278 619 363 574 C449 529 481 465 566 421 C651 377 742 397 822 351 C901 306 950 239 1008 162 C1051 106 1100 70 1164 42"/>
+            <path class="road-fill" d="M78 648 C184 617 278 619 363 574 C449 529 481 465 566 421 C651 377 742 397 822 351 C901 306 950 239 1008 162 C1051 106 1100 70 1164 42"/>
+            <path class="road-divider" d="M78 648 C184 617 278 619 363 574 C449 529 481 465 566 421 C651 377 742 397 822 351 C901 306 950 239 1008 162 C1051 106 1100 70 1164 42"/>
           </g>
           <g class="road-names">
             <text x="82" y="257">科苑路</text>
@@ -280,48 +294,47 @@
             <g transform="translate(1052 515)"><circle r="14"/><text class="poi-icon" y="6" text-anchor="middle">购</text><text x="23" y="7">阳光里</text></g>
           </g>
           <g class="route-road" filter="url(#softMapShadow)">
-            <path class="route-casing" d="M78 638 C202 573 306 526 430 546 C552 566 600 442 714 382 C826 324 907 409 1018 318 C1074 272 1110 206 1138 129"/>
-            <path class="route-passed" d="M78 638 C202 573 306 526 430 546"/>
-            <path class="route-live" d="M430 546 C552 566 600 442 714 382 C826 324 907 409 1018 318"/>
-            <path class="route-congested" d="M1018 318 C1074 272 1110 206 1138 129"/>
-            <path class="route-lane" d="M459 545 C554 550 617 432 718 383 C822 334 909 398 995 335"/>
-            <path class="route-arrow" d="M598 450l18-20 18 20"/>
-            <path class="route-arrow" d="M848 362l20 7-13 17"/>
+            <path id="routePathGeometry" class="route-casing" d="M78 648 C184 617 278 619 363 574 C449 529 481 465 566 421 C651 377 742 397 822 351 C901 306 950 239 1008 162 C1051 106 1100 70 1164 42"/>
+            <path class="route-live" d="M78 648 C184 617 278 619 363 574 C449 529 481 465 566 421 C651 377 742 397 822 351 C901 306 950 239 1008 162 C1051 106 1100 70 1164 42"/>
+            <path id="routePassed" class="route-passed" pathLength="100" d="M78 648 C184 617 278 619 363 574 C449 529 481 465 566 421 C651 377 742 397 822 351 C901 306 950 239 1008 162 C1051 106 1100 70 1164 42"/>
+            <path class="route-congested" d="M822 351 C901 306 950 239 1008 162"/>
+            <path class="route-lane" d="M78 648 C184 617 278 619 363 574 C449 529 481 465 566 421 C651 377 742 397 822 351 C901 306 950 239 1008 162 C1051 106 1100 70 1164 42"/>
           </g>
-          <g class="traffic-light" transform="translate(903 381)">
+          <g class="traffic-light" transform="translate(887 317)">
             <rect x="-12" y="-31" width="24" height="62" rx="12"/>
             <circle cx="0" cy="-18" r="6"/>
             <circle cx="0" cy="0" r="6"/>
             <circle cx="0" cy="18" r="6"/>
           </g>
-          <g class="traffic" id="traffic" transform="translate(916 270)">
+          <g class="traffic" id="traffic" transform="translate(912 229)">
             <rect x="-124" y="-27" width="248" height="54" rx="14"/>
             <text y="7" text-anchor="middle">前方拥堵 · 晚到 18 分钟</text>
           </g>
-          <g class="departure-flag" transform="translate(448 603)">
+          <g class="departure-flag" transform="translate(365 625)">
             <rect x="-78" y="-23" width="156" height="46" rx="13"/>
             <circle cx="-52" cy="0" r="9"/>
             <text x="-34" y="7">17:38 前出发</text>
           </g>
-          <g class="resolved-flag" transform="translate(913 269)">
+          <g class="resolved-flag" transform="translate(912 229)">
             <rect x="-112" y="-27" width="224" height="54" rx="14"/>
             <circle cx="-84" cy="0" r="10"/>
             <path d="m-89 0 4 4 8-10"/>
             <text x="-65" y="7">已处理 · 保持当前速度</text>
           </g>
-          <g class="car-pin" transform="translate(430 546) rotate(-84)">
+          <g class="car-pin" id="carPin" transform="translate(78 648) rotate(73)">
             <circle r="31"/>
             <path d="M0-18 15 18 0 11 -15 18z"/>
           </g>
-          <g class="pin end" transform="translate(1138 129)">
+          <g class="pin end" transform="translate(1164 42)">
             <circle r="30"/>
             <path d="M-10-8h20v16h-20z"/>
           </g>
-          <g class="school-label" transform="translate(1050 130)">
+          <g class="school-label" transform="translate(1077 67)">
             <rect x="-68" y="-22" width="136" height="44" rx="12"/>
             <text y="7" text-anchor="middle">阳光小学</text>
           </g>
         </svg>
+        <div id="carMarker" class="car-marker" aria-label="当前车辆位置"><span aria-hidden="true">▲</span></div>
 
         <div class="amap-turn-card">
           <div class="turn-symbol" aria-hidden="true">↰</div>
@@ -347,6 +360,16 @@
           <span id="mapStageIcon" aria-hidden="true">◎</span>
           <strong id="mapStageLabel">路线预览</strong>
         </div>
+
+        <aside id="signalToast" class="signal-toast" aria-live="polite" hidden>
+          <span id="signalToastIcon" class="signal-toast-icon" aria-hidden="true">◉</span>
+          <span class="signal-toast-copy">
+            <em id="signalToastSource">腕上提醒</em>
+            <strong id="signalToastTitle">出发时间临近</strong>
+            <small id="signalToastDetail">黄色提醒 · 双短震</small>
+          </span>
+          <button id="dismissSignalToast" type="button" aria-label="关闭提醒">×</button>
+        </aside>
 
         <div class="map-status-cluster">
           <div class="speed-card">
@@ -374,31 +397,24 @@
         <div class="map-bottom-sheet">
           <div class="task-board" aria-label="任务责任">
             <button class="task-card rigid" id="kidTask" type="button">
-              <span>刚性责任</span><strong>18:10 接孩子</strong><em id="kidTaskState">等待创建</em>
+              <span class="task-icon" aria-hidden="true">人</span>
+              <span class="task-copy"><em>刚性责任</em><strong>18:10 接孩子</strong></span>
+              <span class="task-status" id="kidTaskState">等待创建</span>
             </button>
             <button class="task-card flexible" id="shopTask" type="button">
-              <span>弹性任务</span><strong>之后去超市</strong><em id="shopTaskState">等待创建</em>
+              <span class="task-icon" aria-hidden="true">购</span>
+              <span class="task-copy"><em>弹性任务</em><strong>之后去超市</strong></span>
+              <span class="task-status" id="shopTaskState">等待创建</span>
             </button>
           </div>
           <button id="openRouteSummary" class="trip-summary" type="button" aria-label="打开行程详情">
-            <span><em>剩余</em><strong id="amapRemain">7.8 公里</strong></span>
-            <span><em>用时</em><strong id="amapDuration">18 分钟</strong></span>
-            <span><em>到达</em><strong id="amapArrival">18:10</strong></span>
+            <span class="trip-primary"><em>剩余距离</em><strong id="amapRemain"><b>7.8</b><small>公里</small></strong></span>
+            <span><em>预计用时</em><strong id="amapDuration"><b>18</b><small>分钟</small></strong></span>
+            <span><em>预计到达</em><strong id="amapArrival">18:10</strong></span>
             <b aria-hidden="true">›</b>
           </button>
         </div>
 
-        <section class="device-stack" aria-label="多端连接状态">
-          <div class="device phone" id="phoneDevice">
-            <span>手机</span><strong id="phoneStatus">待创建任务</strong><small id="phoneDetail">PWA 已连接</small>
-          </div>
-          <div class="device watch" id="watchDevice">
-            <span>腕上</span><strong id="watchStatus">常态</strong><small id="watchDetail">低干扰</small>
-          </div>
-          <div class="device console">
-            <span>控制台</span><strong id="consoleStatus">待机</strong><small>模拟外部世界</small>
-          </div>
-        </section>
       </section>
     </section>
 
@@ -482,6 +498,6 @@
     <span>推荐 16:9 大屏或平板横屏。</span>
   </div>
 
-  <script src="./app.js?v=auri-cockpit-20260728"></script>
+  <script src="./app.js?v=auri-cockpit-20260728b"></script>
 </body>
 </html>

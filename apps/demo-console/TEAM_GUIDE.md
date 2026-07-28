@@ -15,6 +15,8 @@ Demo 控制台是现场演示导演台，用于模拟本轮不接入真实系统
 - 进行一键预检，检查 health、鉴权、Session、revision、LLM 模式和 SSE。
 - 按主线显示下一步和主持提示，降低现场误操作。
 - 展示 `vehicle_state`、Action Ledger 和脱敏事件日志。
+- 显示当前状态同步模式；SSE 断开时自动进入轮询兜底并重连。
+- 事件日志记录 event_id、HTTP 状态、duplicate、revision 和耗时。
 
 它不能做：
 
@@ -63,6 +65,8 @@ Team Token: 留空，除非本地后端开启共享访问
 一键预检
 连接 Agent
 ```
+
+`State Sync` 应显示 `SSE 实时`。如果显示 `轮询兜底`，主线仍可继续，但导演需要确认 revision 持续更新；SSE 恢复后页面会自动切回实时模式。
 
 ## 连接团队公网 Agent
 

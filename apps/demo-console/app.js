@@ -17,7 +17,7 @@ const ACTIONS = {
   vehicle: ["scene.vehicle_entered", "demo_console", {}],
   traffic: ["traffic.updated", "demo_console", { eta: "2026-07-15T18:28:00+08:00", late_minutes: 18 }],
   stress: ["wearable.signal", "wearable", { heart_rate: 120, confidence: 0.9 }],
-  hardBrake: ["driving.signal", "vehicle_hmi", { hard_brake: true, acceleration_variance: "high", confidence: 0.8 }],
+  hardBrake: ["driving.signal", "vehicle_hmi", { harsh_brake: true, acceleration_variance: "high", confidence: 0.8 }],
   utterance: ["user.utterance", "vehicle_hmi", { text: "我还来得及吗？帮我处理" }],
   serviceSuccess: ["service.mock.config", "demo_console", { mode: "success" }],
   serviceStock: ["service.mock.config", "demo_console", { mode: "out_of_stock" }],
@@ -57,6 +57,8 @@ const ui = {
   confirmOwner: $("#confirmOwner"),
   agentHealth: $("#agentHealth"),
   agentTools: $("#agentTools"),
+  syncMode: $("#syncMode"),
+  syncDetail: $("#syncDetail"),
   tasks: $("#tasks"),
   actions: $("#actions"),
   eventLog: $("#eventLog")
@@ -66,7 +68,10 @@ let worldState = null;
 let lastRevision = -1;
 let eventSeq = 0;
 let streamAbort = null;
+let streamRetryTimer = null;
+let pollTimer = null;
 let lastHealth = null;
+let syncMode = "disconnected";
 const stableEventIds = new Map();
 
 const SCRIPT_STEPS = [
@@ -112,12 +117,14 @@ function friendlyError(error) {
 }
 
 async function apiFetch(path, options = {}) {
+  const { returnMeta = false, ...fetchOptions } = options;
+  const startedAt = performance.now();
   const response = await fetch(`${CONFIG.apiBase}${path}`, {
-    ...options,
+    ...fetchOptions,
     headers: authHeaders({
       Accept: "application/json",
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
-      ...(options.headers || {})
+      ...(fetchOptions.body ? { "Content-Type": "application/json" } : {}),
+      ...(fetchOptions.headers || {})
     })
   });
   const text = await response.text();
@@ -126,7 +133,12 @@ async function apiFetch(path, options = {}) {
     const code = data?.detail?.code || response.status;
     throw new Error(`${code}: ${data?.detail?.message || response.statusText}`);
   }
-  return data;
+  const result = {
+    data,
+    status: response.status,
+    elapsedMs: Math.round(performance.now() - startedAt)
+  };
+  return returnMeta ? result : data;
 }
 
 async function loadHealth(reason = "health") {
@@ -153,10 +165,8 @@ function renderHealth(health) {
   const framework = health?.llm_framework || "unknown";
   const toolsEnabled = health?.agent_tools_enabled === true ? "tools on" : "tools off";
   ui.agentHealth.textContent = `${framework} · ${toolsEnabled}`;
-  const tools = Array.isArray(health?.agent_last_tools) && health.agent_last_tools.length
-    ? health.agent_last_tools.join(", ")
-    : "tools --";
-  ui.agentTools.textContent = `${health?.llm_last_mode || "mode --"} · ${tools}`;
+  const build = health?.build_sha || health?.git_sha || health?.revision || "未提供";
+  ui.agentTools.textContent = `${health?.llm_last_mode || "mode --"} · schema ${health?.schema_version || "--"} · build ${build}`;
 }
 
 function eventId(type) {
@@ -177,11 +187,13 @@ async function loadState(reason = "load") {
 
 function consumeState(next, reason = "state") {
   if (!next || next.schema_version !== "0.2.0") return;
-  if (worldState && next.session_id === worldState.session_id && next.revision < lastRevision) return;
+  if (worldState && next.session_id === worldState.session_id && next.revision <= lastRevision) return false;
+  if (worldState && next.session_id !== worldState.session_id) stableEventIds.clear();
   worldState = next;
   lastRevision = next.revision;
   render();
   log(reason, `${next.stage}`, `r${next.revision}`);
+  return true;
 }
 
 async function submitEvent(actionKey) {
@@ -192,11 +204,13 @@ async function submitEvent(actionKey) {
     return;
   }
   const [type, source, payload] = ACTIONS[actionKey];
-  const accepted = await apiFetch("/v1/event", {
+  const stableId = stableEventId(actionKey, type);
+  const response = await apiFetch("/v1/event", {
     method: "POST",
+    returnMeta: true,
     body: JSON.stringify({
       schema_version: "0.2.0",
-      event_id: stableEventId(actionKey, type),
+      event_id: stableId,
       session_id: worldState.session_id,
       type,
       source,
@@ -204,7 +218,13 @@ async function submitEvent(actionKey) {
       payload
     })
   });
+  const accepted = response.data;
   consumeState(accepted.state, accepted.duplicate ? "duplicate" : type);
+  log(
+    "event",
+    type,
+    `event_id ${stableId} · HTTP ${response.status} · duplicate ${Boolean(accepted.duplicate)} · r${accepted.state?.revision ?? "--"} · ${response.elapsedMs}ms`
+  );
 }
 
 async function confirm(inputMode = "button") {
@@ -216,16 +236,27 @@ async function confirm(inputMode = "button") {
     log("blocked", `confirm.${inputMode}`, blockedReason("confirm"));
     return;
   }
-  const state = await apiFetch("/v1/confirm", {
-    method: "POST",
-    body: JSON.stringify({
-      confirmation_id: worldState.confirmation.confirmation_id,
-      decision: "accept",
-      confirmed_by: "vehicle_hmi",
-      input_mode: inputMode
-    })
-  });
-  consumeState(state, `confirm.${inputMode}`);
+  const confirmationId = worldState.confirmation.confirmation_id;
+  try {
+    const response = await apiFetch("/v1/confirm", {
+      method: "POST",
+      returnMeta: true,
+      body: JSON.stringify({
+        confirmation_id: confirmationId,
+        decision: "accept",
+        confirmed_by: "vehicle_hmi",
+        input_mode: inputMode
+      })
+    });
+    consumeState(response.data, `confirm.${inputMode}`);
+    log("confirm", inputMode, `confirmation_id ${confirmationId} · HTTP ${response.status} · r${response.data?.revision ?? "--"} · ${response.elapsedMs}ms`);
+  } catch (error) {
+    await loadState("confirm.reconcile");
+    const stillPending = worldState?.confirmation?.confirmation_id === confirmationId
+      && worldState?.confirmation?.status === "pending";
+    if (stillPending) throw error;
+    log("confirm", "reconciled", `confirmation_id ${confirmationId} · state ${worldState?.confirmation?.status || worldState?.stage}`);
+  }
 }
 
 async function reset() {
@@ -268,6 +299,7 @@ function render() {
     ui.agentHealth.textContent = "未检查";
     ui.agentTools.textContent = "tools --";
   }
+  renderSyncMode();
   renderTasks();
   renderActions();
   renderVehicleState();
@@ -350,8 +382,10 @@ function blockedReason(actionKey) {
   const hasTasks = Boolean(worldState?.tasks?.length);
   const hasConfirmation = worldState?.confirmation?.status === "pending";
   if (!worldState && actionKey !== "refresh") return "未连接 Agent";
+  if (["serviceSuccess", "serviceStock", "serviceBudget"].includes(actionKey) && hasTasks) return "主故事已开始，服务模拟配置已锁定";
   if (["meeting", "approach", "vehicle", "traffic", "stress", "utterance"].includes(actionKey) && !hasTasks) return "需要先创建任务";
   if (actionKey === "traffic" && !["vehicle_observation", "handover_to_vehicle", "takeover_L2", "takeover_L3"].includes(stage)) return "需要先进入车辆或完成交接";
+  if (["stress", "hardBrake", "utterance"].includes(actionKey) && !["takeover_L2", "takeover_L3"].includes(stage)) return "需要先进入车辆并触发拥堵风险";
   if (actionKey === "confirm" || actionKey === "voiceConfirm") {
     if (!hasConfirmation) return "当前没有 pending confirmation";
     if (worldState.confirmation.owner_surface !== "vehicle_hmi") return "确认 owner 不在车机";
@@ -371,15 +405,51 @@ function updateButtonStates() {
   ui.runCurrentStep.disabled = nextStepIndex() >= SCRIPT_STEPS.length;
 }
 
+function renderSyncMode(detail = "") {
+  const labels = {
+    disconnected: "未连接",
+    connecting: "连接中",
+    sse: "SSE 实时",
+    polling: "轮询兜底"
+  };
+  ui.syncMode.textContent = labels[syncMode] || syncMode;
+  ui.syncDetail.textContent = detail || (syncMode === "sse" ? `r${worldState?.revision ?? "--"} · 实时推送` : syncMode === "polling" ? "每 3 秒刷新" : "SSE --");
+}
+
+function stopPolling() {
+  window.clearInterval(pollTimer);
+  pollTimer = null;
+}
+
+function startPolling(reason = "SSE 暂不可用") {
+  if (pollTimer) return;
+  syncMode = "polling";
+  renderSyncMode(`${reason} · 每 3 秒刷新`);
+  pollTimer = window.setInterval(() => {
+    loadState("poll").catch((error) => log("error", "poll failed", friendlyError(error)));
+  }, 3000);
+}
+
+function scheduleStreamReconnect() {
+  window.clearTimeout(streamRetryTimer);
+  streamRetryTimer = window.setTimeout(() => connectStream(), 2500);
+}
+
 async function connectStream() {
   if (streamAbort) streamAbort.abort();
+  window.clearTimeout(streamRetryTimer);
   streamAbort = new AbortController();
+  syncMode = "connecting";
+  renderSyncMode("正在建立实时状态流");
   try {
     const response = await fetch(`${CONFIG.apiBase}/v1/stream`, {
       headers: authHeaders({ Accept: "text/event-stream" }),
       signal: streamAbort.signal
     });
     if (!response.ok || !response.body) throw new Error(`stream ${response.status}`);
+    stopPolling();
+    syncMode = "sse";
+    renderSyncMode(`r${worldState?.revision ?? "--"} · 实时推送`);
     log("stream", "connected");
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -392,9 +462,12 @@ async function connectStream() {
       buffer = chunks.pop() || "";
       chunks.forEach(parseStreamChunk);
     }
+    throw new Error("stream ended");
   } catch (error) {
     if (error.name === "AbortError") return;
     log("error", "stream disconnected", friendlyError(error));
+    startPolling("SSE 已断开");
+    scheduleStreamReconnect();
   }
 }
 
@@ -403,6 +476,7 @@ function parseStreamChunk(chunk) {
   if (!dataLine) return;
   try {
     consumeState(JSON.parse(dataLine.slice(6)), "stream");
+    if (syncMode === "sse") renderSyncMode(`r${worldState?.revision ?? "--"} · 实时推送`);
   } catch (error) {
     log("error", "stream parse failed", friendlyError(error));
   }
@@ -415,6 +489,8 @@ function saveConfig() {
     apiBase: CONFIG.apiBase,
     token: CONFIG.token
   }));
+  syncMode = "disconnected";
+  renderSyncMode("配置已更新，等待连接");
   log("config", "saved", CONFIG.apiBase);
 }
 

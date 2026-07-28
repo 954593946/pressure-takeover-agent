@@ -19,16 +19,28 @@ const hasExplicitStreamUrl = Boolean(windowConfig.streamUrl || queryConfig.strea
 let CONFIG = normalizeConfig({ ...DEFAULT_CONFIG, ...storedConfig, ...windowConfig, ...queryConfig }, hasExplicitStreamUrl);
 
 const DRAFTS = {
-  teacher: "老师您好，我这边路况拥堵，预计会晚到约 18 分钟。请您帮忙照看一下孩子，我到达后会立即联系您。（模拟消息）",
-  family: "我这边会议延迟加上路况拥堵，接孩子可能晚一点。AURI 已把超市任务转为配送方案，我会按当前路线安全驾驶。（模拟消息）"
+  teacher: {
+    target: "王老师",
+    lines: [
+      "老师您好，我这边路况拥堵，预计会晚到约 18 分钟。",
+      "请您帮忙照看一下孩子，我到达后会立即联系您。"
+    ]
+  },
+  family: {
+    target: "家人",
+    lines: [
+      "会议延迟加上路况拥堵，接孩子可能晚一点。",
+      "AURI 已将超市任务调整为配送方案，我会按当前路线安全驾驶。"
+    ]
+  }
 };
 
 const STAGE_VIEW = {
   connecting: ["idle", "AURI 正在连接", "正在读取当前行程和座舱状态。", "正在同步当前状态。", "正在连接 Agent", "无需确认", "请稍候", "连接中"],
   off_vehicle_idle: ["idle", "等待任务创建", "手机端创建任务后，AURI 会识别刚性责任和弹性任务。", "暂无风险结论。", "手机端可语音创建任务", "无需确认", "等待风险成立", "待机"],
-  pre_departure_warning: ["delayed", "最晚出发窗口被压缩", "会议延迟已写入 World State，腕上设备进入黄色提醒。", "仍可能准时，但容错时间明显减少。", "腕上已提醒，车机保持低干扰", "无需确认", "继续观察 ETA", "监控中"],
-  handover_to_vehicle: ["warning", "正在交接到车机", "用户接近车辆，车机预加载驾驶页。", "准备进入驾驶模式，手机确认入口将失效。", "准备进入车辆", "无需确认", "等待车辆状态", "交接中"],
-  vehicle_observation: ["vehicle", "已进入驾驶模式", "车机 HMI 展示学校路线和当前 ETA。", "当前按路线观察，驾驶中只展示必要信息。", "可语音询问：“我还来得及吗？”", "无需确认", "车机保持低干扰", "观察中"],
+  pre_departure_warning: ["delayed", "最晚出发窗口被压缩", "会议延迟 20 分钟，腕上设备已发出黄色提醒。", "仍可能准时，但可用时间明显减少。", "腕上已提醒，车机保持低干扰", "无需确认", "继续观察 ETA", "监控中"],
+  handover_to_vehicle: ["warning", "路线正在接续", "接近车辆后，学校路线自动流转到车机。", "手机即将进入只读状态。", "准备进入车辆", "无需确认", "等待车辆状态", "交接中"],
+  vehicle_observation: ["vehicle", "导航已接续", "阳光小学路线已经准备，当前按路线正常行驶。", "当前预计可以按时到达。", "可语音询问：“我还来得及吗？”", "无需确认", "保持当前路线", "观察中"],
   takeover_L2: ["risk", "预计晚到 18 分钟", "刚性责任窗口被突破，等待用户明确求助后生成方案。", "继续加速无法明显缩短时间。", "你可以说：“我还来得及吗？”", "等待方案", "Agent 尚未生成确认项", "分析中"],
   takeover_L3: ["risk", "高负荷保护", "多源辅助信号显示驾驶负荷升高，非必要内容已暂停。", "车机只保留必要判断和安全确认。", "保持驾驶，AURI 正在处理", "等待方案", "高负荷保护中", "保护中"],
   planning: ["takeover", "压力源接管中", "Agent 正在保护接孩子任务，并准备消息与服务方案。", "继续加速无法明显缩短时间，正在处理现实后果。", "AURI 正在准备方案", "准备中", "等待确认项生成", "规划中"],
@@ -38,7 +50,7 @@ const STAGE_VIEW = {
   action_completed: ["done", "问题已处理", "消息已模拟发送，服务订单已模拟提交，三端同步已处理。", "已处理，按当前速度驾驶即可。", "AURI 已降低打扰", "已完成", "三端绿态同步", "完成"],
   cooldown: ["done", "低干扰恢复", "压力源已处理，AURI 进入冷却状态。", "后续详情停车后在手机端复盘。", "AURI 保持安静", "已完成", "等待停车复盘", "恢复"],
   parked_review: ["done", "停车后复盘", "主交互端回到手机，车机结束本次处理。", "请在手机端查看消息、订单和 Action Ledger。", "手机端复盘", "车机结束", "手机为主端", "复盘"],
-  error: ["risk", "连接或状态异常", "请检查 Agent 服务或控制台事件。", "当前无法确认动作，请使用控制台或手机兜底。", "连接异常", "不可确认", "等待状态恢复", "错误"]
+  error: ["risk", "连接暂时中断", "AURI 正在重新连接，当前不会执行新的动作。", "请保持当前路线，稍后再试。", "连接异常", "不可确认", "等待状态恢复", "错误"]
 };
 
 const MAP_STAGE_VIEW = {
@@ -73,8 +85,9 @@ const EVENT_BUTTONS = {
 const $ = (id) => document.querySelector(id);
 const ui = {
   root: $(".screen"), speed: $("#speed"), headline: $("#headline"), eta: $("#eta"), etaNote: $("#etaNote"),
-  windowState: $("#windowState"), modeChip: $("#modeChip"), phoneStatus: $("#phoneStatus"), phoneDetail: $("#phoneDetail"),
-  watchStatus: $("#watchStatus"), watchDetail: $("#watchDetail"), consoleStatus: $("#consoleStatus"), kidTask: $("#kidTask"),
+  windowState: $("#windowState"), modeChip: $("#modeChip"), phoneStatus: $("#phoneStatus"), watchStatus: $("#watchStatus"),
+  carStatus: $("#carStatus"), phoneNode: $("#phoneNode"), watchNode: $("#watchNode"), carNode: $("#carNode"),
+  handoffSummary: $("#handoffSummary"), kidTask: $("#kidTask"),
   shopTask: $("#shopTask"), kidTaskState: $("#kidTaskState"), shopTaskState: $("#shopTaskState"), agentTitle: $("#agentTitle"),
   agentText: $("#agentText"), realConclusion: $("#realConclusion"), riskBadge: $("#riskBadge"), actionState: $("#actionState"),
   actionList: $("#actionList"), draftState: $("#draftState") || $("#draftStateHidden"), draftBody: $("#draftBody"), tabs: $(".tabs"), syncPhone: $("#syncPhone"),
@@ -83,6 +96,9 @@ const ui = {
   speedLimit: $("#speedLimit"), lightCountdown: $("#lightCountdown"), turnDistance: $("#turnDistance"), turnUnit: $("#turnUnit"),
   routeProgress: $("#routeProgress"), turnInstruction: $("#turnInstruction"), laneGuidance: $("#laneGuidance"),
   mapStageLabel: $("#mapStageLabel"), mapStageIcon: $("#mapStageIcon"), mapWrap: $(".map-wrap"),
+  routePath: $("#routePathGeometry"), routePassed: $("#routePassed"), carPin: $("#carPin"), carMarker: $("#carMarker"),
+  signalToast: $("#signalToast"), signalToastIcon: $("#signalToastIcon"), signalToastSource: $("#signalToastSource"),
+  signalToastTitle: $("#signalToastTitle"), signalToastDetail: $("#signalToastDetail"), dismissSignalToast: $("#dismissSignalToast"),
   amapRemain: $("#amapRemain"), amapDuration: $("#amapDuration"), amapArrival: $("#amapArrival"), configBtn: $("#configBtn"),
   configPanel: $("#configPanel"), configForm: $("#configForm"), closeConfig: $("#closeConfig"), configApiBase: $("#configApiBase"),
   configToken: $("#configToken"), usePublicAgent: $("#usePublicAgent"), useLegacyAgent: $("#useLegacyAgent"), useLocalAgent: $("#useLocalAgent"),
@@ -104,6 +120,11 @@ let healthState = null;
 let activeDetail = null;
 let lastMapStage = null;
 let mapAnimationTimer = null;
+let routeAnimationFrame = null;
+let currentRouteProgress = null;
+let confirmInFlight = false;
+let lastSignalToastKey = null;
+let signalToastTimer = null;
 const timeline = [];
 
 function normalizeConfig(config, useProvidedStreamUrl = false) {
@@ -133,7 +154,6 @@ function log(type, detail = "") {
 }
 
 function setConnection(text) {
-  ui.consoleStatus.textContent = text;
   ui.connectionState.textContent = text.length > 8 ? text.slice(0, 8) : text;
   ui.connectionDetail.textContent = `${worldState?.session_id || "session --"} · r${worldState?.revision ?? "--"}`;
   log("connection", text);
@@ -174,6 +194,9 @@ function friendlyError(error) {
   if (message.includes("UNAUTHORIZED") || message.includes("401")) {
     return `${message}；请填写正确 Team Token，或确认本地后端未开启共享访问。`;
   }
+  if (message.includes("WRONG_SURFACE")) return "当前确认入口已经切换到其他设备。";
+  if (message.includes("CONFIRMATION_EXPIRED")) return "当前方案已过期，AURI 将重新检查状态。";
+  if (message.includes("CONFIRMATION_NOT_FOUND")) return "方案已经变化，正在重新同步。";
   return message;
 }
 
@@ -219,6 +242,11 @@ async function loadState(reason = "load") {
 function consumeWorldState(next, reason = "state") {
   if (!next || next.schema_version !== "0.2.0") return;
   if (worldState && next.session_id === worldState.session_id && next.revision <= lastRevision) return;
+  if (worldState && next.session_id !== worldState.session_id) {
+    activeDraft = "teacher";
+    closeDetail();
+    currentRouteProgress = null;
+  }
   worldState = next;
   lastRevision = next.revision;
   log(reason, `${next.stage} r${next.revision}`);
@@ -244,17 +272,32 @@ async function submitEvent(definition) {
 }
 
 async function confirmAction(inputMode = "button") {
-  if (!worldState?.confirmation) return;
-  const state = await apiFetch("/v1/confirm", {
-    method: "POST",
-    body: JSON.stringify({
-      confirmation_id: worldState.confirmation.confirmation_id,
-      decision: "accept",
-      confirmed_by: "vehicle_hmi",
-      input_mode: inputMode
-    })
-  });
-  consumeWorldState(state, "confirm");
+  if (!worldState?.confirmation || confirmInFlight) return;
+  confirmInFlight = true;
+  const confirmationId = worldState.confirmation.confirmation_id;
+  try {
+    const state = await apiFetch("/v1/confirm", {
+      method: "POST",
+      body: JSON.stringify({
+        confirmation_id: confirmationId,
+        decision: "accept",
+        confirmed_by: "vehicle_hmi",
+        input_mode: inputMode
+      })
+    });
+    consumeWorldState(state, "confirm");
+  } catch (error) {
+    try {
+      await loadState("confirm-reconcile");
+    } catch (_stateError) {
+      // Preserve the confirmation error; the snapshot request is only reconciliation.
+    }
+    const stillPending = worldState?.confirmation?.confirmation_id === confirmationId
+      && worldState.confirmation.status === "pending";
+    if (stillPending) throw error;
+  } finally {
+    confirmInFlight = false;
+  }
 }
 
 async function resetSession() {
@@ -327,6 +370,150 @@ function animateMapStage(nextStage) {
   mapAnimationTimer = window.setTimeout(() => ui.mapWrap.classList.remove("is-stage-changing"), 720);
 }
 
+function routeProgressForStage(stage) {
+  return {
+    connecting: 0.02,
+    off_vehicle_idle: 0.03,
+    pre_departure_warning: 0.05,
+    handover_to_vehicle: 0.09,
+    vehicle_observation: 0.22,
+    takeover_L2: 0.43,
+    takeover_L3: 0.43,
+    planning: 0.48,
+    service_prepared: 0.5,
+    waiting_confirmation: 0.52,
+    executing: 0.58,
+    action_completed: 0.72,
+    cooldown: 0.78,
+    parked_review: 1
+  }[stage] ?? 0.03;
+}
+
+const ROUTE_SAMPLES = [
+  [0, 78, 648],
+  [.05, 145, 626],
+  [.09, 205, 615],
+  [.22, 363, 574],
+  [.35, 480, 466],
+  [.43, 566, 421],
+  [.52, 690, 389],
+  [.58, 770, 375],
+  [.72, 900, 306],
+  [.78, 960, 226],
+  [.9, 1050, 108],
+  [1, 1164, 42]
+];
+
+function sampledRoutePoint(progress) {
+  const clamped = Math.max(0, Math.min(1, progress));
+  const upperIndex = ROUTE_SAMPLES.findIndex(([position]) => position >= clamped);
+  if (upperIndex <= 0) return { x: ROUTE_SAMPLES[0][1], y: ROUTE_SAMPLES[0][2], angle: 73 };
+  const lower = ROUTE_SAMPLES[upperIndex - 1];
+  const upper = ROUTE_SAMPLES[upperIndex];
+  const ratio = (clamped - lower[0]) / (upper[0] - lower[0]);
+  return {
+    x: lower[1] + (upper[1] - lower[1]) * ratio,
+    y: lower[2] + (upper[2] - lower[2]) * ratio,
+    angle: Math.atan2(upper[2] - lower[2], upper[1] - lower[1]) * 180 / Math.PI + 90
+  };
+}
+
+function positionVehicle(progress) {
+  if (!ui.carPin || !ui.carMarker || !ui.routePassed) return;
+  const clamped = Math.max(0, Math.min(1, progress));
+  const point = sampledRoutePoint(clamped);
+  ui.carPin.setAttribute("transform", `translate(${point.x.toFixed(2)} ${point.y.toFixed(2)}) rotate(${point.angle.toFixed(2)})`);
+  ui.carMarker.style.left = `${(point.x / 12).toFixed(3)}%`;
+  ui.carMarker.style.top = `${(point.y / 7.2).toFixed(3)}%`;
+  ui.carMarker.style.setProperty("--car-angle", `${point.angle.toFixed(2)}deg`);
+  ui.routePassed.setAttribute("stroke-dasharray", `${(clamped * 100).toFixed(2)} 100`);
+  ui.routeProgress.style.height = `${Math.round(clamped * 100)}%`;
+}
+
+function animateVehicleTo(target) {
+  window.cancelAnimationFrame(routeAnimationFrame);
+  if (currentRouteProgress === null || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    currentRouteProgress = target;
+    positionVehicle(target);
+    return;
+  }
+  if (Math.abs(target - currentRouteProgress) < 0.001) {
+    positionVehicle(target);
+    return;
+  }
+  const start = currentRouteProgress;
+  const startedAt = performance.now();
+  const duration = 900;
+  const step = (now) => {
+    const elapsed = Math.min(1, (now - startedAt) / duration);
+    const eased = 1 - Math.pow(1 - elapsed, 3);
+    currentRouteProgress = start + (target - start) * eased;
+    positionVehicle(currentRouteProgress);
+    if (elapsed < 1) routeAnimationFrame = window.requestAnimationFrame(step);
+  };
+  routeAnimationFrame = window.requestAnimationFrame(step);
+}
+
+function handoffText(stage) {
+  return {
+    connecting: "正在同步手机、腕上和车机",
+    off_vehicle_idle: "手机录入任务，腕上和车机待命",
+    pre_departure_warning: "手机显示风险，腕上黄色双短震",
+    handover_to_vehicle: "任务与路线正在接续到车机",
+    vehicle_observation: "车机已接管，手机进入只读",
+    takeover_L2: "车机处理风险，腕上同步提醒",
+    takeover_L3: "车机进入保护态，腕上减少打扰",
+    planning: "AURI 正在准备跨端协助方案",
+    service_prepared: "方案已同步，等待车机确认",
+    waiting_confirmation: "车机等待确认，手机和腕上同步",
+    executing: "动作正在执行，三端同步更新",
+    action_completed: "手机、腕上和车机均已完成",
+    cooldown: "三端恢复低干扰状态",
+    parked_review: "手机已接回主端，可查看完整复盘"
+  }[stage] || "三端保持同步";
+}
+
+function signalToastView(stage) {
+  if (stage === "pre_departure_warning") {
+    return ["warning", "腕上提醒", "最晚出发窗口已压缩", "黄色提示 · 双短震", "◷"];
+  }
+  if (stage === "takeover_L3") {
+    return ["critical", "腕上压力信号", "驾驶负荷升高", "红色保护提示 · 一次组合振动", "!"];
+  }
+  if (stage === "takeover_L2") {
+    if (worldState?.wearable?.text === "压力信号升高") {
+      return ["warning", "腕上压力信号", "压力趋势升高", "黄色提示 · 双短震", "◉"];
+    }
+    return ["warning", "AURI 风险提醒", "预计晚到 18 分钟", "车机进入低干扰 · 腕上保持驾驶连接", "◉"];
+  }
+  return null;
+}
+
+function renderSignalToast(stage) {
+  const view = signalToastView(stage);
+  if (!view) {
+    window.clearTimeout(signalToastTimer);
+    ui.signalToast.hidden = true;
+    return;
+  }
+  const signalKey = `${stage}:${worldState?.wearable?.command_id || worldState?.revision || "0"}`;
+  if (signalKey === lastSignalToastKey) return;
+  lastSignalToastKey = signalKey;
+  const [tone, source, title, detail, icon] = view;
+  ui.signalToast.className = `signal-toast ${tone}`;
+  ui.signalToastSource.textContent = source;
+  ui.signalToastTitle.textContent = title;
+  ui.signalToastDetail.textContent = detail;
+  ui.signalToastIcon.textContent = icon;
+  ui.signalToast.hidden = false;
+  window.clearTimeout(signalToastTimer);
+  if (stage === "pre_departure_warning") {
+    signalToastTimer = window.setTimeout(() => {
+      ui.signalToast.hidden = true;
+    }, 6500);
+  }
+}
+
 function riskLabel(stage, risk) {
   if (stage === "error") return "⚠ 连接异常";
   if (["action_completed", "cooldown", "parked_review"].includes(stage)) return "✓ 已处理";
@@ -395,6 +582,52 @@ function actionText(action) {
   return `${prefix} · ${status}`;
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function splitDisplayText(value) {
+  const normalized = String(value || "")
+    .replace(/，并(?=已|完成|将|把)/g, "。")
+    .replace(/：(?=\d+\s*件)/g, "。")
+    .replace(/，(?=\d{1,2}:\d{2})/g, "。");
+  const sentences = normalized.match(/[^。；]+[。；]?/g) || [];
+  return sentences.map((sentence) => sentence.trim()).filter(Boolean);
+}
+
+function renderTripValue(element, value, unit) {
+  element.innerHTML = `<b>${escapeHtml(value)}</b><small>${escapeHtml(unit)}</small>`;
+}
+
+function detailCopyItem(label, value, cls = "") {
+  const lines = splitDisplayText(value);
+  return `
+    <div class="detail-copy-item ${cls}">
+      <span>${escapeHtml(label)}</span>
+      <div>${lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}</div>
+    </div>
+  `;
+}
+
+function draftMarkup(action, kind) {
+  const draft = DRAFTS[kind];
+  const status = action?.status === "completed" ? "已发送" : action ? "等待确认" : "尚未生成";
+  return `
+    <article class="message-preview">
+      <header>
+        <span><strong>${escapeHtml(draft.target)}</strong><em>模拟消息</em></span>
+        <b class="${action?.status === "completed" ? "done" : ""}">${status}</b>
+      </header>
+      <div>${draft.lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}</div>
+    </article>
+  `;
+}
+
 function renderActions() {
   const actions = worldState?.actions || [];
   if (!actions.length) {
@@ -403,7 +636,7 @@ function renderActions() {
   }
   ui.actionList.innerHTML = actions.slice(0, 3).map((action) => {
     const cls = action.status === "completed" ? "done" : action.status === "awaiting_confirmation" ? "pending" : "";
-    return `<li class="${cls}">${actionText(action)}</li>`;
+    return `<li class="${cls}">${escapeHtml(actionText(action))}</li>`;
   }).join("");
 }
 
@@ -423,7 +656,7 @@ function renderDraft() {
   ui.draftState.textContent = draftLabel;
   const hidden = $("#draftStateHidden");
   if (hidden) hidden.textContent = draftLabel;
-  ui.draftBody.textContent = `${current.summary}。${activeDraft === "family" ? DRAFTS.family : DRAFTS.teacher}`;
+  ui.draftBody.textContent = DRAFTS[activeDraft].lines.join("");
 }
 
 function canQuickAsk() {
@@ -434,13 +667,21 @@ function canQuickAsk() {
 }
 
 function detailItem(label, value, cls = "") {
-  return `<div class="detail-item ${cls}"><span>${label}</span><strong>${value}</strong></div>`;
+  return `<div class="detail-item ${cls}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
 }
 
 function setActiveLauncher(kind = "home") {
   document.querySelectorAll(".launch[data-detail], .launch[data-home]").forEach((button) => {
     button.classList.toggle("active", kind === "home" ? button.hasAttribute("data-home") : button.dataset.detail === kind);
   });
+}
+
+function planResultSummary(order) {
+  if (["action_completed", "cooldown", "parked_review"].includes(worldState?.stage) && order) {
+    const itemCount = (order.items || []).length;
+    return `已通知孩子进度（模拟消息），并完成模拟商超订单：${itemCount}件商品共${order.total || 0}元，${order.delivery_window || "配送时间待定"}送达。`;
+  }
+  return worldState?.output?.conclusion || "等待风险判断";
 }
 
 function openDetail(kind) {
@@ -454,26 +695,28 @@ function openDetail(kind) {
 
   if (kind === "drafts") {
     renderDraft();
-    ui.detailTitle.textContent = "消息草稿";
+    const messageActions = actions.filter((action) => action.type === "message");
+    const currentAction = activeDraft === "family"
+      ? messageActions.find((action) => action.target?.includes("家")) || messageActions[1]
+      : messageActions.find((action) => action.target?.includes("老师")) || messageActions[0];
+    ui.detailTitle.textContent = "消息";
     ui.detailBody.innerHTML = `
       <div class="detail-tabs">
         <button type="button" data-detail-draft="teacher" class="${activeDraft === "teacher" ? "active" : ""}">老师</button>
         <button type="button" data-detail-draft="family" class="${activeDraft === "family" ? "active" : ""}">家人</button>
       </div>
-      <p>${ui.draftBody.textContent}</p>
-      <small>驾驶中只展示摘要，完整明细停车后在手机端复盘。</small>
+      ${draftMarkup(currentAction, activeDraft)}
     `;
   } else if (kind === "plan") {
     ui.detailTitle.textContent = "接管方案";
     ui.detailBody.innerHTML = `
       <div class="detail-list">
-        ${detailItem("现实判断", worldState?.output?.conclusion || "等待风险判断", risk.late_minutes > 0 ? "warning" : "")}
+        ${detailCopyItem("处理结果", planResultSummary(order), risk.late_minutes > 0 ? "warning" : "")}
         ${detailItem("刚性责任", pickup ? "18:10 接孩子 · 不可后置" : "等待手机端创建任务")}
         ${detailItem("弹性任务", grocery ? `${grocery.status === "rescheduled" ? "已后置" : "可调整"} · 之后去超市` : "等待识别弹性任务")}
         ${detailItem("动作组", actions.length ? `${actions.length} 个动作 · ${worldState?.confirmation?.status === "pending" ? "等待确认" : "已同步"}` : "尚未生成动作组")}
         ${detailItem("服务方案", order ? `${orderStatusLabel(order.status)} · ${order.total || 0} 元 · ${order.delivery_window || "待定"}` : "未生成模拟配送方案")}
       </div>
-      <small>主屏保留一句判断和一个主要确认入口，复杂内容进入二级页。</small>
     `;
   } else if (kind === "vehicle") {
     ui.detailTitle.textContent = "座舱状态";
@@ -485,7 +728,6 @@ function openDetail(kind) {
         ${detailItem("主交互端", worldState?.primary_surface || "mobile")}
         ${detailItem("腕上反馈", `${worldState?.wearable?.text || "AURI 就绪"} · ${worldState?.wearable?.haptic || "none"}`)}
       </div>
-      <small>驾驶中只允许轻量确认和状态查看，复杂设置停车后处理。</small>
     `;
   } else if (kind === "route") {
     ui.detailTitle.textContent = "行程详情";
@@ -497,15 +739,14 @@ function openDetail(kind) {
         ${detailItem("剩余距离", ui.amapRemain.textContent)}
         ${detailItem("下一动作", ui.voiceHint.textContent)}
       </div>
-      <small>地图主屏优先显示路径、车道和 ETA，二级页用于解释延误原因。</small>
     `;
   } else {
-    ui.detailTitle.textContent = "三端同步";
+    ui.detailTitle.textContent = "跨端接力";
     ui.detailBody.innerHTML = `
-      <div class="detail-sync"><span>手机端</span><strong>${ui.syncPhone.textContent}</strong></div>
-      <div class="detail-sync"><span>腕上端</span><strong>${ui.syncWatch.textContent}</strong></div>
-      <div class="detail-sync"><span>车机端</span><strong>${ui.syncCar.textContent}</strong></div>
-      <small>三端读取同一状态版本，确保现场联动可追踪。</small>
+      <div class="detail-sync"><span>手机</span><strong>${escapeHtml(ui.syncPhone.textContent)}</strong></div>
+      <div class="detail-sync"><span>腕上</span><strong>${escapeHtml(ui.syncWatch.textContent)}</strong></div>
+      <div class="detail-sync"><span>车机</span><strong>${escapeHtml(ui.syncCar.textContent)}</strong></div>
+      ${detailCopyItem("当前接力", ui.handoffSummary.textContent)}
     `;
   }
   activeDetail = kind;
@@ -543,16 +784,23 @@ function render() {
   ui.root.className = `screen state-${className} map-stage-${mapStage}${showDebugDemo ? " debug-demo" : ""}`;
   animateMapStage(mapStage);
   ui.speed.textContent = driving ? "42" : "--";
-  ui.headline.textContent = worldState?.output?.conclusion || text;
+  ui.headline.textContent = text;
   ui.eta.textContent = eta;
   ui.etaNote.textContent = risk.late_minutes > 0 ? `晚到 ${risk.late_minutes} 分钟` : eta === "--:--" ? "等待路线" : "准时";
   ui.windowState.textContent = risk.late_minutes > 0 ? "突破" : worldState?.stage === "pre_departure_warning" ? "压缩" : pickup ? "已建立" : "未建立";
   ui.modeChip.textContent = worldState?.primary_surface === "vehicle_hmi" ? "驾驶模式" : "手机为主端";
-  ui.phoneStatus.textContent = worldState?.primary_surface === "mobile" ? "主端" : worldState?.stage === "action_completed" ? "已同步" : "只读同步";
-  ui.phoneDetail.textContent = pickup ? "任务已创建" : "等待任务";
-  ui.watchStatus.textContent = worldState?.wearable?.text || "AURI 就绪";
-  ui.watchDetail.textContent = `${worldState?.wearable?.mode || "idle"} · ${worldState?.wearable?.haptic || "none"}`;
-  ui.consoleStatus.textContent = worldState ? "状态已同步" : "待机";
+  ui.phoneStatus.textContent = worldState?.primary_surface === "mobile"
+    ? "主端"
+    : worldState?.stage === "action_completed"
+      ? "已同步"
+      : "只读";
+  ui.watchStatus.textContent = worldState?.wearable?.text || "常态";
+  ui.carStatus.textContent = worldState?.primary_surface === "vehicle_hmi" ? "主端" : worldState ? "同步" : "待机";
+  ui.phoneNode.classList.toggle("active", worldState?.primary_surface === "mobile");
+  ui.carNode.classList.toggle("active", worldState?.primary_surface === "vehicle_hmi");
+  ui.watchNode.classList.toggle("warning", worldState?.wearable?.mode === "warning");
+  ui.watchNode.classList.toggle("done", worldState?.wearable?.mode === "completed");
+  ui.handoffSummary.textContent = handoffText(worldState?.stage);
   ui.connectionState.textContent = worldState ? "已连接" : "未连接";
   ui.connectionDetail.textContent = healthState
     ? `${healthState.llm_framework || "agent"} · r${worldState?.revision ?? "--"}`
@@ -568,10 +816,10 @@ function render() {
   ui.actionState.textContent = actionState;
   renderActions();
   renderDraft();
-  ui.syncPhone.textContent = worldState?.primary_surface === "mobile" ? "主端" : "同步";
-  ui.syncWatch.textContent = worldState?.wearable?.mode || "idle";
-  ui.syncCar.textContent = worldState?.primary_surface === "vehicle_hmi" ? "主端" : "只读";
-  if (ui.syncSummary) ui.syncSummary.textContent = worldState ? `r${worldState.revision} · 状态一致` : "等待连接";
+  ui.syncPhone.textContent = worldState?.primary_surface === "mobile" ? "主端" : "只读";
+  ui.syncWatch.textContent = worldState?.wearable?.text || "常态";
+  ui.syncCar.textContent = worldState?.primary_surface === "vehicle_hmi" ? "主端" : "同步";
+  if (ui.syncSummary) ui.syncSummary.textContent = worldState ? "三端状态一致" : "等待连接";
   ui.syncWatchDot.className = worldState?.wearable?.mode === "completed" ? "done" : worldState?.wearable?.mode === "warning" ? "warn" : "ok";
   if (ui.routeSummary) {
     ui.routeSummary.textContent = risk.late_minutes > 0 ? `晚到 ${risk.late_minutes} 分钟` : eta === "--:--" ? "等待路线" : `${eta} 到达`;
@@ -589,7 +837,7 @@ function render() {
     ui.quickAskLabel.textContent = "我还来得及吗？";
   }
   ui.voiceHint.textContent = voice;
-  ui.confirmBtn.disabled = !canConfirm;
+  ui.confirmBtn.disabled = !canConfirm || confirmInFlight;
   ui.confirmBtn.classList.toggle("enabled", canConfirm);
   ui.confirmLabel.textContent = confirmLabel;
   ui.confirmSub.textContent = canConfirm ? confirmSub : (worldState?.confirmation?.owner_surface && worldState.confirmation.owner_surface !== "vehicle_hmi" ? "确认入口不在车机" : confirmSub);
@@ -615,9 +863,26 @@ function render() {
           : "保持左侧 2 车道";
   ui.mapStageLabel.textContent = mapLabel;
   ui.mapStageIcon.textContent = mapIcon;
-  ui.routeProgress.style.height = worldState?.stage === "action_completed" ? "76%" : risk.late_minutes > 0 ? "58%" : "35%";
-  ui.amapRemain.textContent = driving ? "7.8 公里" : "--";
-  ui.amapDuration.textContent = risk.late_minutes > 0 ? "36 分钟" : driving ? "18 分钟" : "--";
+  renderSignalToast(worldState?.stage);
+  const routeProgress = routeProgressForStage(worldState?.stage || "connecting");
+  const showVehicleMarker = driving || ["planning", "service_prepared", "waiting_confirmation", "executing", "action_completed", "cooldown"].includes(worldState?.stage);
+  ui.carMarker.hidden = !showVehicleMarker;
+  if (showVehicleMarker) {
+    animateVehicleTo(routeProgress);
+  } else {
+    currentRouteProgress = null;
+    ui.routePassed.setAttribute("stroke-dasharray", `${(routeProgress * 100).toFixed(2)} 100`);
+    ui.routeProgress.style.height = `${Math.round(routeProgress * 100)}%`;
+  }
+  const remainingKm = Math.max(0, 7.8 * (1 - routeProgress));
+  const remainingMinutes = Math.max(1, Math.round(18 * (1 - routeProgress)));
+  renderTripValue(ui.amapRemain, driving ? remainingKm.toFixed(1) : "--", driving ? "公里" : "");
+  const duration = risk.late_minutes > 0 && !["action_completed", "cooldown", "parked_review"].includes(worldState?.stage)
+    ? "36"
+    : driving
+      ? String(remainingMinutes)
+      : "--";
+  renderTripValue(ui.amapDuration, duration, driving ? "分钟" : "");
   ui.amapArrival.textContent = eta;
   if (activeDetail && !ui.detailPanel.hidden) openDetail(activeDetail);
 }
@@ -647,6 +912,11 @@ ui.confirmBtn.addEventListener("click", async () => {
   } finally {
     render();
   }
+});
+
+ui.dismissSignalToast.addEventListener("click", () => {
+  window.clearTimeout(signalToastTimer);
+  ui.signalToast.hidden = true;
 });
 
 ui.tabs.addEventListener("click", (event) => {
