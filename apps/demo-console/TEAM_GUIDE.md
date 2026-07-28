@@ -32,7 +32,7 @@ Demo 控制台是现场演示导演台，用于模拟本轮不接入真实系统
 不需要拉代码或启动静态服务器，打开：
 
 ```text
-https://wangwang20.github.io/auri-pressure-takeover-web/apps/demo-console/
+https://954593946.github.io/pressure-takeover-agent/apps/demo-console/
 ```
 
 第一次使用需填写团队 Agent API 和负责人单独提供的 Team Token。公网静态页面不包含 Token、OpenAI API Key 或后端环境变量。

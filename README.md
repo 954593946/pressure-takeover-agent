@@ -16,6 +16,8 @@ AURI 是一个面向车机、手机与腕上设备的多端 Agent。它在驾驶
 
 > **最终 Demo 故事入口（2026-07-28）**：[六格故事板、4 分 20 秒导演表与镜头说明](docs/final-demo-storyboard.md)。汇报、PPT、录屏和现场彩排统一使用这条人物与情绪主线。
 
+> **Web 联调入口（GitHub Pages）**：[AURI Web 协作入口](https://954593946.github.io/pressure-takeover-agent/)。进入后可选择车机 HMI 或 Demo 控制台；两端必须填写同一个 Agent API 和 Team Token，静态页面本身不保存任何后端密钥。
+
 > 最后更新：2026-07-27。[完整 LangChain 工具编排 PR #15](https://github.com/954593946/pressure-takeover-agent/pull/15)、[手机 Chat SSE 接入 PR #16](https://github.com/954593946/pressure-takeover-agent/pull/16) 与 [SSE/崩溃/日志修复 PR #17](https://github.com/954593946/pressure-takeover-agent/pull/17) 已合并。`contracts v0.2` 仍是共享候选基线；Chat 接口和跨端字段必须共同评审后冻结，禁止在端内复制后自行修改。
 
 | 模块 | 当前可用状态 | 其他成员现在可以做什么 |
@@ -25,6 +27,18 @@ AURI 是一个面向车机、手机与腕上设备的多端 Agent。它在驾驶
 | 手机端 | Android 业务 UI、World State、Chat SSE、语音、复盘和日志已有实现 | 修复任务双真相、空 Session、启动自动 reset、Profile 写入和真机回归 |
 | 车机 / 控制台 | HMI 和独立控制台均已接入标准 Event 与 World State | 统一后端地址，减少 HMI 硬编码，增加导演预检、前置条件、重连和浏览器回归 |
 | 腕上设备 | Active 2 六状态 UI、真实触觉、传感器、ACK 和去重已有基础 | 将手机真实 World State 接入 Side Service，移除启动 Mock 轮播，完成端到端和断连验收 |
+
+### Web 页面公开地址
+
+GitHub Pages 由本仓库的 `Web HMI and Console` 工作流自动部署。团队统一使用以下地址，不再使用其他账号仓库中的旧页面：
+
+```text
+统一入口:  https://954593946.github.io/pressure-takeover-agent/
+车机 HMI: https://954593946.github.io/pressure-takeover-agent/apps/vehicle-hmi/
+Demo 台:  https://954593946.github.io/pressure-takeover-agent/apps/demo-console/
+```
+
+这些只是公开静态前端，不包含 Team Token 或 OpenAI API Key。首次打开后，在页面的连接设置中填写 `https://auri-langchain-agent-api.onrender.com` 和负责人单独提供的 Team Token。若两个页面看不到同一任务，首先检查二者是否连接了同一个 API 地址和同一个共享 Session。
 
 ## 团队快速接入：公网 Agent
 
