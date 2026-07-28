@@ -28,6 +28,7 @@ import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.parseToJsonElement
 import java.io.ByteArrayOutputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -210,7 +211,7 @@ class WearableGateway @Inject constructor(
 
     private fun handleInbox(body: String): ByteArray {
         return try {
-            val payload = json.decodeFromString<JsonElement>(body).jsonObject
+            val payload = json.parseToJsonElement(body).jsonObject
             val method = payload.stringValue("method").ifBlank {
                 payload.stringValue("type")
             }
