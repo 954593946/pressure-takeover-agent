@@ -14,6 +14,8 @@ AURI 是一个面向车机、手机与腕上设备的多端 Agent。它在驾驶
 
 > **最终 Demo 冲刺入口（2026-07-27）**：[各模块待开发功能、Owner、依赖与验收清单](docs/final-demo-development-checklist.md)。这是当前排期和联调的最新执行入口；每位成员可把自己的任务 ID 连同文末模板直接交给 AI 编程助手。
 
+> **最终 Demo 故事入口（2026-07-28）**：[六格故事板、4 分 20 秒导演表与镜头说明](docs/final-demo-storyboard.md)。汇报、PPT、录屏和现场彩排统一使用这条人物与情绪主线。
+
 > 最后更新：2026-07-27。[完整 LangChain 工具编排 PR #15](https://github.com/954593946/pressure-takeover-agent/pull/15)、[手机 Chat SSE 接入 PR #16](https://github.com/954593946/pressure-takeover-agent/pull/16) 与 [SSE/崩溃/日志修复 PR #17](https://github.com/954593946/pressure-takeover-agent/pull/17) 已合并。`contracts v0.2` 仍是共享候选基线；Chat 接口和跨端字段必须共同评审后冻结，禁止在端内复制后自行修改。
 
 | 模块 | 当前可用状态 | 其他成员现在可以做什么 |
@@ -77,9 +79,10 @@ wss://auri-langchain-agent-api.onrender.com/v1/ws?access_token=<AGENT_SHARED_TOK
 
 1. [AGENTS.md](AGENTS.md)：AI 编程不可违反的仓库规则。
 2. [最终 Demo 待开发功能与分工清单](docs/final-demo-development-checklist.md)：选择任务 ID，读取依赖和验收标准。
-3. [Agent 接入与跨端协作指南](docs/agent-integration-guide.md)：从零理解 Agent、接口、状态流和各端接入方式。
-4. 本 README 中的 P0 闭环、模块所有权和视觉规则。
-5. 自己模块的 README 与 `contracts/` 实际 Schema/示例。
+3. [最终 Demo 六格故事板](docs/final-demo-storyboard.md)：理解人物、情绪弧线、讲解词、镜头和现场导演动作。
+4. [Agent 接入与跨端协作指南](docs/agent-integration-guide.md)：从零理解 Agent、接口、状态流和各端接入方式。
+5. 本 README 中的 P0 闭环、模块所有权和视觉规则。
+6. 自己模块的 README 与 `contracts/` 实际 Schema/示例。
 
 ## AI Agent 开发入口
 
@@ -99,6 +102,8 @@ wss://auri-langchain-agent-api.onrender.com/v1/ws?access_token=<AGENT_SHARED_TOK
 ## 六周 P0 闭环
 
 所有模块必须共同服务同一条故事线：
+
+汇报叙事、4 分 20 秒现场节奏和六个关键画面的完整执行说明见 [最终 Demo 六格故事板](docs/final-demo-storyboard.md)。
 
 1. 手机语音创建“18:10 接孩子，之后去超市”。Agent 生成任务图：接孩子是刚性责任，超市是可替代的弹性任务。
 2. 控制台注入会议延迟。真实风险算法进入 L1；手机显示风险卡，腕上黄态 + 双短震，车机保持静默。
