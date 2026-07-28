@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 
 const calls = [];
+const storage = new Map();
 
 class FakeClassList {
   constructor() {
@@ -108,7 +109,7 @@ class FakeDriving {
             [121.47, 31.229]
           ]
         }, {
-          instruction: "靠右进入阳光大道",
+          instruction: "沿学院路行驶3.8千米靠右进入阳光大道",
           distance: 3900,
           path: [
             [121.47, 31.229],
@@ -131,6 +132,14 @@ global.document = {
 };
 
 global.window = {
+  localStorage: {
+    getItem(key) {
+      return storage.has(key) ? storage.get(key) : null;
+    },
+    setItem(key, value) {
+      storage.set(key, value);
+    }
+  },
   AMap: {
     Map: FakeMap,
     TileLayer: { Traffic: FakeTrafficLayer },
@@ -175,13 +184,40 @@ async function main() {
     riskLevel: "L2",
     lateMinutes: 18
   });
-  assert.equal(route.instruction, "靠右进入阳光大道");
+  assert.equal(route.instruction, "沿学院路靠右进入阳光大道");
   assert.deepEqual(route.nextDistance, { value: "3.7", unit: "公里" });
+  assert.equal(adapter.overlays.routeRemaining.options.showDir, true);
+  assert.deepEqual(
+    adapter.overlays.vehicleMarker.position,
+    adapter.overlays.routePassed.path[adapter.overlays.routePassed.path.length - 1]
+  );
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  assert.deepEqual(adapter.getUsage(), {
+    month: currentMonth,
+    mapLoads: 1,
+    routePlans: 1
+  });
   assert.equal(adapter.getStatus(), "online");
   assert.equal(adapter.control("zoom-in"), true);
   assert.ok(calls.some(([name]) => name === "traffic-opacity"));
   assert.ok(calls.some(([name]) => name === "polyline-path"));
   assert.ok(calls.some(([name]) => name === "zoom-in"));
+
+  const guardedContainer = { hidden: false };
+  const guarded = window.AuriAmapAdapter.create({
+    container: guardedContainer,
+    mapWrap: { classList: new FakeClassList() }
+  });
+  const guardedResult = await guarded.init({
+    mapProvider: "amap",
+    amapKey: "test-key",
+    amapMonthlyMapLimit: 1,
+    amapMonthlyRouteLimit: 1
+  });
+  assert.equal(guardedResult.mode, "offline");
+  assert.match(guardedResult.reason, /调用保护已触发/);
+  assert.equal(guardedContainer.hidden, true);
 
   const fallbackContainer = { hidden: false };
   const fallbackWrap = { classList: new FakeClassList() };
