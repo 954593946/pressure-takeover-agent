@@ -8,6 +8,8 @@
 
 P0 区域：路线/ETA、Agent 状态、现实结论、动作列表和“确认发送”大按钮。驾驶中不做长文本、多选决策、完整地图、多轮聊天或真实车控。
 
+驾驶主屏遵循“一屏一事”：默认只显示导航、结论、动作组、简洁车载状态和唯一确认入口。消息草稿、三端同步等二级信息通过详情按钮弹窗查看，不在主屏平铺，避免遮挡导航和任务卡。
+
 ## Agent 接入方式
 
 HMI 是 World State 渲染器，不是状态机。页面启动后读取 `/v1/state`，并默认连接 `/v1/stream` 接收 SSE 更新。
@@ -15,7 +17,7 @@ HMI 是 World State 渲染器，不是状态机。页面启动后读取 `/v1/sta
 ```html
 <script>
   window.AURI_CONFIG = {
-    apiBase: "http://127.0.0.1:8000",
+    apiBase: "https://auri-langchain-agent-api.onrender.com",
     token: "",
     stream: true
   };
@@ -44,6 +46,17 @@ HMI 同时兼容本地 Agent 和公网 Agent：
 
 新版公网 Agent 使用 LangChain 工具编排自然语言，但 HMI 不直接调用工具。HMI 仍只消费 `WorldState`，并通过 `/v1/confirm` 处理车机确认。
 
+## 车辆状态展示
+
+HMI 读取 `WorldState.vehicle_state` 展示空调状态：
+
+- `ac_on`
+- `ac_target_temp`
+- `ac_mode`
+- `fan_speed`
+
+该字段由 Agent 的 `control_ac` 工具写入。HMI 只读展示，不提供直接改写空调的按钮；如果后续需要车机语音或方向盘键控制，应提交标准用户意图或事件，让 Agent 工具链处理。
+
 ## 允许的写操作
 
 - 标准事件：`POST /v1/event`
@@ -61,3 +74,5 @@ HMI 同时兼容本地 Agent 和公网 Agent：
 - `confirmation.status=pending`
 
 生活服务方案在车机只显示商品数、总价和配送时间，不显示完整商品列表。
+
+调试时可在 URL 后追加 `?debug=1` 显示 HMI 内置事件按钮；正式展示默认隐藏，现场推进统一使用独立 Demo 控制台。

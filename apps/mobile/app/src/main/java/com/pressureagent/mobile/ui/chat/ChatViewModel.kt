@@ -2,6 +2,10 @@ package com.pressureagent.mobile.ui.chat
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.pressureagent.mobile.data.local.AppLogger
+import com.pressureagent.mobile.data.repository.ChatRepository
+import com.pressureagent.mobile.data.repository.ChatStreamEvent
+import com.pressureagent.mobile.data.repository.ConnectionStatus
 import com.pressureagent.mobile.data.repository.WorldStateRepository
 import com.pressureagent.mobile.domain.model.*
 import com.pressureagent.mobile.domain.voice.VoiceInputEvent
@@ -27,6 +31,10 @@ data class ChatUiState(
     val primarySurface: PrimarySurface = PrimarySurface.MOBILE,
     val stageLabel: String = "",
     val isCompanionMode: Boolean = false,
+    // Connection
+    val connectionStatus: ConnectionStatus = ConnectionStatus.INITIALIZING,
+    // TTS
+    val isTtsEnabled: Boolean = false,
     // Chat
     val chatMessages: List<ChatItem> = emptyList(),
     // Input
@@ -37,12 +45,15 @@ data class ChatUiState(
     val error: String? = null,
     // Confirmation (lifted to top-level for quick access)
     val pendingConfirmation: Confirmation? = null,
+    val isConfirmationBlocked: Boolean = false,
+    val blockedReason: String? = null,
     val conclusion: String = "",
 )
 
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     private val repository: WorldStateRepository,
+    private val chatRepository: ChatRepository,
     private val voiceInput: VoiceInputProvider,
     private val voiceOutput: VoiceOutputProvider,
 ) : ViewModel() {
@@ -59,41 +70,45 @@ class ChatViewModel @Inject constructor(
     private var lastConfirmationId: String? = null
     private var currentSessionId: String = ""
     private var voiceJob: Job? = null
-
-    private var firstStateReceived = false
+    private var chatJob: Job? = null
+    private var chatConfirmationId: String? = null
+    // Tracks whether the current chat SSE already delivered a response.
+    // Prevents WorldState conclusion from creating a duplicate chat item.
+    private var sseResponseReceived = false
 
     init {
         observeWorldState()
+        observeConnectionStatus()
         refresh()
+    }
+
+    private fun observeConnectionStatus() {
+        viewModelScope.launch {
+            repository.connectionStatus.collect { status ->
+                _uiState.update { it.copy(connectionStatus = status) }
+            }
+        }
     }
 
     private fun observeWorldState() {
         viewModelScope.launch {
-            repository.worldState.collect { ws ->
-                // Auto-reset stale session on first connect
-                if (!firstStateReceived) {
-                    firstStateReceived = true
-                    val isStale = ws.confirmation != null ||
-                        ws.stage != Stage.OFF_VEHICLE_IDLE ||
-                        ws.primarySurface != PrimarySurface.MOBILE
-                    if (isStale) {
-                        viewModelScope.launch {
-                            try {
-                                repository.resetSession()
-                            } catch (_: Exception) { /* non-critical */ }
-                        }
-                        return@collect
-                    }
-                }
-
+            try {
+                repository.worldState.collect { ws ->
                 val newChats = mutableListOf<ChatItem>()
 
                 // 1) Conclusion change → AURI text response (like normal AI chat)
                 val conclusion = ws.output?.conclusion.orEmpty()
                 if (conclusion.isNotBlank() && conclusion != lastConclusion) {
-                    newChats.add(ChatItem(id = "msg_${ws.revision}", text = conclusion, isUser = false))
-                    voiceOutput.speak(conclusion)
+                    // Only create conclusion chat item if SSE didn't already deliver the response
+                    if (!sseResponseReceived) {
+                        newChats.add(ChatItem(id = "msg_${ws.revision}", text = conclusion, isUser = false))
+                    }
+                    // Only speak when mobile is the primary surface
+                    if (_uiState.value.isTtsEnabled && ws.primarySurface == PrimarySurface.MOBILE) {
+                        voiceOutput.speak(conclusion)
+                    }
                     lastConclusion = conclusion
+                    sseResponseReceived = false // reset for next turn
                 }
 
                 // 2) Confirmation → actionable card
@@ -112,6 +127,15 @@ class ChatViewModel @Inject constructor(
                 lastStage = ws.stage
                 currentSessionId = ws.sessionId
 
+                // Check if any service order is over-budget (blocks confirmation)
+                val overBudget = ws.serviceOrders.any { it.budgetStatus == BudgetStatus.OVER_BUDGET }
+                val blocked = ws.serviceOrders.any { it.status == ServiceOrderStatus.BLOCKED }
+                val blockedReason = when {
+                    blocked -> "订单已被阻止"
+                    overBudget -> "超出预算 ¥${ws.serviceOrders.firstOrNull { it.budgetStatus == BudgetStatus.OVER_BUDGET }?.budgetLimit?.toInt() ?: 0}，无法执行"
+                    else -> null
+                }
+
                 _uiState.update {
                     it.copy(
                         isLoading = false,
@@ -123,9 +147,14 @@ class ChatViewModel @Inject constructor(
                         isCompanionMode = ws.primarySurface != PrimarySurface.MOBILE,
                         conclusion = conclusion,
                         pendingConfirmation = ws.confirmation,
+                        isConfirmationBlocked = overBudget || blocked,
+                        blockedReason = blockedReason,
                         chatMessages = if (newChats.isNotEmpty()) it.chatMessages + newChats else it.chatMessages,
                     )
                 }
+            }
+            } catch (e: Exception) {
+                AppLogger.e("ChatVM", "WorldState collection error", e)
             }
         }
     }
@@ -141,8 +170,12 @@ class ChatViewModel @Inject constructor(
     // ─── Voice ─────────────────────────────────────────────────────────────
 
     fun onVoiceToggle() {
-        android.util.Log.d("AURI-VOICE", "onVoiceToggle called, isListening=${voiceInput.isListening}")
-        if (voiceInput.isListening) {
+        // ★ Use UI state as the single source of truth — voiceInput.isListening
+        //   is only set after the mic actually opens, which creates a race window
+        //   where the UI shows "stop" but the guard thinks we're starting.
+        val currentlyListening = _uiState.value.isListening
+        android.util.Log.d("AURI-VOICE", "onVoiceToggle called, uiState.isListening=$currentlyListening, provider.isListening=${voiceInput.isListening}")
+        if (currentlyListening) {
             // Stop recognition and send whatever was recognized so far
             voiceInput.stop()
             voiceJob?.cancel()
@@ -186,6 +219,11 @@ class ChatViewModel @Inject constructor(
 
     fun onTextSubmit(text: String) {
         if (text.isBlank()) return
+        // Defense-in-depth: block input when mobile is not the primary surface
+        if (_uiState.value.isCompanionMode) {
+            _uiState.update { it.copy(error = "当前由车机主控，请在车机屏幕操作") }
+            return
+        }
         addUserChat(text)
         submitUtterance(text)
     }
@@ -196,9 +234,102 @@ class ChatViewModel @Inject constructor(
     }
 
     private fun submitUtterance(text: String) {
+        chatJob?.cancel()
+        chatJob = viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            val aiId = UUID.randomUUID().toString()
+            val aiPlaceholder = ChatItem(id = aiId, text = "", isUser = false)
+            _uiState.update { it.copy(chatMessages = it.chatMessages + aiPlaceholder) }
+
+            try {
+                var receivedContent = false
+                AppLogger.i("ChatVM", "sendMessage via ChatRepository: '${text.take(50)}'")
+                chatRepository.sendMessage(
+                    message = text,
+                    inputMode = "text",
+                    sessionId = currentSessionId,
+                ).collect { event ->
+                    AppLogger.d("ChatVM", "ChatStreamEvent: ${event::class.simpleName}")
+                    when (event) {
+                        is ChatStreamEvent.TextDelta -> {
+                            receivedContent = true
+                            sseResponseReceived = true
+                            _uiState.update { state ->
+                            val msgs = state.chatMessages.toMutableList()
+                            val idx = msgs.indexOfLast { it.id == aiId }
+                            if (idx >= 0) msgs[idx] = msgs[idx].copy(text = msgs[idx].text + event.content)
+                            state.copy(chatMessages = msgs)
+                        }
+                        }
+                        is ChatStreamEvent.ToolCallStarted -> {
+                            receivedContent = true
+                            _uiState.update { state ->
+                            val msgs = state.chatMessages.toMutableList()
+                            val idx = msgs.indexOfLast { it.id == aiId }
+                            if (idx >= 0) msgs[idx] = msgs[idx].copy(text = msgs[idx].text + "\n\n🔧 ${event.functionName}")
+                            state.copy(chatMessages = msgs)
+                        }
+                        }
+                        is ChatStreamEvent.ToolCallResult -> {
+                            receivedContent = true
+                            sseResponseReceived = true
+                            _uiState.update { state ->
+                            val msgs = state.chatMessages.toMutableList()
+                            val idx = msgs.indexOfLast { it.id == aiId }
+                            if (idx >= 0 && event.summary.isNotBlank()) msgs[idx] = msgs[idx].copy(text = msgs[idx].text + "\n✅ ${event.summary}")
+                            state.copy(chatMessages = msgs)
+                        }
+                        }
+                        is ChatStreamEvent.ConfirmationRequired -> {
+                            receivedContent = true
+                            sseResponseReceived = true
+                            chatConfirmationId = event.confirmationId
+                            _uiState.update { state ->
+                                state.copy(
+                                    pendingConfirmation = Confirmation(
+                                        confirmationId = event.confirmationId,
+                                        actionIds = event.actionIds,
+                                        expiresAt = "", status = ConfirmationStatus.PENDING,
+                                        confirmedBy = null, ownerSurface = "mobile",
+                                    ),
+                                    conclusion = event.prompt,
+                                )
+                            }
+                        }
+                        is ChatStreamEvent.Done -> {
+                            sseResponseReceived = true
+                            if (event.sessionId.isNotBlank()) currentSessionId = event.sessionId
+                            _uiState.update { it.copy(isLoading = false) }
+                        }
+                        is ChatStreamEvent.Error -> {
+                            _uiState.update { it.copy(isLoading = false) }
+                            submitEventFallback(text)
+                        }
+                    }
+                }
+                // If flow completed without any content or Done, fall back to Event API
+                if (!receivedContent) {
+                    AppLogger.w("ChatVM", "Chat stream returned no content, falling back to Event API")
+                    _uiState.update { it.copy(isLoading = false) }
+                    // Remove the empty AI placeholder
+                    _uiState.update { state ->
+                        state.copy(chatMessages = state.chatMessages.filter { it.id != aiId })
+                    }
+                    submitEventFallback(text)
+                }
+            } catch (e: Exception) {
+                AppLogger.e("ChatVM", "Chat stream exception, falling back to Event API", e)
+                _uiState.update { it.copy(isLoading = false) }
+                submitEventFallback(text)
+            }
+        }
+    }
+
+    private fun submitEventFallback(text: String) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             try {
+                AppLogger.i("ChatVM", "submitEvent USER_UTTERANCE via Event API")
                 repository.submitEvent(
                     Event(
                         eventId = UUID.randomUUID().toString(),
@@ -209,7 +340,16 @@ class ChatViewModel @Inject constructor(
                         payload = buildJsonObject { put("text", text) },
                     )
                 )
+                AppLogger.i("ChatVM", "Event submitted OK, listening for world state update")
+                // Loading will be cleared by observeWorldState when the response arrives.
+                // Set a safety timeout to clear loading if no response within 15s.
+                kotlinx.coroutines.delay(15_000L)
+                if (_uiState.value.isLoading) {
+                    AppLogger.w("ChatVM", "No world state update within 15s of event submit")
+                    _uiState.update { it.copy(isLoading = false, error = "响应超时，请重试") }
+                }
             } catch (e: Exception) {
+                AppLogger.e("ChatVM", "submitEvent failed", e)
                 _uiState.update { it.copy(isLoading = false, error = e.message) }
             }
         }
@@ -219,12 +359,47 @@ class ChatViewModel @Inject constructor(
 
     fun confirm() {
         val c = _uiState.value.pendingConfirmation ?: return
-        submitConfirmation(c.confirmationId, "accepted")
+        // Guard: only confirm when mobile is the primary surface
+        if (_uiState.value.primarySurface != PrimarySurface.MOBILE) {
+            _uiState.update { it.copy(error = "当前由车机主控，请在车机屏幕确认") }
+            return
+        }
+        // Guard: don't confirm over-budget or blocked orders
+        if (_uiState.value.isConfirmationBlocked) {
+            _uiState.update { it.copy(error = _uiState.value.blockedReason ?: "订单状态异常，无法确认") }
+            return
+        }
+        if (chatConfirmationId != null) {
+            submitChatConfirmation(c.confirmationId, "accept")
+        } else {
+            submitConfirmation(c.confirmationId, "accepted")
+        }
     }
 
     fun reject() {
         val c = _uiState.value.pendingConfirmation ?: return
-        submitConfirmation(c.confirmationId, "rejected")
+        // Guard: only reject when mobile is the primary surface
+        if (_uiState.value.primarySurface != PrimarySurface.MOBILE) {
+            _uiState.update { it.copy(error = "当前由车机主控，请在车机屏幕操作") }
+            return
+        }
+        if (chatConfirmationId != null) {
+            submitChatConfirmation(c.confirmationId, "reject")
+        } else {
+            submitConfirmation(c.confirmationId, "rejected")
+        }
+    }
+
+    private fun submitChatConfirmation(confirmationId: String, decision: String) {
+        viewModelScope.launch {
+            try {
+                chatRepository.confirmAction(currentSessionId, confirmationId, decision)
+                chatConfirmationId = null
+                _uiState.update { it.copy(pendingConfirmation = null) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = e.message) }
+            }
+        }
     }
 
     private fun submitConfirmation(confirmationId: String, decision: String) {
@@ -248,6 +423,8 @@ class ChatViewModel @Inject constructor(
             }
         }
     }
+
+    fun toggleTts() { _uiState.update { it.copy(isTtsEnabled = !it.isTtsEnabled) } }
 
     fun dismissError() { _uiState.update { it.copy(error = null) } }
 

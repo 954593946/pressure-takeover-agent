@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     openai_api_key: str = Field(default="", repr=False)
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-5.5"
-    openai_timeout_seconds: float = 12.0
+    openai_timeout_seconds: float = 30.0
     llm_enabled: bool = True
     agent_shared_token: str = Field(default="", repr=False)
 

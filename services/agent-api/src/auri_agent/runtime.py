@@ -4,8 +4,9 @@ import asyncio
 from datetime import datetime
 from uuid import uuid4
 
+from .agent import AuriAgent
 from .config import Settings
-from .engine import ActionPlanner, RiskEngine, add_auxiliary_signal
+from .engine import DomainError, RiskEngine, add_auxiliary_signal, consume_confirmation
 from .llm import TaskParser
 from .models import (
     ConfirmationRequest,
@@ -26,16 +27,15 @@ from .models import (
 )
 
 
-class RuntimeErrorWithCode(RuntimeError):
-    def __init__(self, code: str, message: str):
-        super().__init__(message)
-        self.code = code
+RuntimeErrorWithCode = DomainError
 
 
 class AgentRuntime:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.task_parser = TaskParser(settings)
+        self.conversation_agent = AuriAgent(settings)
+        self.llm_last_mode = "fallback"
         self._state = initial_state()
         self._event_ids: set[str] = set()
         self._lock = asyncio.Lock()
@@ -46,6 +46,9 @@ class AgentRuntime:
             return self._state.model_copy(deep=True)
 
     async def submit_event(self, event: Event) -> EventAccepted:
+        if event.type == "user.utterance":
+            return await self._submit_agent_event(event)
+
         parsed_tasks: list[Task] | None = None
         async with self._lock:
             if event.event_id in self._event_ids:
@@ -62,6 +65,7 @@ class AgentRuntime:
                 parsed_tasks = [Task.model_validate(task) for task in payload_tasks]
             else:
                 parsed_tasks = await self.task_parser.parse(str(event.payload.get("text", "")))
+                self.llm_last_mode = self.task_parser.last_mode
 
         async with self._lock:
             if event.event_id in self._event_ids:
@@ -73,6 +77,44 @@ class AgentRuntime:
             state = self._state.model_copy(deep=True)
         await self._broadcast(state)
         return EventAccepted(event_id=event.event_id, accepted=True, duplicate=False, revision=state.revision, state=state)
+
+    async def _submit_agent_event(self, event: Event) -> EventAccepted:
+        for _attempt in range(2):
+            async with self._lock:
+                if event.event_id in self._event_ids:
+                    state = self._state.model_copy(deep=True)
+                    return EventAccepted(event_id=event.event_id, accepted=True, duplicate=True, revision=state.revision, state=state)
+                if self._state.revision == 0 and not self._event_ids:
+                    self._state.session_id = event.session_id
+                elif event.session_id != self._state.session_id:
+                    raise RuntimeErrorWithCode("SESSION_MISMATCH", "event session_id does not match the active session")
+                base_revision = self._state.revision
+                working_state = self._state.model_copy(deep=True)
+
+            result = await self.conversation_agent.handle(
+                str(event.payload.get("text", "")),
+                working_state,
+                source=event.source,
+                event_id=event.event_id,
+            )
+
+            async with self._lock:
+                if event.event_id in self._event_ids:
+                    state = self._state.model_copy(deep=True)
+                    return EventAccepted(event_id=event.event_id, accepted=True, duplicate=True, revision=state.revision, state=state)
+                if event.session_id != self._state.session_id:
+                    raise RuntimeErrorWithCode("SESSION_MISMATCH", "event session_id does not match the active session")
+                if self._state.revision != base_revision:
+                    continue
+                self._state = result.state
+                self.llm_last_mode = result.mode
+                self._event_ids.add(event.event_id)
+                self._touch(f"event:{event.event_id}")
+                state = self._state.model_copy(deep=True)
+            await self._broadcast(state)
+            return EventAccepted(event_id=event.event_id, accepted=True, duplicate=False, revision=state.revision, state=state)
+
+        raise RuntimeErrorWithCode("CONCURRENT_UPDATE", "state changed while the agent was planning; retry the event")
 
     def _apply_event(self, event: Event, parsed_tasks: list[Task] | None) -> None:
         payload = event.payload
@@ -125,10 +167,6 @@ class AgentRuntime:
         elif event.type == "driving.signal":
             if payload.get("harsh_brake") is True:
                 add_auxiliary_signal(self._state, "DRIVING_HARSH_BRAKE")
-        elif event.type == "user.utterance":
-            self._state.stage = Stage.PLANNING
-            RiskEngine.recompute(self._state, assistance_requested=True)
-            ActionPlanner.prepare(self._state)
         elif event.type == "service.mock.config":
             mode = payload.get("mode", "success")
             if mode not in {"success", "out_of_stock", "over_budget"}:
@@ -144,7 +182,7 @@ class AgentRuntime:
                 confirmed_by=confirmed_by,
                 input_mode=payload.get("input_mode", "button"),
             )
-            self._consume_confirmation(request)
+            consume_confirmation(self._state, request)
         elif event.type == "cooldown.elapsed":
             self._state.stage = Stage.COOLDOWN
             self._state.output = None
@@ -160,61 +198,26 @@ class AgentRuntime:
     async def confirm(self, request: ConfirmationRequest) -> tuple[WorldState, bool]:
         async with self._lock:
             duplicate = self._state.confirmation is not None and self._state.confirmation.status != "pending"
-            self._consume_confirmation(request)
+            consume_confirmation(self._state, request)
             if not duplicate:
                 self._touch(f"confirm:{request.confirmation_id}:{request.input_mode}")
-            state = self._state.model_copy(deep=True)
+            expected_revision = self._state.revision
+            confirmed_state = self._state.model_copy(deep=True)
+        if not duplicate:
+            reply = await self.conversation_agent.compose_confirmation_reply(
+                confirmed_state,
+                decision=request.decision,
+            )
+            async with self._lock:
+                if self._state.revision == expected_revision and self._state.output is not None:
+                    self._state.output.conclusion = reply
+                    self.llm_last_mode = self.conversation_agent.last_mode
+                state = self._state.model_copy(deep=True)
+        else:
+            state = confirmed_state
         if not duplicate:
             await self._broadcast(state)
         return state, duplicate
-
-    def _consume_confirmation(self, request: ConfirmationRequest) -> None:
-        confirmation = self._state.confirmation
-        if confirmation is None or confirmation.confirmation_id != request.confirmation_id:
-            raise RuntimeErrorWithCode("NOT_FOUND", "confirmation not found")
-        if confirmation.status != "pending":
-            return
-        if confirmation.expires_at < now():
-            confirmation.status = "expired"
-            raise RuntimeErrorWithCode("EXPIRED", "confirmation expired")
-        if request.confirmed_by != confirmation.owner_surface:
-            raise RuntimeErrorWithCode("WRONG_SURFACE", "confirmation is not owned by this surface")
-        confirmation.confirmed_by = request.confirmed_by
-        if request.decision == "reject":
-            confirmation.status = "rejected"
-            for action in self._state.actions:
-                if action.action_id in confirmation.action_ids:
-                    action.status = "blocked"
-            self._state.stage = Stage.ACTION_COMPLETED
-            return
-
-        confirmation.status = "accepted"
-        self._state.stage = Stage.EXECUTING
-        for action in self._state.actions:
-            if action.action_id in confirmation.action_ids:
-                action.status = "completed"
-        for order in self._state.service_orders:
-            if order.status == "awaiting_confirmation":
-                order.order_id = order.order_id or f"order_{order.preview_id.removeprefix('preview_')}"
-                order.status = "submitted"
-        self._state.stage = Stage.ACTION_COMPLETED
-        self._state.risk.pressure_level = PressureLevel.RECOVERY
-        self._state.wearable = WearableState(
-            connected=self._state.wearable.connected,
-            mode="completed",
-            text="已同步完成",
-            color="green",
-            haptic="soft_short",
-        )
-        self._state.output = InteractionOutput(
-            message_id=f"msg_{uuid4().hex[:12]}",
-            priority="normal",
-            owner_surface=self._state.primary_surface,
-            suppressed_surfaces=["mobile", "wearable"] if self._state.primary_surface == Surface.VEHICLE_HMI else ["vehicle_hmi", "wearable"],
-            expires_at=output_expiry(1),
-            requires_confirmation=False,
-            conclusion="消息已处理，订单已模拟提交，按当前速度驾驶即可。",
-        )
 
     async def update_profile(self, profile: Profile) -> WorldState:
         async with self._lock:

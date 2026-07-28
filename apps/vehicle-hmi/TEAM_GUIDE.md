@@ -19,6 +19,8 @@
 - 绕过 Agent 直接让页面进入“已处理”。
 - 在驾驶中展示长聊天、多选复杂决策或完整商品明细。
 
+主屏默认只保留驾驶中必要信息。消息草稿、三端同步等明细通过详情按钮弹窗查看；不得把控制台日志、商品长列表或消息全文铺在主屏上。
+
 ## 启动页面
 
 从仓库根目录启动静态服务：
@@ -84,6 +86,19 @@ https://auri-agent-api.onrender.com
 - HMI 不直接调用 LangChain 工具，只消费 Agent 返回的 `WorldState`。
 - 旧版回退地址只在新版 LangChain 服务不可用时使用。
 
+## 车载状态和空调联动
+
+Agent 新增 `vehicle_state` 字段后，HMI 会只读展示空调状态：
+
+```text
+vehicle_state.ac_on
+vehicle_state.ac_target_temp
+vehicle_state.ac_mode
+vehicle_state.fan_speed
+```
+
+该状态来自 Agent 的 `control_ac` 工具。HMI 不直接控制空调，不绕过 Agent 写 World State。联调方式见 `docs/ac-control-hmi-handoff.md`。
+
 ## 状态同步机制
 
 HMI 使用两种方式同步 Agent 状态：
@@ -94,6 +109,12 @@ HMI 使用两种方式同步 Agent 状态：
 客户端只接受相同 `session_id` 且更高 `revision` 的快照。
 
 如果公网 SSE 被代理或浏览器中断，HMI 会通过轮询继续更新，不需要手动保存重连。
+
+正式展示时 HMI 内置事件按钮默认隐藏。需要本地调试时，在地址后追加：
+
+```text
+?debug=1
+```
 
 ## 与 LangChain Agent 的关系
 

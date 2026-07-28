@@ -9,6 +9,7 @@ from jsonschema import Draft202012Validator
 
 from auri_agent.app import create_app
 from auri_agent.config import Settings
+from auri_agent.llm import ExtractedTask, TaskExtraction, TaskParser
 from auri_agent.models import ConfirmationRequest, Event
 
 
@@ -55,7 +56,52 @@ def test_health_never_exposes_key(client: TestClient) -> None:
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+    assert response.json()["llm_framework"] == "langchain"
+    assert response.json()["agent_tools_enabled"] is False
+    assert response.json()["agent_last_tools"] == []
     assert "api_key" not in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_fallback_never_invents_child_for_unrelated_pickup() -> None:
+    parser = TaskParser(Settings(llm_enabled=False, openai_api_key=""))
+    tasks = await parser.parse("今晚二十点去机场接从北京回来的同事")
+
+    assert parser.last_mode == "fallback"
+    assert len(tasks) == 1
+    assert tasks[0].title == "今晚二十点去机场接从北京回来的同事"
+    assert all("孩子" not in task.title for task in tasks)
+
+
+@pytest.mark.asyncio
+async def test_langchain_agent_output_is_normalised_to_public_task_contract() -> None:
+    class FakeAgent:
+        async def ainvoke(self, _input: dict) -> dict:
+            return {
+                "structured_response": TaskExtraction(
+                    tasks=[
+                        ExtractedTask(
+                            title="去机场接同事",
+                            scheduled_at="2026-07-21T20:00:00+08:00",
+                            location="机场",
+                            task_type="rigid",
+                            priority="high",
+                            adjustable=False,
+                            waiting_party=["同事"],
+                        )
+                    ]
+                )
+            }
+
+    parser = TaskParser(Settings(llm_enabled=False, openai_api_key=""))
+    parser.agent = FakeAgent()
+    tasks = await parser.parse("今晚二十点去机场接从北京回来的同事")
+
+    assert parser.last_mode == "langchain_agent"
+    assert [task.title for task in tasks] == ["去机场接同事"]
+    assert tasks[0].task_id == "task_agent_1"
+    assert tasks[0].status == "pending"
+    assert all("孩子" not in task.title for task in tasks)
 
 
 def test_shared_backend_requires_team_token() -> None:
@@ -138,6 +184,10 @@ def test_l3_requires_two_auxiliary_signal_classes(client: TestClient) -> None:
 
 
 def test_over_budget_order_is_not_confirmable(client: TestClient) -> None:
+    client.post(
+        "/v1/event",
+        json=event(client, "evt_task", "task.created", {"text": "今天18:10接孩子，之后去超市"}, "mobile"),
+    )
     client.post("/v1/event", json=event(client, "evt_vehicle", "scene.vehicle_entered", {}))
     client.post("/v1/event", json=event(client, "evt_mock", "service.mock.config", {"mode": "over_budget"}))
     client.post(
@@ -172,6 +222,7 @@ async def test_concurrent_confirmation_executes_order_once() -> None:
             )
         )
 
+    await submit("evt_task", "task.created", {"text": "今天18:10接孩子，之后去超市"}, "mobile")
     await submit("evt_vehicle", "scene.vehicle_entered", {})
     await submit("evt_traffic", "traffic.updated", {"eta": "2026-07-15T18:28:00+08:00", "late_minutes": 18})
     await submit("evt_help", "user.utterance", {"text": "帮我处理"}, "vehicle_hmi")

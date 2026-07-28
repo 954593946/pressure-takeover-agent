@@ -1,5 +1,6 @@
 package com.pressureagent.mobile.data.repository
 
+import com.pressureagent.mobile.data.local.AppLogger
 import com.pressureagent.mobile.data.remote.ChatApiService
 import com.pressureagent.mobile.data.remote.ChatRequest
 import com.pressureagent.mobile.data.remote.ChatSseClient
@@ -36,6 +37,7 @@ class DefaultChatRepository @Inject constructor(
             inputMode = inputMode,
             sessionId = sessionId,
         ).catch { e ->
+            AppLogger.w("ChatRepo", "SSE failed, trying non-streaming fallback: ${e.javaClass.simpleName}: ${e.message}")
             // Fallback: non-streaming response
             try {
                 val response = api.sendMessage(
@@ -45,9 +47,11 @@ class DefaultChatRepository @Inject constructor(
                         sessionId = sessionId,
                     )
                 )
+                AppLogger.i("ChatRepo", "Non-streaming fallback OK, response=${response.responseText.take(50)}")
                 emit(ChatStreamEvent.TextDelta(response.responseText))
                 emit(ChatStreamEvent.Done(response.sessionId, response.revision))
             } catch (fallbackError: Exception) {
+                AppLogger.e("ChatRepo", "Non-streaming fallback also failed", fallbackError)
                 emit(ChatStreamEvent.Error(fallbackError.message ?: "Chat unavailable"))
             }
         }

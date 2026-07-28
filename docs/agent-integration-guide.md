@@ -48,7 +48,7 @@ Agent 校验、去重、计算、规划、保存
 
 ## 2. 当前已经有什么
 
-截至 2026-07-15，Agent v0.2 候选基础版已提供：
+截至 2026-07-21，Agent v0.2 候选基础版已提供：
 
 | 能力 | 当前状态 | 说明 |
 |---|---|---|
@@ -57,11 +57,11 @@ Agent 校验、去重、计算、规划、保存
 | L0-L3 | 可用 | 确定性规则；LLM 不参与等级判断 |
 | 主交互端 | 可用 | 车外手机、车内车机、停车后手机 |
 | Profile | 可用 | 效率型与品质型预算、配送、替代规则 |
-| 动作规划 | 可用 | 模拟老师/家人消息和采购方案 |
+| 动作规划 | 可用 | 只依据已有任务生成等待方模拟消息和采购方案，不再固定返回同一组动作 |
 | 确认与幂等 | 可用 | 错误端拦截、重复/并发确认不重复执行 |
 | Mock 采购 | 可用 | success、out_of_stock、over_budget |
 | 实时状态 | 可用 | SSE `/v1/stream`；兼容 WebSocket `/v1/ws` |
-| LLM | 可用 | Bosch OpenAI 兼容 `gpt-5.5`；失败自动固定兜底 |
+| LLM Agent | 可用 | LangChain 根据自然语言选择受控工具并动态回复；超时保留已完成工具结果并安全兜底 |
 | 持久数据库 | 未做 | 当前为单实例内存状态，符合六周 Demo 范围 |
 
 当前契约是候选基线。必须由至少一个事件生产方和一个状态消费方评审后冻结。
@@ -213,6 +213,8 @@ Content-Type: application/json
 
 因为它描述的是“想看到的结果”，不是“已经发生的事实”。
 
+手机或车机的自然语言统一提交为 `type=user.utterance`，正文放在 `payload.text`。Agent 可以据此创建/查询/调整任务、记录会议延迟、准备协助方案，或处理用户明确确认；客户端仍以返回的结构化 WorldState 为准，不能从回复文本自行推导任务或执行状态。完整工具边界见 [`contracts/tool-calling-spec.md`](../contracts/tool-calling-spec.md)。
+
 ### 第四步：只在 Owner 端确认
 
 当 `WorldState.confirmation` 不为空时，同时检查：
@@ -256,7 +258,7 @@ Content-Type: application/json
 | 2 | `meeting.overrun` | L1 / `pre_departure_warning` | 风险卡 | 静默 | 黄态双短震一次 |
 | 3 | `scene.vehicle_entered` | `primary_surface=vehicle_hmi` | 只读后台 | 驾驶页 | 交接提示一次 |
 | 4 | `traffic.updated` | L2 / 晚到18分钟 | 只读 | 一句现实结论 | 单脉冲 |
-| 5 | `user.utterance` | 规划消息和订单 | 保存完整明细 | 处理中 | 处理中 |
+| 5 | `user.utterance`（“帮我处理”） | 根据已有任务规划消息和订单 | 保存完整明细 | 处理中 | 处理中 |
 | 6 | Agent 生成 Action | `waiting_confirmation` | 确认入口失效 | 唯一确认按钮 | 不可操作 |
 | 7 | `POST /v1/confirm` | 动作组只执行一次 | 同步状态 | 按钮禁用 | 处理中 |
 | 8 | 执行完成 | `action_completed` | 订单/消息卡 | 一句完成 | 绿态柔和短震 |

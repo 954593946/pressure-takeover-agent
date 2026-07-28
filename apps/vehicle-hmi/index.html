@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>AURI 车机 HMI | 随行压力接管 Agent</title>
-  <link rel="stylesheet" href="./styles.css?v=auri-langchain-agent-20260722" />
+  <link rel="stylesheet" href="./styles.css?v=auri-p0-hmi-20260728" />
 </head>
 <body>
   <main class="screen" aria-label="AURI 车机 HMI">
@@ -82,7 +82,7 @@
         <div class="top-metrics">
           <div><span>到达</span><strong id="eta">--:--</strong><em id="etaNote">等待路线</em></div>
           <div><span>责任窗口</span><strong id="windowState">未建立</strong><em>18:10 接孩子</em></div>
-          <div><span>电量</span><strong>69%</strong><em>417 km</em></div>
+          <div><span>连接</span><strong id="connectionState">未连接</strong><em id="connectionDetail">health --</em></div>
         </div>
       </header>
 
@@ -238,13 +238,28 @@
         <p id="realConclusion">暂无风险结论。</p>
       </section>
 
+      <section class="vehicle-state" aria-label="车辆状态只读展示">
+        <div class="section-head"><strong>车载状态</strong><span id="acState">AC 未开启</span></div>
+        <div class="ac-grid">
+          <div><span>温度</span><strong id="acTemp">24°</strong></div>
+          <div><span>模式</span><strong id="acMode">自动</strong></div>
+          <div><span>风量</span><strong id="acFan">中</strong></div>
+        </div>
+        <p>由 Agent control_ac 写入 World State，车机只读展示。</p>
+      </section>
+
       <section class="actions">
         <div class="section-head"><strong>Agent 已处理</strong><span id="actionState">待机</span></div>
         <ol id="actionList"></ol>
       </section>
 
-      <section class="drafts">
-        <div class="section-head"><strong>消息草稿</strong><span id="draftState">未生成</span></div>
+      <section class="detail-actions" aria-label="二级信息入口">
+        <button id="openDrafts" type="button"><strong>消息草稿</strong><span id="draftState">未生成</span></button>
+        <button id="openSync" type="button"><strong>三端同步</strong><span id="syncSummary">待连接</span></button>
+      </section>
+
+      <section class="drafts detail-source" aria-hidden="true">
+        <div class="section-head"><strong>消息草稿</strong><span id="draftStateHidden">未生成</span></div>
         <div class="tabs">
           <button class="active" data-draft="teacher" type="button">老师</button>
           <button data-draft="family" type="button">家人</button>
@@ -252,7 +267,7 @@
         <p id="draftBody">风险成立后生成老师和家人的消息草稿。</p>
       </section>
 
-      <section class="sync">
+      <section class="sync detail-source" aria-hidden="true">
         <div class="section-head"><strong>三端同步</strong><span>&lt;1s</span></div>
         <div class="sync-row"><b class="ok"></b><span>手机端</span><em id="syncPhone">待创建任务</em></div>
         <div class="sync-row"><b id="syncWatchDot"></b><span>腕上端</span><em id="syncWatch">常态</em></div>
@@ -261,7 +276,7 @@
     </aside>
 
     <footer class="vehicle-bar">
-      <div class="climate"><button>−</button><strong>22.0°</strong><button>+</button><span>AUTO · 座椅低</span></div>
+      <div class="climate"><button disabled>−</button><strong id="climateTemp">24.0°</strong><button disabled>+</button><span id="climateMode">AC 只读 · 自动</span></div>
       <div class="voice"><i></i><strong id="voiceHint">手机端可语音创建任务</strong></div>
       <button id="configBtn" class="config-entry" type="button">Agent</button>
       <button id="confirmBtn" class="confirm" disabled><strong id="confirmLabel">无需确认</strong><span id="confirmSub">等待风险成立</span></button>
@@ -312,8 +327,21 @@
     </form>
   </section>
 
+  <section class="detail-panel" id="detailPanel" aria-label="二级信息" hidden>
+    <div class="detail-card">
+      <header>
+        <div>
+          <span>AURI Detail</span>
+          <strong id="detailTitle">详情</strong>
+        </div>
+        <button id="closeDetail" type="button" aria-label="关闭">×</button>
+      </header>
+      <div id="detailBody" class="detail-body"></div>
+    </div>
+  </section>
+
   <div class="portrait"><strong>请横屏展示 AURI 车机 HMI</strong><span>推荐 16:9 大屏或平板横屏。</span></div>
 
-  <script src="./app.js?v=auri-langchain-agent-20260722"></script>
+  <script src="./app.js?v=auri-p0-hmi-20260728"></script>
 </body>
 </html>

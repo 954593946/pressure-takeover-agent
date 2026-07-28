@@ -297,10 +297,44 @@ button:disabled {
   gap: 14px;
   margin-bottom: 16px;
 }
+.head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
 
 .panel-head h2 {
   margin-top: 4px;
   font-size: 22px;
+}
+
+.director-card {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border: 1px solid rgba(212, 175, 122, 0.36);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(212, 175, 122, 0.16), rgba(255, 255, 255, 0.72));
+}
+
+.director-card span {
+  color: var(--auri-gold);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.director-card strong {
+  color: var(--auri-navy);
+  font-size: 20px;
+}
+
+.director-card em {
+  color: var(--muted);
+  font-size: 14px;
+  font-style: normal;
 }
 
 .script-list {
@@ -320,6 +354,20 @@ button:disabled {
   text-align: left;
   background: #fff;
   border: 1px solid var(--line);
+}
+
+.script-list button.current {
+  border-color: rgba(47, 107, 255, 0.6);
+  box-shadow: 0 0 0 3px rgba(47, 107, 255, 0.12), 0 10px 24px rgba(22, 55, 94, 0.13);
+}
+
+.script-list button.done {
+  background: #f1fbf6;
+  border-color: rgba(46, 157, 111, 0.32);
+}
+
+.script-list button.done b {
+  background: var(--state-success);
 }
 
 .script-list b {
@@ -361,6 +409,24 @@ button:disabled {
   gap: 16px;
 }
 
+.technical-box {
+  display: grid;
+  gap: 10px;
+}
+
+.technical-box > button {
+  width: 100%;
+}
+
+#technicalActions {
+  display: grid;
+  gap: 10px;
+}
+
+#technicalActions[hidden] {
+  display: none;
+}
+
 .mini-state {
   border-top: 1px solid var(--line);
   padding-top: 14px;
@@ -388,6 +454,10 @@ button:disabled {
   line-height: 1.45;
 }
 
+.mini-state li strong {
+  color: var(--auri-navy);
+}
+
 .log-panel {
   margin-top: 18px;
 }
@@ -409,6 +479,11 @@ button:disabled {
   background: #f8f5ef;
   color: #31445e;
   font-size: 13px;
+}
+
+.log-row code {
+  white-space: normal;
+  word-break: break-word;
 }
 
 .log-row strong {

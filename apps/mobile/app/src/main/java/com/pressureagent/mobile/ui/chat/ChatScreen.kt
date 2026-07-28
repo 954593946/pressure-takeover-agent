@@ -17,6 +17,8 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import android.Manifest
 import android.content.Intent
 import android.speech.RecognizerIntent
@@ -36,6 +38,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.pressureagent.mobile.data.repository.ConnectionStatus
 import com.pressureagent.mobile.domain.model.*
 import com.pressureagent.mobile.ui.theme.*
 import java.util.Locale
@@ -91,7 +94,11 @@ fun ChatScreen(
 
     LaunchedEffect(state.chatMessages.size) {
         if (state.chatMessages.isNotEmpty()) {
-            listState.animateScrollToItem(0)
+            // Scroll to the last item (bottom of chat) when new messages arrive
+            val lastIndex = listState.layoutInfo.totalItemsCount - 1
+            if (lastIndex >= 0) {
+                listState.animateScrollToItem(lastIndex)
+            }
         }
     }
 
@@ -112,7 +119,38 @@ fun ChatScreen(
                         }
                         Spacer(Modifier.width(10.dp))
                         Column {
-                            Text("AURI", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = AuriNavy)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("AURI", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = AuriNavy)
+                                Spacer(Modifier.width(6.dp))
+                                // Connection status dot
+                                val connColor = when (state.connectionStatus) {
+                                    ConnectionStatus.CONNECTED -> AuriSuccess
+                                    ConnectionStatus.POLLING -> AuriWarning
+                                    ConnectionStatus.DISCONNECTED -> AuriCritical
+                                    ConnectionStatus.INITIALIZING -> Color.Gray
+                                    ConnectionStatus.UNAUTHORIZED -> AuriCritical
+                                }
+                                val connLabel = when (state.connectionStatus) {
+                                    ConnectionStatus.CONNECTED -> "实时"
+                                    ConnectionStatus.POLLING -> "轮询"
+                                    ConnectionStatus.DISCONNECTED -> "断开"
+                                    ConnectionStatus.INITIALIZING -> "连接中"
+                                    ConnectionStatus.UNAUTHORIZED -> "鉴权失败"
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(connColor)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    connLabel,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = connColor,
+                                    fontSize = 10.sp,
+                                )
+                            }
                             if (!state.isCompanionMode && state.stage != Stage.OFF_VEHICLE_IDLE) {
                                 Text(state.stageLabel, style = MaterialTheme.typography.labelSmall, color = AuriNavy.copy(alpha = 0.5f))
                             }
@@ -120,6 +158,14 @@ fun ChatScreen(
                     }
                 },
                 actions = {
+                    // TTS toggle
+                    IconButton(onClick = { viewModel.toggleTts() }) {
+                        Icon(
+                            if (state.isTtsEnabled) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
+                            contentDescription = if (state.isTtsEnabled) "关闭播报" else "开启播报",
+                            tint = if (state.isTtsEnabled) AuriNavy else Color.Gray,
+                        )
+                    }
                     if (state.isCompanionMode) {
                         Surface(shape = RoundedCornerShape(12.dp), color = AuriProcessing.copy(alpha = 0.1f)) {
                             Text("车机主控", modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = AuriProcessing, fontWeight = FontWeight.Medium)
@@ -162,6 +208,7 @@ fun ChatScreen(
                 QuickActionChips(
                     stage = state.stage,
                     pendingConfirmation = state.pendingConfirmation,
+                    isCompanionMode = state.isCompanionMode,
                     onChipClick = { chipText ->
                         viewModel.onTextSubmit(chipText)
                     },
@@ -202,21 +249,68 @@ fun ChatScreen(
                 }
             }
 
-            // Error banner
+            // Error banner with retry
             if (state.error != null) {
                 item(key = "error") {
                     Surface(
                         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                         shape = RoundedCornerShape(12.dp),
                         color = AuriCritical.copy(alpha = 0.1f),
-                        onClick = { viewModel.dismissError() },
                     ) {
                         Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("⚠️", fontSize = 16.sp)
                             Spacer(Modifier.width(8.dp))
                             Text(state.error ?: "", style = MaterialTheme.typography.bodySmall, color = AuriCritical, modifier = Modifier.weight(1f))
+                            TextButton(onClick = { viewModel.refresh() }) {
+                                Text("重试", color = AuriCritical, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
                             IconButton(onClick = { viewModel.dismissError() }, modifier = Modifier.size(20.dp)) {
                                 Icon(Icons.Filled.Close, contentDescription = "关闭", tint = AuriCritical, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Auth error banner
+            if (state.connectionStatus == ConnectionStatus.UNAUTHORIZED) {
+                item(key = "unauthorized") {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = AuriCritical.copy(alpha = 0.12f),
+                    ) {
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("🔒", fontSize = 16.sp)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "鉴权失败 — 请检查 API Token 配置",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = AuriCritical,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = { viewModel.refresh() }) {
+                                Text("重试", color = AuriCritical, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Offline banner
+            if (state.connectionStatus == ConnectionStatus.DISCONNECTED) {
+                item(key = "offline") {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = AuriWarning.copy(alpha = 0.12f),
+                    ) {
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("📡", fontSize = 16.sp)
+                            Spacer(Modifier.width(8.dp))
+                            Text("网络连接已断开，正在尝试重连…", style = MaterialTheme.typography.bodySmall, color = AuriWarning, modifier = Modifier.weight(1f))
+                            TextButton(onClick = { viewModel.refresh() }) {
+                                Text("重试", color = AuriWarning, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             }
                         }
                     }
@@ -256,7 +350,13 @@ fun ChatScreen(
 
             // Chat messages with embedded rich cards
             items(state.chatMessages, key = { it.id }) { chat ->
-                ChatBubble(chat = chat, onConfirm = viewModel::confirm, onReject = viewModel::reject)
+                ChatBubble(
+                    chat = chat,
+                    isConfirmationBlocked = state.isConfirmationBlocked,
+                    blockedReason = state.blockedReason,
+                    onConfirm = viewModel::confirm,
+                    onReject = viewModel::reject,
+                )
             }
 
             item(key = "spacer") { Spacer(Modifier.height(8.dp)) }
@@ -267,7 +367,13 @@ fun ChatScreen(
 // ─── Chat Bubble ──────────────────────────────────────────────────────────
 
 @Composable
-private fun ChatBubble(chat: ChatItem, onConfirm: () -> Unit = {}, onReject: () -> Unit = {}) {
+private fun ChatBubble(
+    chat: ChatItem,
+    isConfirmationBlocked: Boolean = false,
+    blockedReason: String? = null,
+    onConfirm: () -> Unit = {},
+    onReject: () -> Unit = {},
+) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         horizontalArrangement = if (chat.isUser) Arrangement.End else Arrangement.Start,
@@ -311,7 +417,7 @@ private fun ChatBubble(chat: ChatItem, onConfirm: () -> Unit = {}, onReject: () 
                     is RichCard.TaskList -> InlineTaskListCard(card.tasks)
                     is RichCard.ServicePlan -> InlineServiceOrderCard(card.order)
                     is RichCard.MessageDraft -> InlineMessageCard(card.action)
-                    is RichCard.ConfirmRequest -> InlineConfirmationCard(card.confirmationId, card.prompt, onConfirm, onReject)
+                    is RichCard.ConfirmRequest -> InlineConfirmationCard(card.confirmationId, card.prompt, isConfirmationBlocked, blockedReason, onConfirm, onReject)
                 }
             }
         }
@@ -387,7 +493,13 @@ private fun InlineServiceOrderCard(order: ServiceOrder) {
     Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("🛒 服务方案", fontWeight = FontWeight.SemiBold, color = AuriNavy)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("🛒 服务方案", fontWeight = FontWeight.SemiBold, color = AuriNavy)
+                    Spacer(Modifier.width(8.dp))
+                    Surface(shape = RoundedCornerShape(4.dp), color = AuriWarning.copy(alpha = 0.15f)) {
+                        Text("⚠ 模拟 Demo", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = AuriWarning, fontWeight = FontWeight.Bold)
+                    }
+                }
                 Text("¥%.1f".format(order.total), fontWeight = FontWeight.Bold, color = AuriNavy)
             }
             Spacer(Modifier.height(8.dp))
@@ -405,6 +517,18 @@ private fun InlineServiceOrderCard(order: ServiceOrder) {
                     Text(if (order.budgetStatus == BudgetStatus.WITHIN_BUDGET) "预算内" else "超预算", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall)
                 }
             }
+            if (order.budgetStatus == BudgetStatus.OVER_BUDGET) {
+                Spacer(Modifier.height(8.dp))
+                Surface(shape = RoundedCornerShape(8.dp), color = AuriCritical.copy(alpha = 0.08f)) {
+                    Text(
+                        "⚠ 超出预算 ¥${order.budgetLimit.toInt()}，无法确认执行",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = AuriCritical,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            }
         }
     }
 }
@@ -416,6 +540,10 @@ private fun InlineMessageCard(action: Action) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("📋 消息草稿", fontWeight = FontWeight.SemiBold, color = AuriNavy)
                 Spacer(Modifier.width(8.dp))
+                Surface(shape = RoundedCornerShape(4.dp), color = AuriWarning.copy(alpha = 0.15f)) {
+                    Text("⚠ 模拟", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = AuriWarning, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.width(4.dp))
                 Surface(shape = RoundedCornerShape(4.dp), color = AuriWarning.copy(alpha = 0.15f)) {
                     Text("待确认", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = AuriWarning)
                 }
@@ -434,25 +562,45 @@ private fun InlineMessageCard(action: Action) {
 }
 
 @Composable
-private fun InlineConfirmationCard(confirmationId: String, prompt: String, onConfirm: () -> Unit, onReject: () -> Unit) {
+private fun InlineConfirmationCard(
+    confirmationId: String,
+    prompt: String,
+    isBlocked: Boolean = false,
+    blockedReason: String? = null,
+    onConfirm: () -> Unit,
+    onReject: () -> Unit,
+) {
     Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = AuriNavy)) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text("📋 $prompt", fontWeight = FontWeight.SemiBold, color = Color.White)
             Spacer(Modifier.height(12.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(
-                    onClick = onReject,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)),
-                ) { Text("拒绝") }
-                Button(
-                    onClick = onConfirm,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = AuriSuccess),
-                ) { Text("确认执行") }
+            if (isBlocked) {
+                // Blocked — no confirm/reject buttons
+                Surface(shape = RoundedCornerShape(8.dp), color = AuriCritical.copy(alpha = 0.25f)) {
+                    Text(
+                        blockedReason ?: "无法执行",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            } else {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(
+                        onClick = onReject,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)),
+                    ) { Text("拒绝") }
+                    Button(
+                        onClick = onConfirm,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AuriSuccess),
+                    ) { Text("确认执行") }
+                }
             }
         }
     }
@@ -485,15 +633,16 @@ private fun VoiceInputBar(
                     IconButton(onClick = onToggleMode) { Icon(Icons.Filled.Mic, contentDescription = "语音", tint = AuriNavy) }
                     OutlinedTextField(
                         value = text, onValueChange = onTextChange,
-                        placeholder = { Text("输入消息…", color = Color.Gray) },
+                        placeholder = { Text(if (isCompanionMode) "驾驶中 — 车机主控" else "输入消息…", color = Color.Gray) },
                         modifier = Modifier.weight(1f), singleLine = true,
+                        enabled = !isCompanionMode,
                         shape = RoundedCornerShape(24.dp),
                         colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = AuriNavy, unfocusedBorderColor = Color(0xFFE0E0E0)),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                         keyboardActions = KeyboardActions(onSend = { onSend() }),
                     )
-                    IconButton(onClick = onSend, enabled = text.isNotBlank(), modifier = Modifier.size(44.dp)) {
-                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送", tint = if (text.isNotBlank()) AuriNavy else Color.Gray)
+                    IconButton(onClick = onSend, enabled = text.isNotBlank() && !isCompanionMode, modifier = Modifier.size(44.dp)) {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送", tint = if (text.isNotBlank() && !isCompanionMode) AuriNavy else Color.Gray)
                     }
                 }
             } else {
@@ -503,7 +652,7 @@ private fun VoiceInputBar(
                         modifier = Modifier.weight(1f).height(48.dp),
                         shape = RoundedCornerShape(24.dp),
                         color = Color(0xFFF5F5F5),
-                        onClick = onStartVoice,
+                        onClick = if (isCompanionMode) ({}) else onStartVoice,
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -518,8 +667,21 @@ private fun VoiceInputBar(
                         }
                     }
                     Spacer(Modifier.width(8.dp))
-                    Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(if (isListening) AuriCritical else AuriNavy), contentAlignment = Alignment.Center) {
-                        IconButton(onClick = { if (isListening) onStopVoice() else onStartVoice() }, modifier = Modifier.size(44.dp)) {
+                    val btnColor = when {
+                        isCompanionMode -> Color.Gray.copy(alpha = 0.3f)
+                        isListening -> AuriCritical
+                        else -> AuriNavy
+                    }
+                    Box(modifier = Modifier.size(44.dp).clip(CircleShape).background(btnColor), contentAlignment = Alignment.Center) {
+                        IconButton(
+                            onClick = {
+                                if (!isCompanionMode) {
+                                    if (isListening) onStopVoice() else onStartVoice()
+                                }
+                            },
+                            modifier = Modifier.size(44.dp),
+                            enabled = !isCompanionMode,
+                        ) {
                             Icon(if (isListening) Icons.Filled.Close else Icons.Filled.Mic, contentDescription = if (isListening) "停止" else "语音", tint = Color.White, modifier = Modifier.size(22.dp))
                         }
                     }
@@ -542,18 +704,23 @@ private fun PulseDot() {
 private fun QuickActionChips(
     stage: Stage,
     pendingConfirmation: Confirmation?,
+    isCompanionMode: Boolean,
     onChipClick: (String) -> Unit,
 ) {
-    val chips = remember(stage, pendingConfirmation?.status) {
+    val chips = remember(stage, pendingConfirmation?.status, isCompanionMode) {
         buildList {
+            // In companion mode, don't offer actionable chips — phone is read-only
+            if (isCompanionMode) return@buildList
             when (stage) {
                 Stage.OFF_VEHICLE_IDLE -> {
                     add("📝 创建任务：接孩子+超市采购" to "创建任务：18:10接孩子，之后去超市采购")
+                    add("🗑️ 删除任务" to "删除接孩子的任务")
                     add("🚗 我上车了" to "我上车了")
                 }
                 Stage.PRE_DEPARTURE_WARNING -> {
                     add("🚗 我上车了" to "我上车了")
                     add("⏰ 会议延迟了20分钟" to "会议延迟了20分钟")
+                    add("🗑️ 删除任务" to "删除接孩子的任务")
                 }
                 Stage.VEHICLE_OBSERVATION -> {
                     add("🚦 前面堵车，晚到15分钟" to "前面堵车，估计晚到15分钟")
@@ -561,6 +728,7 @@ private fun QuickActionChips(
                 }
                 Stage.TAKEOVER_L2, Stage.TAKEOVER_L3, Stage.PLANNING -> {
                     add("🎙️ 帮我处理一下" to "帮我处理一下")
+                    add("❄️ 打开空调" to "打开空调，调到24度")
                 }
                 Stage.WAITING_CONFIRMATION -> {
                     add("✅ 确认执行" to "确认执行")

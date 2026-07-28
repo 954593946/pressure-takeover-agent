@@ -32,7 +32,11 @@ object ChatModule {
     fun provideChatSseClient(
         @Named("baseUrl") baseUrl: String,
         json: Json,
-    ): ChatSseClient = ChatSseClient(baseUrl = baseUrl, json = json)
+    ): ChatSseClient = ChatSseClient(
+        baseUrl = baseUrl,
+        json = json,
+        token = BuildConfig.AGENT_API_TOKEN,
+    )
 
     @Provides
     @Singleton

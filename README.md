@@ -12,19 +12,23 @@ AURI 是一个面向车机、手机与腕上设备的多端 Agent。它在驾驶
 
 ## 团队同步：当前开发基线
 
-> 最后更新：2026-07-16。[Agent / contracts v0.2 基础 PR #4](https://github.com/954593946/pressure-takeover-agent/pull/4) 与 [Render 共享后端 PR #5](https://github.com/954593946/pressure-takeover-agent/pull/5) 已合并。`contracts v0.2` 是当前共享实现基线，仍需各端逐字段评审；发现问题必须通过契约变更 PR 处理，不得在端内复制后自行修改。
+> **最终 Demo 冲刺入口（2026-07-27）**：[各模块待开发功能、Owner、依赖与验收清单](docs/final-demo-development-checklist.md)。这是当前排期和联调的最新执行入口；每位成员可把自己的任务 ID 连同文末模板直接交给 AI 编程助手。
+
+> 最后更新：2026-07-27。[完整 LangChain 工具编排 PR #15](https://github.com/954593946/pressure-takeover-agent/pull/15)、[手机 Chat SSE 接入 PR #16](https://github.com/954593946/pressure-takeover-agent/pull/16) 与 [SSE/崩溃/日志修复 PR #17](https://github.com/954593946/pressure-takeover-agent/pull/17) 已合并。`contracts v0.2` 仍是共享候选基线；Chat 接口和跨端字段必须共同评审后冻结，禁止在端内复制后自行修改。
 
 | 模块 | 当前可用状态 | 其他成员现在可以做什么 |
 |---|---|---|
-| Agent / 后端 | Render 公网实例已上线；FastAPI v0.2 已有真实 LLM 任务解析、事件、World State、L0-L3、Profile、动作规划、确认幂等、Mock 订单、SSE/WebSocket 和团队令牌鉴权 | 直接使用下方公网地址联调；共享后端只分发团队令牌，不分发 Bosch API Key |
-| 跨端契约 | v0.2 Schema、OpenAPI、示例和 happy-path 事件序列已合并为共享实现基线 | 逐字段评审生产/消费需求；发现缺字段先提契约变更，不在端内补私有字段 |
-| 手机端 | 业务 UI 与连接层待开发 | 按 `WorldState` 渲染；通过 Event API 上报任务、Profile 和确认 |
-| 车机 / 控制台 | 车机已有早期原型，控制台待接标准事件 | 移除页面自推状态；按 `stage + primary_surface` 渲染和注入事件 |
-| 腕上设备 | Active 2 静态框架可运行 | 对齐 `WearableState` 和 `command_id/ACK`，不直接判断压力等级 |
+| Agent / 后端 | LangChain 受控工具、FastAPI v0.2、标准 Event/Confirm、L0-L3 和共享鉴权已有基础；Chat SSE 已接入手机 | 收口 Chat 到公开 Runtime 路径，补 Chat 契约/测试，统一唯一 Render 实例并验证真实 LLM 调用 |
+| 跨端契约 | v0.2 Schema、OpenAPI、示例和 happy-path 事件序列已有基础 | 补 Chat SSE、Chat Confirm 和部署版本字段，由生产方与消费方共同冻结 |
+| 手机端 | Android 业务 UI、World State、Chat SSE、语音、复盘和日志已有实现 | 修复任务双真相、空 Session、启动自动 reset、Profile 写入和真机回归 |
+| 车机 / 控制台 | HMI 和独立控制台均已接入标准 Event 与 World State | 统一后端地址，减少 HMI 硬编码，增加导演预检、前置条件、重连和浏览器回归 |
+| 腕上设备 | Active 2 六状态 UI、真实触觉、传感器、ACK 和去重已有基础 | 将手机真实 World State 接入 Side Service，移除启动 Mock 轮播，完成端到端和断连验收 |
 
 ## 团队快速接入：公网 Agent
 
-当前推荐的 LangChain 共享后端：
+当前 README 记录的 LangChain 共享后端如下。仓库同时存在另一套 Render 地址，而两个进程内存状态不会共享；最终 Demo 必须先完成清单中的 `BLOCK-01`，由负责人公布唯一 canonical URL。各端在此之前不得自行混用两个地址：
+
+> PR #15 合并并由 Render 完成部署后，才可在共享实例使用完整工具编排。伙伴可通过 `/health` 的 `agent_tools_enabled=true` 和 `agent_last_tools` 判断新版本是否已经上线；部署前共享实例仍可能运行 PR #11 的任务解析版本。
 
 ```text
 API Base URL: https://auri-langchain-agent-api.onrender.com
@@ -72,9 +76,10 @@ wss://auri-langchain-agent-api.onrender.com/v1/ws?access_token=<AGENT_SHARED_TOK
 新成员或 AI 编程助手开始工作前，按这个顺序阅读：
 
 1. [AGENTS.md](AGENTS.md)：AI 编程不可违反的仓库规则。
-2. [Agent 接入与跨端协作指南](docs/agent-integration-guide.md)：从零理解 Agent、接口、状态流和各端接入方式。
-3. 本 README 中的 P0 闭环、模块所有权和视觉规则。
-4. 自己模块的 README 与 `contracts/` 实际 Schema/示例。
+2. [最终 Demo 待开发功能与分工清单](docs/final-demo-development-checklist.md)：选择任务 ID，读取依赖和验收标准。
+3. [Agent 接入与跨端协作指南](docs/agent-integration-guide.md)：从零理解 Agent、接口、状态流和各端接入方式。
+4. 本 README 中的 P0 闭环、模块所有权和视觉规则。
+5. 自己模块的 README 与 `contracts/` 实际 Schema/示例。
 
 ## AI Agent 开发入口
 
@@ -182,12 +187,14 @@ wss://auri-langchain-agent-api.onrender.com/v1/ws?access_token=<AGENT_SHARED_TOK
 
 ## 当前实现状态
 
-- `apps/vehicle-hmi/`：已有可交互横屏原型和场景推进脚本，尚需接统一 World State、P0 新状态和 AURI 视觉。
-- `apps/watch/active2-pressure-watch/`：已有 Active 2 466×466 静态框架与状态映射，Side Service、真实震动、ACK 和新触觉编码仍待实现。
-- `apps/mobile/`：目前仅有模块说明，业务 UI 与连接层待开发。
-- `apps/demo-console/`：目前仅有模块说明，场景事件、服务异常和重置控制台待开发。
-- `services/agent-api/`：已有 FastAPI v0.2 基础版，包含事件幂等、World State、L0-L3、主交互端、Profile、动作规划、确认幂等、Mock Adapter、Ledger、SSE/WebSocket 和 OpenAI 兼容适配器；当前使用进程内存存储，适合单实例 Demo。
-- `contracts/`：已有 v0.2 候选 Schema、OpenAPI、正向样例和标准事件序列，等待跨端共同评审后冻结。
+- `apps/vehicle-hmi/`：已有连接 World State、SSE/轮询和确认的横屏 HMI；尚需统一正式后端、减少硬编码展示、分离 Debug 控件并完成目标屏幕回归。
+- `apps/watch/active2-pressure-watch/`：已有六状态 UI、真实触觉/传感器、ACK 与去重；Side Service 当前仍发送本地 Mock 状态，手机到真表的端到端链路尚未完成。
+- `apps/mobile/`：已有 Android 业务 UI、网络状态、Chat SSE、语音、复盘、调试和日志；尚需解决任务本地/远端双真相、启动自动 reset、Profile 写入和跨端真机回归。
+- `apps/demo-console/`：已有标准事件、服务异常、确认、状态流和重置；尚需增加正式后端预检、引导顺序、前置条件、导演模式和脱敏日志。
+- `services/agent-api/`：已有 FastAPI v0.2 和 LangChain 受控工具编排。标准 Event/Confirm 的风险、权限和幂等基础可用；Chat 仍需通过公开 Runtime 路径提交并补契约、错误语义和测试。进程内存存储只适合冻结的单实例 Demo。
+- `contracts/`：已有 v0.2 候选 Schema、OpenAPI、样例和标准事件序列；Chat SSE 与 Chat Confirm 尚未完整纳入接口基线。
+
+详细未完成项、依赖、优先级和逐项验收见 [最终 Demo 待开发功能与分工清单](docs/final-demo-development-checklist.md)。
 
 ## AI Agent 开工与完成检查
 

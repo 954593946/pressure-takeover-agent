@@ -33,6 +33,29 @@ mobile / vehicle-hmi / wearable-gateway / demo-console
 
 腕上设备可以通过 Zepp Side Service/BLE 手机网关或后端链路接入；进入系统边界后必须转换成统一 `WearableState` 和 Event。
 
+## LangChain Agent 编排层
+
+`user.utterance` 不再对应一个固定动作。后端使用 LangChain `create_agent`，按本轮自然语言和当前 WorldState 选择工具，再根据工具真实结果生成回复：
+
+```text
+自然语言 + WorldState 快照
+          |
+          v
+ LangChain AuriAgent
+   |      |       |
+任务工具  查询工具  方案/确认工具
+   \      |       /
+    确定性 Tool Layer
+          |
+ RiskEngine / ActionPlanner / Confirmation
+          |
+ revision 检查后提交 WorldState
+```
+
+模型不直接持有可写状态。每轮工具先操作隔离副本，Runtime 只在 `revision` 未变化时原子替换；并发冲突会重试一次，仍冲突则返回 `CONCURRENT_UPDATE`。模型或最终文案超时不会撤销已经成功的确定性工具结果，也不会绕过确认。
+
+实际工具及安全边界见 [AURI LangChain Agent 工具与安全边界](../contracts/tool-calling-spec.md)。车辆、停车、路况、腕上和驾驶信号仍只能通过标准 Event 输入，不能由聊天伪造。
+
 ## 共享对象
 
 | 对象 | 最小职责 |

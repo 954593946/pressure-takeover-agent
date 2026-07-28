@@ -12,6 +12,9 @@ Demo 控制台是现场演示导演台，用于模拟本轮不接入真实系统
 - 配置模拟服务状态，例如成功、缺货、超预算。
 - 展示当前 `WorldState` 摘要和事件日志。
 - 调用正式确认和重置接口，保证现场流程可复现。
+- 进行一键预检，检查 health、鉴权、Session、revision、LLM 模式和 SSE。
+- 按主线显示下一步和主持提示，降低现场误操作。
+- 展示 `vehicle_state`、Action Ledger 和脱敏事件日志。
 
 它不能做：
 
@@ -57,6 +60,7 @@ Team Token: 留空，除非本地后端开启共享访问
 
 ```text
 保存配置
+一键预检
 连接 Agent
 ```
 
@@ -119,6 +123,22 @@ agent_last_tools
 - 通过 `agent_last_tools` 查看最近一轮实际调用过哪些工具。
 
 注意：`/health` 不返回 Team Token 或 OpenAI API Key。
+
+## 现场导演模式
+
+控制台会根据当前 `WorldState.stage` 判断下一步，并高亮主线按钮。建议现场使用：
+
+```text
+一键预检
+重置 Demo
+执行下一步
+执行下一步
+...
+```
+
+主线按钮会根据前置条件自动禁用。例如无任务时不能注入拥堵，没有 `pending confirmation` 时不能确认发送。Reset 会二次确认，因为公网 Agent 是共享 Session。
+
+缺货、超预算、急刹、语音确认等内容放在“技术验证”折叠区，避免干扰 3-5 分钟主线。
 
 ## 与 LangChain 工具的边界
 

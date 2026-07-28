@@ -4,7 +4,7 @@
 
 - [x] contracts v0.2 候选对象、事件、错误码与样例
 - [x] FastAPI、配置、健康检查、SSE/WebSocket
-- [x] Bosch OpenAI 兼容 Task Parser 与固定兜底
+- [x] Bosch OpenAI 兼容 LangChain Tool Calling Agent、动态回复与安全兜底
 - [ ] 手机、车机、腕上各一名 Owner 完成契约评审
 
 ## Milestone 2：确定性主闭环（第 2 周）
@@ -31,7 +31,8 @@
 
 ## Milestone 5：异常回归（第 5 周）
 
-- [ ] LLM 超时、ASR 失败、SSE 断线、BLE 离线
+- [x] LLM 超时保留已执行工具状态并回退到状态化回复
+- [ ] ASR 失败、SSE 断线、BLE 离线
 - [ ] 缺货、超预算、重复事件、并发确认
 - [ ] 50 个 Schema 样例与 10 个越权场景
 

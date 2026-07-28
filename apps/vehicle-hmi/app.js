@@ -1,5 +1,5 @@
 const DEFAULT_CONFIG = {
-  apiBase: "http://127.0.0.1:8000",
+  apiBase: "https://auri-langchain-agent-api.onrender.com",
   token: "",
   stream: true,
   pollIntervalMs: 3000
@@ -7,6 +7,7 @@ const DEFAULT_CONFIG = {
 
 const PUBLIC_AGENT_API = "https://auri-langchain-agent-api.onrender.com";
 const LEGACY_AGENT_API = "https://auri-agent-api.onrender.com";
+const LOCAL_AGENT_API = "http://127.0.0.1:8000";
 const storedConfig = JSON.parse(localStorage.getItem("auri-hmi-config") || "{}");
 const queryParams = new URLSearchParams(window.location.search);
 const queryConfig = {
@@ -63,7 +64,11 @@ const ui = {
   speedLimit: $("#speedLimit"), lightCountdown: $("#lightCountdown"), turnDistance: $("#turnDistance"), routeProgress: $("#routeProgress"),
   amapRemain: $("#amapRemain"), amapDuration: $("#amapDuration"), amapArrival: $("#amapArrival"), configBtn: $("#configBtn"),
   configPanel: $("#configPanel"), configForm: $("#configForm"), closeConfig: $("#closeConfig"), configApiBase: $("#configApiBase"),
-  configToken: $("#configToken"), usePublicAgent: $("#usePublicAgent"), useLegacyAgent: $("#useLegacyAgent"), useLocalAgent: $("#useLocalAgent")
+  configToken: $("#configToken"), usePublicAgent: $("#usePublicAgent"), useLegacyAgent: $("#useLegacyAgent"), useLocalAgent: $("#useLocalAgent"),
+  connectionState: $("#connectionState"), connectionDetail: $("#connectionDetail"), acState: $("#acState"), acTemp: $("#acTemp"),
+  acMode: $("#acMode"), acFan: $("#acFan"), climateTemp: $("#climateTemp"), climateMode: $("#climateMode"),
+  openDrafts: $("#openDrafts"), openSync: $("#openSync"), syncSummary: $("#syncSummary"), detailPanel: $("#detailPanel"),
+  closeDetail: $("#closeDetail"), detailTitle: $("#detailTitle"), detailBody: $("#detailBody")
 };
 
 let worldState = null;
@@ -71,6 +76,7 @@ let activeDraft = "teacher";
 let lastRevision = -1;
 let eventSeq = 0;
 let pollTimer = null;
+let healthState = null;
 const timeline = [];
 
 function normalizeConfig(config, useProvidedStreamUrl = false) {
@@ -101,6 +107,8 @@ function log(type, detail = "") {
 
 function setConnection(text) {
   ui.consoleStatus.textContent = text;
+  ui.connectionState.textContent = text.length > 8 ? text.slice(0, 8) : text;
+  ui.connectionDetail.textContent = `${worldState?.session_id || "session --"} · r${worldState?.revision ?? "--"}`;
   log("connection", text);
 }
 
@@ -157,6 +165,22 @@ async function apiFetch(path, options = {}) {
     const code = data?.detail?.code || response.status;
     throw new Error(`${code}: ${data?.detail?.message || response.statusText}`);
   }
+  return data;
+}
+
+async function loadHealth(reason = "health") {
+  const response = await fetch(`${CONFIG.apiBase}/health`, {
+    headers: { Accept: "application/json" }
+  });
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!response.ok) throw new Error(`${response.status}: ${data?.detail?.message || response.statusText}`);
+  healthState = data;
+  const framework = data.llm_framework || "agent";
+  const mode = data.llm_last_mode || "mode --";
+  ui.connectionState.textContent = data.status === "ok" ? "已预检" : "异常";
+  ui.connectionDetail.textContent = `${framework} · ${mode}`;
+  log(reason, `${framework} · ${mode}`);
   return data;
 }
 
@@ -283,6 +307,14 @@ function groceryTask() {
   return (worldState?.tasks || []).find((task) => task.capability_tags?.includes("grocery_delivery") || task.task_type === "flexible");
 }
 
+function acModeLabel(mode) {
+  return { auto: "自动", cool: "制冷", heat: "制热", fan: "送风" }[mode] || "自动";
+}
+
+function fanLabel(speed) {
+  return { low: "低", medium: "中", high: "高" }[speed] || "中";
+}
+
 function actionText(action) {
   const prefix = action.type === "message" ? "消息" : action.type === "service_order" ? "模拟订单" : "任务调整";
   const status = {
@@ -312,14 +344,47 @@ function renderDraft() {
   const messageActions = (worldState?.actions || []).filter((action) => action.type === "message");
   if (!messageActions.length) {
     ui.draftState.textContent = "未生成";
+    const hidden = $("#draftStateHidden");
+    if (hidden) hidden.textContent = "未生成";
     ui.draftBody.textContent = "风险成立后生成老师和家人的模拟消息草稿。";
     return;
   }
   const current = activeDraft === "family"
     ? messageActions.find((action) => action.target.includes("家")) || messageActions[1] || messageActions[0]
     : messageActions.find((action) => action.target.includes("老师")) || messageActions[0];
-  ui.draftState.textContent = current.status === "completed" ? "已模拟发送" : "等待确认";
+  const draftLabel = current.status === "completed" ? "已模拟发送" : "等待确认";
+  ui.draftState.textContent = draftLabel;
+  const hidden = $("#draftStateHidden");
+  if (hidden) hidden.textContent = draftLabel;
   ui.draftBody.textContent = `${current.summary}。${activeDraft === "family" ? DRAFTS.family : DRAFTS.teacher}`;
+}
+
+function openDetail(kind) {
+  if (kind === "drafts") {
+    renderDraft();
+    ui.detailTitle.textContent = "消息草稿";
+    ui.detailBody.innerHTML = `
+      <div class="detail-tabs">
+        <button type="button" data-detail-draft="teacher" class="${activeDraft === "teacher" ? "active" : ""}">老师</button>
+        <button type="button" data-detail-draft="family" class="${activeDraft === "family" ? "active" : ""}">家人</button>
+      </div>
+      <p>${ui.draftBody.textContent}</p>
+      <small>驾驶中只展示摘要，完整明细停车后在手机端复盘。</small>
+    `;
+  } else {
+    ui.detailTitle.textContent = "三端同步";
+    ui.detailBody.innerHTML = `
+      <div class="detail-sync"><span>手机端</span><strong>${ui.syncPhone.textContent}</strong></div>
+      <div class="detail-sync"><span>腕上端</span><strong>${ui.syncWatch.textContent}</strong></div>
+      <div class="detail-sync"><span>车机端</span><strong>${ui.syncCar.textContent}</strong></div>
+      <small>状态来自同一个 World State revision，不由车机本地推演。</small>
+    `;
+  }
+  ui.detailPanel.hidden = false;
+}
+
+function closeDetail() {
+  ui.detailPanel.hidden = true;
 }
 
 function render() {
@@ -334,8 +399,14 @@ function render() {
     && worldState?.confirmation?.status === "pending";
   const driving = ["driving", "high_load_driving"].includes(worldState?.scene);
   const order = worldState?.service_orders?.[0];
+  const vehicleState = worldState?.vehicle_state || {};
+  const acOn = vehicleState.ac_on === true;
+  const acTemp = Number(vehicleState.ac_target_temp ?? 24).toFixed(1);
+  const acMode = acModeLabel(vehicleState.ac_mode);
+  const acFan = fanLabel(vehicleState.fan_speed);
+  const showDebugDemo = queryParams.get("debug") === "1" || queryParams.get("demo") === "1";
 
-  ui.root.className = `screen state-${className}`;
+  ui.root.className = `screen state-${className}${showDebugDemo ? " debug-demo" : ""}`;
   ui.speed.textContent = driving ? "42" : "--";
   ui.headline.textContent = worldState?.output?.conclusion || text;
   ui.eta.textContent = eta;
@@ -347,6 +418,10 @@ function render() {
   ui.watchStatus.textContent = worldState?.wearable?.text || "AURI 就绪";
   ui.watchDetail.textContent = `${worldState?.wearable?.mode || "idle"} · ${worldState?.wearable?.haptic || "none"}`;
   ui.consoleStatus.textContent = `r${worldState?.revision ?? 0} · ${worldState?.stage || "未连接"}`;
+  ui.connectionState.textContent = worldState ? "已连接" : "未连接";
+  ui.connectionDetail.textContent = healthState
+    ? `${healthState.llm_framework || "agent"} · r${worldState?.revision ?? "--"}`
+    : `${worldState?.session_id || "session --"} · r${worldState?.revision ?? "--"}`;
   ui.kidTask.classList.toggle("active", Boolean(pickup));
   ui.shopTask.classList.toggle("active", Boolean(grocery));
   ui.kidTaskState.textContent = pickup ? (pickup.adjustable ? "可调整" : "不可后置") : "等待创建";
@@ -361,12 +436,19 @@ function render() {
   ui.syncPhone.textContent = worldState?.primary_surface === "mobile" ? "主端" : "同步";
   ui.syncWatch.textContent = worldState?.wearable?.mode || "idle";
   ui.syncCar.textContent = worldState?.primary_surface === "vehicle_hmi" ? "主端" : "只读";
+  ui.syncSummary.textContent = `${ui.syncPhone.textContent} · r${worldState?.revision ?? "--"}`;
   ui.syncWatchDot.className = worldState?.wearable?.mode === "completed" ? "done" : worldState?.wearable?.mode === "warning" ? "warn" : "ok";
   ui.voiceHint.textContent = voice;
   ui.confirmBtn.disabled = !canConfirm;
   ui.confirmBtn.classList.toggle("enabled", canConfirm);
   ui.confirmLabel.textContent = confirmLabel;
   ui.confirmSub.textContent = canConfirm ? confirmSub : (worldState?.confirmation?.owner_surface && worldState.confirmation.owner_surface !== "vehicle_hmi" ? "确认入口不在车机" : confirmSub);
+  ui.acState.textContent = acOn ? "AC 已开启" : "AC 已关闭";
+  ui.acTemp.textContent = `${acTemp}°`;
+  ui.acMode.textContent = acMode;
+  ui.acFan.textContent = acFan;
+  ui.climateTemp.textContent = `${acTemp}°`;
+  ui.climateMode.textContent = `${acOn ? "AC 开启" : "AC 关闭"} · ${acMode} · 风量${acFan}`;
   ui.speedLimit.textContent = driving ? "40" : "--";
   ui.lightCountdown.textContent = risk.late_minutes > 0 ? "21" : "65";
   ui.turnDistance.textContent = driving ? "1.5" : "--";
@@ -410,6 +492,16 @@ ui.tabs.addEventListener("click", (event) => {
   ui.tabs.querySelectorAll("button").forEach((item) => item.classList.toggle("active", item === button));
   renderDraft();
 });
+ui.openDrafts.addEventListener("click", () => openDetail("drafts"));
+ui.openSync.addEventListener("click", () => openDetail("sync"));
+ui.closeDetail.addEventListener("click", closeDetail);
+ui.detailPanel.addEventListener("click", (event) => {
+  if (event.target === ui.detailPanel) closeDetail();
+  const draftButton = event.target.closest("button[data-detail-draft]");
+  if (!draftButton) return;
+  activeDraft = draftButton.dataset.detailDraft;
+  openDetail("drafts");
+});
 
 ui.configBtn.addEventListener("click", openConfig);
 ui.closeConfig.addEventListener("click", closeConfig);
@@ -423,7 +515,7 @@ ui.useLegacyAgent.addEventListener("click", () => {
   ui.configApiBase.value = LEGACY_AGENT_API;
 });
 ui.useLocalAgent.addEventListener("click", () => {
-  ui.configApiBase.value = DEFAULT_CONFIG.apiBase;
+  ui.configApiBase.value = LOCAL_AGENT_API;
   ui.configToken.value = "";
 });
 ui.configForm.addEventListener("submit", (event) => {
@@ -441,6 +533,7 @@ window.AURI_HMI = {
 };
 
 render();
+loadHealth("health").catch((error) => log("health-error", friendlyError(error)));
 loadState("load").then(() => {
   connectStream();
   startPolling();
