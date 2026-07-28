@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>AURI 车机 HMI | 随行压力接管 Agent</title>
-  <link rel="stylesheet" href="./styles.css?v=auri-cockpit-20260728b" />
+  <link rel="stylesheet" href="./styles.css?v=auri-cockpit-20260728c" />
 </head>
 <body>
   <main class="screen" aria-label="AURI 车机 HMI">
@@ -80,7 +80,7 @@
 
       <section class="continuity-entry" aria-label="手机腕上和车机联动">
         <button id="openSync" class="continuity-card" type="button">
-          <span class="continuity-head"><strong>跨端接力</strong><em id="syncSummary">状态一致</em></span>
+          <span class="continuity-head"><strong>设备同步</strong><em id="syncSummary">状态一致</em></span>
           <span class="continuity-flow">
             <span class="continuity-node phone-node" id="phoneNode">
               <i aria-hidden="true">▯</i><strong>手机</strong><em id="phoneStatus">主端</em>
@@ -101,7 +101,7 @@
       <section class="secondary-entry" aria-label="座舱状态">
         <button id="openVehicle" type="button">
           <span><b class="status-dot gold"></b><strong>座舱状态</strong></span>
-          <em id="acState">AC 未开启</em>
+          <em id="acState">AC 关闭 · 24.0° · 风量中</em>
         </button>
       </section>
 
@@ -334,23 +334,18 @@
             <text y="7" text-anchor="middle">阳光小学</text>
           </g>
         </svg>
-        <div id="carMarker" class="car-marker" aria-label="当前车辆位置"><span aria-hidden="true">▲</span></div>
-
         <div class="amap-turn-card">
           <div class="turn-symbol" aria-hidden="true">↰</div>
           <div class="turn-copy">
             <strong><span id="turnDistance">1.5</span><small id="turnUnit">公里</small></strong>
             <em id="turnInstruction">左转进入 学院路高架</em>
           </div>
-          <div class="lane-preview" aria-label="车道级导航，保持左侧两车道">
-            <div class="lane-scene" aria-hidden="true">
-              <i class="lane-route"></i>
-              <i class="lane-line one"></i>
-              <i class="lane-line two"></i>
-              <i class="lane-line three"></i>
-              <span class="lane-arrow first">↑</span>
-              <span class="lane-arrow second">↰</span>
-              <span class="lane-arrow third">↑</span>
+          <div class="lane-assist" aria-label="车道级导航，保持左侧两车道">
+            <div class="lane-assist-graphic" aria-hidden="true">
+              <span class="lane-choice active">↖</span>
+              <span class="lane-choice active">↑</span>
+              <span class="lane-choice">↑</span>
+              <span class="lane-choice">→</span>
             </div>
             <span id="laneGuidance">保持左侧 2 车道</span>
           </div>
@@ -397,12 +392,10 @@
         <div class="map-bottom-sheet">
           <div class="task-board" aria-label="任务责任">
             <button class="task-card rigid" id="kidTask" type="button">
-              <span class="task-icon" aria-hidden="true">人</span>
               <span class="task-copy"><em>刚性责任</em><strong>18:10 接孩子</strong></span>
               <span class="task-status" id="kidTaskState">等待创建</span>
             </button>
             <button class="task-card flexible" id="shopTask" type="button">
-              <span class="task-icon" aria-hidden="true">购</span>
               <span class="task-copy"><em>弹性任务</em><strong>之后去超市</strong></span>
               <span class="task-status" id="shopTaskState">等待创建</span>
             </button>
@@ -411,7 +404,6 @@
             <span class="trip-primary"><em>剩余距离</em><strong id="amapRemain"><b>7.8</b><small>公里</small></strong></span>
             <span><em>预计用时</em><strong id="amapDuration"><b>18</b><small>分钟</small></strong></span>
             <span><em>预计到达</em><strong id="amapArrival">18:10</strong></span>
-            <b aria-hidden="true">›</b>
           </button>
         </div>
 
@@ -498,6 +490,6 @@
     <span>推荐 16:9 大屏或平板横屏。</span>
   </div>
 
-  <script src="./app.js?v=auri-cockpit-20260728b"></script>
+  <script src="./app.js?v=auri-cockpit-20260728c"></script>
 </body>
 </html>

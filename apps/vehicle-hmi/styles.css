@@ -2144,3 +2144,327 @@ svg { display: block; }
     font-size: 22px;
   }
 }
+
+/* Navigation and cabin controls: glanceable production-style guidance. */
+
+.lane-assist {
+  height: 94px;
+  overflow: hidden;
+  border-radius: 14px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 25px;
+  color: var(--auri-navy);
+  background: #f4f5f3;
+  border: 1px solid rgba(11, 27, 51, .09);
+}
+.lane-assist-graphic {
+  min-width: 0;
+  padding: 8px 10px 5px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: center;
+  background: linear-gradient(180deg, #eef1f0, #e2e7e5);
+}
+.lane-choice {
+  min-width: 0;
+  height: 47px;
+  display: grid;
+  place-items: center;
+  color: #98a3ad;
+  border-left: 1px solid rgba(11, 27, 51, .14);
+  font-size: 27px;
+  font-weight: 800;
+  line-height: 1;
+}
+.lane-choice:first-child {
+  border-left: 0;
+}
+.lane-choice.active {
+  color: #fff;
+  background: var(--state-processing);
+  box-shadow: inset 0 -3px 0 rgba(11, 27, 51, .13);
+}
+.lane-choice.active:first-child {
+  border-radius: 10px 0 0 10px;
+}
+.lane-choice.active:nth-child(2) {
+  border-radius: 0 10px 10px 0;
+  border-left-color: rgba(255, 255, 255, .28);
+}
+.lane-assist > span {
+  display: grid;
+  place-items: center;
+  color: #566476;
+  background: rgba(255, 253, 249, .98);
+  font-size: 10px;
+  font-weight: 800;
+}
+.map-stage-overview .lane-assist,
+.map-stage-preview .lane-assist {
+  filter: saturate(.72);
+  opacity: .84;
+}
+
+.car-pin {
+  display: block;
+  filter: drop-shadow(0 9px 10px rgba(11, 27, 51, .2));
+}
+.car-pin.is-hidden {
+  display: none;
+}
+.car-pin circle {
+  fill: #fff;
+  stroke: var(--state-processing);
+  stroke-width: 6;
+}
+.car-pin path {
+  fill: var(--auri-navy);
+}
+
+.task-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 14px 16px;
+}
+.task-card::after {
+  content: "";
+  position: absolute;
+  left: 16px;
+  top: 10px;
+  width: 30px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(209, 73, 91, .72);
+}
+.task-card.flexible::after {
+  background: rgba(46, 157, 111, .74);
+}
+.task-card .task-copy {
+  padding-top: 7px;
+}
+.task-card .task-copy em {
+  font-size: 11px;
+  font-weight: 750;
+}
+.task-card .task-copy strong {
+  margin-top: 6px;
+  font-size: 18px;
+}
+.task-card .task-status {
+  align-self: center;
+  padding: 7px 9px;
+  border-radius: 10px;
+}
+
+.trip-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+}
+.trip-summary > span {
+  min-height: 62px;
+  display: grid;
+  align-content: center;
+}
+.trip-summary em {
+  font-size: 12px;
+  font-weight: 650;
+}
+.trip-summary strong {
+  font-size: 23px;
+}
+.trip-summary .trip-primary strong {
+  font-size: 28px;
+}
+
+.secondary-entry button {
+  padding-inline: 14px;
+}
+.secondary-entry button > em {
+  max-width: 210px;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cabin-overview {
+  min-height: 158px;
+  padding: 18px;
+  border-radius: 20px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 108px;
+  gap: 16px;
+  color: var(--auri-navy);
+  background:
+    radial-gradient(circle at 14% 16%, rgba(255, 255, 255, .9), transparent 36%),
+    linear-gradient(145deg, #ebe5da, #f7f5f0 58%, #e5ebef);
+  border: 1px solid rgba(11, 27, 51, .08);
+}
+.cabin-overview.is-on {
+  background:
+    radial-gradient(circle at 14% 16%, rgba(255, 255, 255, .92), transparent 36%),
+    linear-gradient(145deg, #dce9ff, #f7f8f5 58%, #e6eee9);
+}
+.cabin-temperature {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+}
+.cabin-temperature > span,
+.cabin-airflow > span {
+  color: #6f7a8b;
+  font-size: 11px;
+  font-weight: 750;
+}
+.cabin-temperature > strong {
+  margin-top: 5px;
+  font-size: 45px;
+  line-height: 1;
+}
+.cabin-temperature > strong small {
+  margin-left: 3px;
+  color: #647083;
+  font-size: 15px;
+}
+.cabin-temperature > em {
+  width: max-content;
+  margin-top: 14px;
+  padding: 6px 9px;
+  border-radius: 10px;
+  color: #6d7786;
+  background: rgba(255, 255, 255, .7);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+}
+.cabin-temperature > em i {
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  background: #929ba7;
+}
+.cabin-overview.is-on .cabin-temperature > em i {
+  background: var(--state-processing);
+}
+.cabin-airflow {
+  padding: 12px;
+  border-radius: 16px;
+  display: grid;
+  align-content: center;
+  gap: 10px;
+  text-align: center;
+  background: rgba(255, 255, 255, .68);
+  border: 1px solid rgba(11, 27, 51, .07);
+}
+.fan-meter {
+  height: 43px;
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  gap: 5px;
+}
+.fan-meter i {
+  width: 9px;
+  border-radius: 999px;
+  background: #d2d7db;
+}
+.fan-meter i:nth-child(1) { height: 18px; }
+.fan-meter i:nth-child(2) { height: 29px; }
+.fan-meter i:nth-child(3) { height: 41px; }
+.fan-meter i.active {
+  background: var(--state-processing);
+}
+.cabin-airflow strong {
+  font-size: 12px;
+}
+.cabin-control-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+.cabin-control-grid article {
+  min-width: 0;
+  min-height: 96px;
+  padding: 13px;
+  border-radius: 16px;
+  display: grid;
+  align-content: center;
+  color: var(--auri-navy);
+  background: #f3f1ec;
+  border: 1px solid rgba(11, 27, 51, .07);
+}
+.cabin-control-grid article.active {
+  background: #eaf1ff;
+  border-color: rgba(47, 107, 255, .2);
+}
+.cabin-control-grid article.warning {
+  background: #fff5d8;
+  border-color: rgba(230, 167, 0, .28);
+}
+.cabin-control-grid article.done {
+  background: #eaf7f1;
+  border-color: rgba(46, 157, 111, .24);
+}
+.cabin-control-grid span,
+.cabin-control-grid em {
+  overflow: hidden;
+  color: #748092;
+  font-size: 10px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cabin-control-grid strong {
+  overflow: hidden;
+  margin: 6px 0 4px;
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cabin-sync-note {
+  min-height: 44px;
+  margin-top: 11px;
+  padding: 0 13px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #647083;
+  background: #f7f5f1;
+  font-size: 11px;
+}
+.cabin-sync-note i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--state-success);
+  box-shadow: 0 0 0 4px rgba(46, 157, 111, .12);
+}
+
+@media (max-width: 1420px) {
+  .task-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 7px;
+    padding: 10px 11px;
+  }
+  .task-card .task-copy {
+    padding-top: 6px;
+  }
+  .task-card .task-copy strong {
+    font-size: 15px;
+  }
+  .task-card .task-status {
+    grid-column: auto;
+    width: auto;
+    padding: 5px 6px;
+  }
+  .trip-summary strong {
+    font-size: 20px;
+  }
+  .trip-summary .trip-primary strong {
+    font-size: 24px;
+  }
+}

@@ -96,7 +96,7 @@ const ui = {
   speedLimit: $("#speedLimit"), lightCountdown: $("#lightCountdown"), turnDistance: $("#turnDistance"), turnUnit: $("#turnUnit"),
   routeProgress: $("#routeProgress"), turnInstruction: $("#turnInstruction"), laneGuidance: $("#laneGuidance"),
   mapStageLabel: $("#mapStageLabel"), mapStageIcon: $("#mapStageIcon"), mapWrap: $(".map-wrap"),
-  routePath: $("#routePathGeometry"), routePassed: $("#routePassed"), carPin: $("#carPin"), carMarker: $("#carMarker"),
+  routePath: $("#routePathGeometry"), routePassed: $("#routePassed"), carPin: $("#carPin"),
   signalToast: $("#signalToast"), signalToastIcon: $("#signalToastIcon"), signalToastSource: $("#signalToastSource"),
   signalToastTitle: $("#signalToastTitle"), signalToastDetail: $("#signalToastDetail"), dismissSignalToast: $("#dismissSignalToast"),
   amapRemain: $("#amapRemain"), amapDuration: $("#amapDuration"), amapArrival: $("#amapArrival"), configBtn: $("#configBtn"),
@@ -418,14 +418,27 @@ function sampledRoutePoint(progress) {
   };
 }
 
-function positionVehicle(progress) {
-  if (!ui.carPin || !ui.carMarker || !ui.routePassed) return;
+function routePoint(progress) {
   const clamped = Math.max(0, Math.min(1, progress));
-  const point = sampledRoutePoint(clamped);
+  try {
+    const length = ui.routePath.getTotalLength();
+    const point = ui.routePath.getPointAtLength(length * clamped);
+    const lookAhead = ui.routePath.getPointAtLength(Math.min(length, length * clamped + 8));
+    return {
+      x: point.x,
+      y: point.y,
+      angle: Math.atan2(lookAhead.y - point.y, lookAhead.x - point.x) * 180 / Math.PI + 90
+    };
+  } catch (_error) {
+    return sampledRoutePoint(clamped);
+  }
+}
+
+function positionVehicle(progress) {
+  if (!ui.carPin || !ui.routePath || !ui.routePassed) return;
+  const clamped = Math.max(0, Math.min(1, progress));
+  const point = routePoint(clamped);
   ui.carPin.setAttribute("transform", `translate(${point.x.toFixed(2)} ${point.y.toFixed(2)}) rotate(${point.angle.toFixed(2)})`);
-  ui.carMarker.style.left = `${(point.x / 12).toFixed(3)}%`;
-  ui.carMarker.style.top = `${(point.y / 7.2).toFixed(3)}%`;
-  ui.carMarker.style.setProperty("--car-angle", `${point.angle.toFixed(2)}deg`);
   ui.routePassed.setAttribute("stroke-dasharray", `${(clamped * 100).toFixed(2)} 100`);
   ui.routeProgress.style.height = `${Math.round(clamped * 100)}%`;
 }
@@ -553,6 +566,24 @@ function acModeLabel(mode) {
 
 function fanLabel(speed) {
   return { low: "低", medium: "中", high: "高" }[speed] || "中";
+}
+
+function sceneLabel(scene) {
+  return {
+    off_vehicle: "车外待机",
+    approaching_vehicle: "接近车辆",
+    driving: "驾驶中",
+    high_load_driving: "高负荷驾驶",
+    parked: "已停车"
+  }[scene] || "车外待机";
+}
+
+function surfaceLabel(surface) {
+  return {
+    mobile: "手机主端",
+    vehicle_hmi: "车机主端",
+    wearable: "腕上设备"
+  }[surface] || "手机主端";
 }
 
 function orderStatusLabel(status) {
@@ -720,14 +751,49 @@ function openDetail(kind) {
     `;
   } else if (kind === "vehicle") {
     ui.detailTitle.textContent = "座舱状态";
+    const acOn = vehicleState.ac_on === true;
+    const temperature = Number(vehicleState.ac_target_temp ?? 24).toFixed(1);
+    const mode = acModeLabel(vehicleState.ac_mode);
+    const fan = fanLabel(vehicleState.fan_speed);
+    const fanLevel = { low: 1, medium: 2, high: 3 }[vehicleState.fan_speed] || 2;
     ui.detailBody.innerHTML = `
-      <div class="detail-list">
-        ${detailItem("空调", `${vehicleState.ac_on === true ? "已开启" : "已关闭"} · ${acModeLabel(vehicleState.ac_mode)} · ${Number(vehicleState.ac_target_temp ?? 24).toFixed(1)}°`)}
-        ${detailItem("风量", fanLabel(vehicleState.fan_speed))}
-        ${detailItem("驾驶场景", worldState?.scene || "off_vehicle")}
-        ${detailItem("主交互端", worldState?.primary_surface || "mobile")}
-        ${detailItem("腕上反馈", `${worldState?.wearable?.text || "AURI 就绪"} · ${worldState?.wearable?.haptic || "none"}`)}
+      <section class="cabin-overview ${acOn ? "is-on" : "is-off"}">
+        <div class="cabin-temperature">
+          <span>目标温度</span>
+          <strong>${temperature}<small>°C</small></strong>
+          <em><i></i> AC ${acOn ? "已开启" : "已关闭"}</em>
+        </div>
+        <div class="cabin-airflow">
+          <span>AUTO</span>
+          <div class="fan-meter" aria-label="风量${fan}">
+            ${[1, 2, 3].map((level) => `<i class="${level <= fanLevel ? "active" : ""}"></i>`).join("")}
+          </div>
+          <strong>风量 ${fan}</strong>
+        </div>
+      </section>
+      <div class="cabin-control-grid">
+        <article class="${acOn ? "active" : ""}">
+          <span>温控模式</span>
+          <strong>${mode}</strong>
+          <em>${acOn ? "正在调节" : "当前待机"}</em>
+        </article>
+        <article>
+          <span>当前场景</span>
+          <strong>${sceneLabel(worldState?.scene)}</strong>
+          <em>${worldState?.scene === "high_load_driving" ? "减少非必要提示" : "保持驾驶上下文"}</em>
+        </article>
+        <article>
+          <span>交互设备</span>
+          <strong>${surfaceLabel(worldState?.primary_surface)}</strong>
+          <em>确认入口跟随主端</em>
+        </article>
+        <article class="${worldState?.wearable?.mode === "warning" ? "warning" : worldState?.wearable?.mode === "completed" ? "done" : ""}">
+          <span>腕上反馈</span>
+          <strong>${escapeHtml(worldState?.wearable?.text || "AURI 就绪")}</strong>
+          <em>${escapeHtml(worldState?.wearable?.haptic === "none" || !worldState?.wearable?.haptic ? "保持静默" : worldState.wearable.haptic)}</em>
+        </article>
       </div>
+      <div class="cabin-sync-note"><i></i><span>座舱状态已同步至手机、腕上与车机</span></div>
     `;
   } else if (kind === "route") {
     ui.detailTitle.textContent = "行程详情";
@@ -741,12 +807,12 @@ function openDetail(kind) {
       </div>
     `;
   } else {
-    ui.detailTitle.textContent = "跨端接力";
+    ui.detailTitle.textContent = "设备同步";
     ui.detailBody.innerHTML = `
       <div class="detail-sync"><span>手机</span><strong>${escapeHtml(ui.syncPhone.textContent)}</strong></div>
       <div class="detail-sync"><span>腕上</span><strong>${escapeHtml(ui.syncWatch.textContent)}</strong></div>
       <div class="detail-sync"><span>车机</span><strong>${escapeHtml(ui.syncCar.textContent)}</strong></div>
-      ${detailCopyItem("当前接力", ui.handoffSummary.textContent)}
+      ${detailCopyItem("同步进度", ui.handoffSummary.textContent)}
     `;
   }
   activeDetail = kind;
@@ -841,7 +907,7 @@ function render() {
   ui.confirmBtn.classList.toggle("enabled", canConfirm);
   ui.confirmLabel.textContent = confirmLabel;
   ui.confirmSub.textContent = canConfirm ? confirmSub : (worldState?.confirmation?.owner_surface && worldState.confirmation.owner_surface !== "vehicle_hmi" ? "确认入口不在车机" : confirmSub);
-  ui.acState.textContent = acOn ? "AC 已开启" : "AC 已关闭";
+  ui.acState.textContent = `AC ${acOn ? "开启" : "关闭"} · ${acTemp}° · 风量${acFan}`;
   ui.acTemp.textContent = `${acTemp}°`;
   ui.acMode.textContent = acMode;
   ui.acFan.textContent = acFan;
@@ -866,7 +932,7 @@ function render() {
   renderSignalToast(worldState?.stage);
   const routeProgress = routeProgressForStage(worldState?.stage || "connecting");
   const showVehicleMarker = driving || ["planning", "service_prepared", "waiting_confirmation", "executing", "action_completed", "cooldown"].includes(worldState?.stage);
-  ui.carMarker.hidden = !showVehicleMarker;
+  ui.carPin.classList.toggle("is-hidden", !showVehicleMarker);
   if (showVehicleMarker) {
     animateVehicleTo(routeProgress);
   } else {
