@@ -67,7 +67,8 @@ const ui = {
   configToken: $("#configToken"), usePublicAgent: $("#usePublicAgent"), useLegacyAgent: $("#useLegacyAgent"), useLocalAgent: $("#useLocalAgent"),
   connectionState: $("#connectionState"), connectionDetail: $("#connectionDetail"), acState: $("#acState"), acTemp: $("#acTemp"),
   acMode: $("#acMode"), acFan: $("#acFan"), climateTemp: $("#climateTemp"), climateMode: $("#climateMode"),
-  openDrafts: $("#openDrafts"), openSync: $("#openSync"), syncSummary: $("#syncSummary"), detailPanel: $("#detailPanel"),
+  quickAskBtn: $("#quickAskBtn"), openPlan: $("#openPlan"), openVehicle: $("#openVehicle"), openSync: $("#openSync"),
+  openDrafts: $("#openDrafts"), openRoute: $("#openRoute"), routeSummary: $("#routeSummary"), detailPanel: $("#detailPanel"),
   closeDetail: $("#closeDetail"), detailTitle: $("#detailTitle"), detailBody: $("#detailBody")
 };
 
@@ -359,7 +360,26 @@ function renderDraft() {
   ui.draftBody.textContent = `${current.summary}。${activeDraft === "family" ? DRAFTS.family : DRAFTS.teacher}`;
 }
 
+function canQuickAsk() {
+  if (!worldState) return false;
+  if (worldState.primary_surface !== "vehicle_hmi") return false;
+  if (worldState.confirmation?.status === "pending") return false;
+  return ["vehicle_observation", "takeover_L2", "takeover_L3", "planning"].includes(worldState.stage);
+}
+
+function detailItem(label, value, cls = "") {
+  return `<div class="detail-item ${cls}"><span>${label}</span><strong>${value}</strong></div>`;
+}
+
 function openDetail(kind) {
+  const risk = worldState?.risk || { pressure_level: "L0", late_minutes: 0 };
+  const eta = formatTime(worldState?.eta);
+  const pickup = pickupTask();
+  const grocery = groceryTask();
+  const vehicleState = worldState?.vehicle_state || {};
+  const actions = worldState?.actions || [];
+  const order = worldState?.service_orders?.[0];
+
   if (kind === "drafts") {
     renderDraft();
     ui.detailTitle.textContent = "消息草稿";
@@ -371,13 +391,49 @@ function openDetail(kind) {
       <p>${ui.draftBody.textContent}</p>
       <small>驾驶中只展示摘要，完整明细停车后在手机端复盘。</small>
     `;
+  } else if (kind === "plan") {
+    ui.detailTitle.textContent = "接管方案";
+    ui.detailBody.innerHTML = `
+      <div class="detail-list">
+        ${detailItem("现实判断", worldState?.output?.conclusion || "等待风险判断", risk.late_minutes > 0 ? "warning" : "")}
+        ${detailItem("刚性责任", pickup ? "18:10 接孩子 · 不可后置" : "等待手机端创建任务")}
+        ${detailItem("弹性任务", grocery ? `${grocery.status === "rescheduled" ? "已后置" : "可调整"} · 之后去超市` : "等待识别弹性任务")}
+        ${detailItem("动作组", actions.length ? `${actions.length} 个动作 · ${worldState?.confirmation?.status === "pending" ? "等待确认" : "已同步"}` : "尚未生成动作组")}
+        ${detailItem("服务方案", order ? `${order.status} · ${order.total || 0} 元 · ${order.delivery_window || "待定"}` : "未生成模拟配送方案")}
+      </div>
+      <small>主屏保留一句判断和一个主要确认入口，复杂内容进入二级页。</small>
+    `;
+  } else if (kind === "vehicle") {
+    ui.detailTitle.textContent = "座舱状态";
+    ui.detailBody.innerHTML = `
+      <div class="detail-list">
+        ${detailItem("空调", `${vehicleState.ac_on === true ? "已开启" : "已关闭"} · ${acModeLabel(vehicleState.ac_mode)} · ${Number(vehicleState.ac_target_temp ?? 24).toFixed(1)}°`)}
+        ${detailItem("风量", fanLabel(vehicleState.fan_speed))}
+        ${detailItem("驾驶场景", worldState?.scene || "off_vehicle")}
+        ${detailItem("主交互端", worldState?.primary_surface || "mobile")}
+        ${detailItem("腕上反馈", `${worldState?.wearable?.text || "AURI 就绪"} · ${worldState?.wearable?.haptic || "none"}`)}
+      </div>
+      <small>驾驶中只允许轻量确认和状态查看，复杂设置停车后处理。</small>
+    `;
+  } else if (kind === "route") {
+    ui.detailTitle.textContent = "行程详情";
+    ui.detailBody.innerHTML = `
+      <div class="detail-list">
+        ${detailItem("目的地", "阳光小学")}
+        ${detailItem("ETA", eta === "--:--" ? "等待路线" : eta, risk.late_minutes > 0 ? "warning" : "")}
+        ${detailItem("预计晚到", risk.late_minutes > 0 ? `${risk.late_minutes} 分钟` : "暂无晚到风险", risk.late_minutes > 0 ? "warning" : "done")}
+        ${detailItem("剩余距离", ui.amapRemain.textContent)}
+        ${detailItem("下一动作", ui.voiceHint.textContent)}
+      </div>
+      <small>地图主屏优先显示路径、车道和 ETA，二级页用于解释延误原因。</small>
+    `;
   } else {
     ui.detailTitle.textContent = "三端同步";
     ui.detailBody.innerHTML = `
       <div class="detail-sync"><span>手机端</span><strong>${ui.syncPhone.textContent}</strong></div>
       <div class="detail-sync"><span>腕上端</span><strong>${ui.syncWatch.textContent}</strong></div>
       <div class="detail-sync"><span>车机端</span><strong>${ui.syncCar.textContent}</strong></div>
-      <small>状态来自同一个 World State revision，不由车机本地推演。</small>
+      <small>三端读取同一状态版本，确保现场联动可追踪。</small>
     `;
   }
   ui.detailPanel.hidden = false;
@@ -436,8 +492,10 @@ function render() {
   ui.syncPhone.textContent = worldState?.primary_surface === "mobile" ? "主端" : "同步";
   ui.syncWatch.textContent = worldState?.wearable?.mode || "idle";
   ui.syncCar.textContent = worldState?.primary_surface === "vehicle_hmi" ? "主端" : "只读";
-  ui.syncSummary.textContent = `${ui.syncPhone.textContent} · r${worldState?.revision ?? "--"}`;
   ui.syncWatchDot.className = worldState?.wearable?.mode === "completed" ? "done" : worldState?.wearable?.mode === "warning" ? "warn" : "ok";
+  ui.routeSummary.textContent = risk.late_minutes > 0 ? `晚到 ${risk.late_minutes} 分钟` : eta === "--:--" ? "等待路线" : `${eta} 到达`;
+  ui.quickAskBtn.disabled = !canQuickAsk();
+  ui.quickAskBtn.classList.toggle("enabled", canQuickAsk());
   ui.voiceHint.textContent = voice;
   ui.confirmBtn.disabled = !canConfirm;
   ui.confirmBtn.classList.toggle("enabled", canConfirm);
@@ -493,7 +551,21 @@ ui.tabs.addEventListener("click", (event) => {
   renderDraft();
 });
 ui.openDrafts.addEventListener("click", () => openDetail("drafts"));
+ui.openPlan.addEventListener("click", () => openDetail("plan"));
+ui.openVehicle.addEventListener("click", () => openDetail("vehicle"));
 ui.openSync.addEventListener("click", () => openDetail("sync"));
+ui.openRoute.addEventListener("click", () => openDetail("route"));
+ui.quickAskBtn.addEventListener("click", async () => {
+  if (!canQuickAsk()) return;
+  ui.quickAskBtn.disabled = true;
+  try {
+    await submitEvent(EVENT_BUTTONS.agent_takeover);
+  } catch (error) {
+    log("ask-error", friendlyError(error));
+  } finally {
+    render();
+  }
+});
 ui.closeDetail.addEventListener("click", closeDetail);
 ui.detailPanel.addEventListener("click", (event) => {
   if (event.target === ui.detailPanel) closeDetail();

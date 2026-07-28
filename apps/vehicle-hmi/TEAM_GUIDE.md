@@ -19,7 +19,14 @@
 - 绕过 Agent 直接让页面进入“已处理”。
 - 在驾驶中展示长聊天、多选复杂决策或完整商品明细。
 
-主屏默认只保留驾驶中必要信息。消息草稿、三端同步等明细通过详情按钮弹窗查看；不得把控制台日志、商品长列表或消息全文铺在主屏上。
+主屏默认只保留驾驶中必要信息。当前布局为：
+
+- 左侧主驾驶侧：AURI 判断、语音求助、方案、车况、同步和动作摘要。
+- 中央：导航、ETA、责任窗口、刚性/弹性任务卡。
+- 右侧：速度、车辆可视化、手机/腕上/控制台同步状态。
+- 底部：空调只读摘要、语音提示、Agent 配置和唯一确认按钮。
+
+消息草稿、行程详情、方案详情、车况详情和三端同步通过详情按钮弹窗查看；不得把控制台日志、商品长列表或消息全文铺在主屏上。
 
 ## 启动页面
 
@@ -127,6 +134,27 @@ POST /v1/confirm
 ```
 
 HMI 不读取工具调用细节，不从聊天回复反推状态，也不直接调用 `create_tasks`、`prepare_assistance` 等工具。工具结果最终会体现在 `WorldState.tasks`、`actions`、`confirmation` 和 `output.conclusion` 中，HMI 只按这些字段渲染。
+
+## 主驾驶侧交互规则
+
+左侧 `我还来得及吗？` 是驾驶中主动求助入口，不是静态展示按钮。启用条件：
+
+```text
+primary_surface = vehicle_hmi
+stage in [vehicle_observation, takeover_L2, takeover_L3, planning]
+confirmation.status != pending
+```
+
+点击后页面提交标准事件：
+
+```text
+POST /v1/event
+type = user.utterance
+source = vehicle_hmi
+payload.text = 我还来得及吗？帮我处理
+```
+
+`方案`、`车况`、`同步`、`消息草稿`、`行程详情`均为二级信息入口，只读展示当前 `WorldState` 摘要，不直接改写状态。
 
 ## 车机确认规则
 

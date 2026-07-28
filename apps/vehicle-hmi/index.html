@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>AURI 车机 HMI | 随行压力接管 Agent</title>
-  <link rel="stylesheet" href="./styles.css?v=auri-p0-hmi-20260728" />
+  <link rel="stylesheet" href="./styles.css?v=auri-driver-agent-20260728" />
 </head>
 <body>
   <main class="screen" aria-label="AURI 车机 HMI">
@@ -233,19 +233,21 @@
         </div>
       </section>
 
+      <section class="agent-controls" aria-label="Agent 快捷交互">
+        <button id="quickAskBtn" class="voice-action" type="button">
+          <span>语音求助</span>
+          <strong>我还来得及吗？</strong>
+        </button>
+        <div class="control-row">
+          <button id="openPlan" type="button">方案</button>
+          <button id="openVehicle" type="button">车况</button>
+          <button id="openSync" type="button">同步</button>
+        </div>
+      </section>
+
       <section class="conclusion">
         <div class="section-head"><strong>现实结论</strong><span id="riskBadge">低干扰</span></div>
         <p id="realConclusion">暂无风险结论。</p>
-      </section>
-
-      <section class="vehicle-state" aria-label="车辆状态只读展示">
-        <div class="section-head"><strong>车载状态</strong><span id="acState">AC 未开启</span></div>
-        <div class="ac-grid">
-          <div><span>温度</span><strong id="acTemp">24°</strong></div>
-          <div><span>模式</span><strong id="acMode">自动</strong></div>
-          <div><span>风量</span><strong id="acFan">中</strong></div>
-        </div>
-        <p>由 Agent control_ac 写入 World State，车机只读展示。</p>
       </section>
 
       <section class="actions">
@@ -253,9 +255,18 @@
         <ol id="actionList"></ol>
       </section>
 
+      <section class="vehicle-state" aria-label="车辆状态">
+        <div class="section-head"><strong>座舱状态</strong><span id="acState">AC 未开启</span></div>
+        <div class="ac-grid">
+          <div><span>温度</span><strong id="acTemp">24°</strong></div>
+          <div><span>模式</span><strong id="acMode">自动</strong></div>
+          <div><span>风量</span><strong id="acFan">中</strong></div>
+        </div>
+      </section>
+
       <section class="detail-actions" aria-label="二级信息入口">
         <button id="openDrafts" type="button"><strong>消息草稿</strong><span id="draftState">未生成</span></button>
-        <button id="openSync" type="button"><strong>三端同步</strong><span id="syncSummary">待连接</span></button>
+        <button id="openRoute" type="button"><strong>行程详情</strong><span id="routeSummary">等待路线</span></button>
       </section>
 
       <section class="drafts detail-source" aria-hidden="true">
@@ -342,6 +353,6 @@
 
   <div class="portrait"><strong>请横屏展示 AURI 车机 HMI</strong><span>推荐 16:9 大屏或平板横屏。</span></div>
 
-  <script src="./app.js?v=auri-p0-hmi-20260728"></script>
+  <script src="./app.js?v=auri-driver-agent-20260728"></script>
 </body>
 </html>
