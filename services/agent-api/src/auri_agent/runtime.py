@@ -163,6 +163,15 @@ class AgentRuntime:
             self._state.wearable.heart_rate = int(heart_rate) if heart_rate is not None else None
             self._state.wearable.signal_confidence = confidence
             if heart_rate is not None and int(heart_rate) >= 110 and confidence >= 0.7:
+                self._state.wearable = WearableState(
+                    connected=self._state.wearable.connected,
+                    mode="warning",
+                    text="压力信号升高",
+                    color="yellow",
+                    haptic="double_short",
+                    heart_rate=int(heart_rate),
+                    signal_confidence=confidence,
+                )
                 add_auxiliary_signal(self._state, "WEARABLE_HIGH_TREND")
         elif event.type == "driving.signal":
             if payload.get("harsh_brake") is True:

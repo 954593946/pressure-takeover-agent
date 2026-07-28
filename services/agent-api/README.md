@@ -88,6 +88,8 @@ AGENT_STREAM_URL=https://auri-langchain-agent-api.onrender.com/v1/stream
 
 仓库根目录的 `render-langchain.yaml` 用于创建不影响旧服务的独立 LangChain 服务。当前公网地址为 `https://auri-langchain-agent-api.onrender.com`，已验证 `/health`、团队令牌鉴权和两条不同自然语言任务，均真实进入 `langchain_agent` 模式。PR 合并后应把 Render 服务的代码分支切到 `main`；不要把 Bosch Key 写进 YAML、README 或客户端。
 
+旧版 `https://auri-agent-api.onrender.com` 仅作为回退服务；新联调默认使用 LangChain 公网服务。
+
 免费实例适合团队开发联调，但空闲后会休眠，首次请求可能需要约一分钟唤醒；休眠、重启或重新部署都会清空当前进程内 World State。正式演示前应提前唤醒并执行一次标准场景重置，或临时升级到不会空闲休眠的实例。
 
 ## 最小测试

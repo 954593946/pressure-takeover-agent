@@ -6,6 +6,10 @@
 
 P0 操作：创建标准任务、会议延迟、进入车辆、触发拥堵、注入辅助信号、用户求助、确认发送和重置 Demo。控制台还应展示事件日志、当前 World State、连接状态和错误。
 
+当前控制台还提供现场预检、下一步引导、前置条件禁用、Reset 二次确认、技术验证折叠区、车辆状态摘要、Ledger 摘要和脱敏日志复制。
+
+状态同步优先使用 SSE。SSE 中断时页面会自动切换到 3 秒轮询，并每 2.5 秒尝试恢复实时流；顶部 `State Sync` 卡会明确显示 `SSE 实时`、`轮询兜底` 或 `连接中`。
+
 所有按钮发送标准事件；禁止通过直接改数据库或内存对象来跳过 Agent 状态机。
 
 ## 当前实现
@@ -14,7 +18,8 @@ P0 操作：创建标准任务、会议延迟、进入车辆、触发拥堵、�
 
 - `index.html`：控制台页面。
 - `styles.css`：浅背景、卡片化、蓝/橙主色视觉。
-- `app.js`：Agent API 客户端、SSE 订阅、标准事件发送和日志。
+- `app.js`：Agent API 客户端、SSE/轮询状态同步、标准事件发送和日志。
+  控制台事件重试会复用同一轮稳定 `event_id`，避免重复创建任务或动作。事件日志记录 `event_id`、HTTP 状态、duplicate、revision 和请求耗时。
 
 ## 本地运行
 
@@ -46,6 +51,7 @@ http://127.0.0.1:5174/apps/demo-console/
 
 - `Agent API`：例如 `http://127.0.0.1:8000` 或云端 Agent 地址。
 - `Team Token`：仅本地运行时填写，保存到浏览器 `localStorage`。
+  默认 Agent API 为团队 LangChain 公网地址；本地开发可点击 `本地 Agent` 切换。
 
 不要把团队 Token、OpenAI API Key 或其他密钥提交到仓库。
 
@@ -74,3 +80,5 @@ http://127.0.0.1:5174/apps/demo-console/
 - 控制台不直接设置 stage、pressure、actions、confirmation。
 - 所有状态展示都来自 Agent 返回的 World State。
 - 现场失败时，控制台作为演示兜底入口，但仍走正式 API。
+- 主故事创建任务后锁定服务模拟配置，避免现场误切成功/缺货/超预算分支。
+- 确认请求结果不明确时先重新读取 `/v1/state`，确认仍为 pending 才允许重试。

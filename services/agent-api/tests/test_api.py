@@ -175,12 +175,18 @@ def test_l3_requires_two_auxiliary_signal_classes(client: TestClient) -> None:
         json=event(client, "evt_hr", "wearable.signal", {"heart_rate": 120, "confidence": 0.9}, "wearable"),
     ).json()["state"]
     assert one["risk"]["pressure_level"] == "L2"
+    assert one["wearable"]["text"] == "压力信号升高"
+    assert one["wearable"]["color"] == "yellow"
+    assert one["wearable"]["haptic"] == "double_short"
     two = client.post(
         "/v1/event",
         json=event(client, "evt_brake", "driving.signal", {"harsh_brake": True}),
     ).json()["state"]
     assert two["risk"]["pressure_level"] == "L3"
     assert two["stage"] == "takeover_L3"
+    assert two["wearable"]["text"] == "高负荷保护"
+    assert two["wearable"]["color"] == "red"
+    assert two["wearable"]["haptic"] == "error_once"
 
 
 def test_over_budget_order_is_not_confirmable(client: TestClient) -> None:

@@ -12,6 +12,11 @@ Demo 控制台是现场演示导演台，用于模拟本轮不接入真实系统
 - 配置模拟服务状态，例如成功、缺货、超预算。
 - 展示当前 `WorldState` 摘要和事件日志。
 - 调用正式确认和重置接口，保证现场流程可复现。
+- 进行一键预检，检查 health、鉴权、Session、revision、LLM 模式和 SSE。
+- 按主线显示下一步和主持提示，降低现场误操作。
+- 展示 `vehicle_state`、Action Ledger 和脱敏事件日志。
+- 显示当前状态同步模式；SSE 断开时自动进入轮询兜底并重连。
+- 事件日志记录 event_id、HTTP 状态、duplicate、revision 和耗时。
 
 它不能做：
 
@@ -21,6 +26,18 @@ Demo 控制台是现场演示导演台，用于模拟本轮不接入真实系统
 - 绕过 `/v1/event` 和 `/v1/confirm`。
 
 ## 启动页面
+
+### 公网直接访问
+
+不需要拉代码或启动静态服务器，打开：
+
+```text
+https://wangwang20.github.io/auri-pressure-takeover-web/apps/demo-console/
+```
+
+第一次使用需填写团队 Agent API 和负责人单独提供的 Team Token。公网静态页面不包含 Token、OpenAI API Key 或后端环境变量。
+
+### 本机访问
 
 从仓库根目录启动静态服务：
 
@@ -33,6 +50,22 @@ python -m http.server 5174
 ```text
 http://127.0.0.1:5174/apps/demo-console/
 ```
+
+### 局域网访问
+
+开发机启动：
+
+```bash
+python -m http.server 5174 --bind 0.0.0.0
+```
+
+同一网络中的其他设备打开：
+
+```text
+http://<开发机局域网IP>:5174/apps/demo-console/
+```
+
+公网、本机和局域网页面均可连接本地或公网 Agent；局域网设备若要连接开发机上的本地 Agent，需要后端监听 `0.0.0.0` 并配置允许该页面 Origin 的 CORS。
 
 ## 连接本地 Agent
 
@@ -57,12 +90,21 @@ Team Token: 留空，除非本地后端开启共享访问
 
 ```text
 保存配置
+一键预检
 连接 Agent
 ```
 
+`State Sync` 应显示 `SSE 实时`。如果显示 `轮询兜底`，主线仍可继续，但导演需要确认 revision 持续更新；SSE 恢复后页面会自动切回实时模式。
+
 ## 连接团队公网 Agent
 
-公网 Agent 地址：
+推荐公网 Agent 地址：
+
+```text
+https://auri-langchain-agent-api.onrender.com
+```
+
+旧版回退地址：
 
 ```text
 https://auri-agent-api.onrender.com
@@ -71,7 +113,7 @@ https://auri-agent-api.onrender.com
 控制台顶部填写：
 
 ```text
-Agent API: https://auri-agent-api.onrender.com
+Agent API: https://auri-langchain-agent-api.onrender.com
 Team Token: 使用团队负责人单独提供的令牌
 ```
 
@@ -87,6 +129,65 @@ Team Token: 使用团队负责人单独提供的令牌
 - Team Token 只保存在当前浏览器 `localStorage`。
 - 不要把 Team Token 写入仓库、PR、截图或公开文档。
 - 公网 Agent 是共享 Demo 后端，多人同时操作会影响同一个状态。
+- 旧版回退地址只在新版 LangChain 服务不可用时使用。
+
+## Agent Health 展示
+
+控制台连接 Agent 时会读取：
+
+```http
+GET /health
+```
+
+页面顶部 `Agent Health` 卡片会展示：
+
+```text
+llm_framework
+llm_last_mode
+agent_tools_enabled
+agent_last_tools
+```
+
+用途：
+
+- 判断当前连接的是新版 LangChain Agent，还是旧版回退 Agent。
+- 通过 `agent_tools_enabled=true` 判断工具编排是否上线。
+- 通过 `agent_last_tools` 查看最近一轮实际调用过哪些工具。
+
+注意：`/health` 不返回 Team Token 或 OpenAI API Key。
+
+## 现场导演模式
+
+控制台会根据当前 `WorldState.stage` 判断下一步，并高亮主线按钮。建议现场使用：
+
+```text
+一键预检
+重置 Demo
+执行下一步
+执行下一步
+...
+```
+
+主线按钮会根据前置条件自动禁用。例如无任务时不能注入拥堵，没有 `pending confirmation` 时不能确认发送。Reset 会二次确认，因为公网 Agent 是共享 Session。
+
+缺货、超预算、急刹、语音确认等内容放在“技术验证”折叠区，避免干扰 3-5 分钟主线。
+
+## 与 LangChain 工具的边界
+
+控制台仍然只上传标准 Event，不直接调用 LangChain 工具。
+
+控制台负责注入这些外部事实：
+
+```text
+scene.vehicle_entered
+scene.parked
+traffic.updated
+wearable.signal
+driving.signal
+service.mock.config
+```
+
+这些事实不能因为用户在聊天里说“我上车了”就由 LLM 伪造。Agent 会在收到标准 Event 后更新 `WorldState`。
 
 ## 控制台标准按钮
 
