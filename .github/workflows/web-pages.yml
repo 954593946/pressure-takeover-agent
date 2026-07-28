@@ -30,6 +30,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+        with:
+          # New repositories do not have a Pages site until it is explicitly
+          # enabled. Let the workflow create/configure it instead of failing
+          # with a 404 on the first deployment.
+          enablement: true
       - name: Prepare public web artifact
         run: |
           mkdir -p _site/apps
