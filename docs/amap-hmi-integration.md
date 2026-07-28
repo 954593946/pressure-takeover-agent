@@ -2,7 +2,7 @@
 
 ## 结论
 
-当前车机 HMI 可以接入高德地图 JS API 2.0。
+当前车机 HMI 默认接入高德地图 JS API 2.0。页面加载时先从 Agent 获取安全配置，再初始化真实 2D 地图；只有配置、网络或额度保护异常时才降级到离线地图。
 
 本项目使用高德能力的边界是：
 
@@ -25,16 +25,16 @@ apps/vehicle-hmi/amap-adapter.test.cjs
 
 | 能力 | 高德接口 | HMI 用法 |
 | --- | --- | --- |
-| 真实底图 | `AMap.Map` | 使用 `whitesmoke` 浅色样式，保持 AURI 象牙白视觉 |
+| 真实底图 | `AMap.Map` | 使用 `normal` 2D 地图，显示真实道路、建筑、POI 和高德版权信息 |
 | 驾车路线 | `AMap.Driving` | 获取路线坐标、道路指令、下一动作距离 |
 | 实时路况 | `AMap.TileLayer.Traffic` | 驾驶时低透明度展示，风险阶段提高强调 |
 | 路线绘制 | `AMap.Polyline` | 白色描边、灰色已行驶、蓝色剩余路线、黄色拥堵段 |
 | 车辆位置 | `AMap.Marker` + MoveAnimation | 按 World State 阶段进度沿路线移动并调整方向 |
-| 目的地 | `AMap.Marker` | 显示“阳光小学”目的地标签 |
+| 起点与目的地 | `AMap.Marker` | 显示“博世苏州・星龙街455号”和“阳光小学”标签 |
 | 地图操作 | Map zoom / fit view | 右侧 `+`、`-`、`北`按钮真实控制在线地图 |
 | 失败降级 | HMI adapter | 自动切回 SVG 离线演示地图 |
 
-当前 Demo 路线使用非个人化的冻结演示坐标，不提交真实家庭、学校或联系人位置。
+当前 Demo 起点采用博世公开办公地址“江苏省苏州工业园区星龙街455号”，坐标为高德公开地点页对应位置；终点使用非个人化冻结演示坐标并标记为“阳光小学”，不代表任何真实儿童学校，不提交家庭、联系人或个人轨迹。
 
 ## 申请正确的 Key
 
@@ -59,6 +59,22 @@ iOS Key
 
 2021-12-02 之后创建的 JS API Key 必须配套安全密钥。
 
+## 自动配置链路
+
+HMI 默认配置 `mapProvider=auto`。页面启动顺序：
+
+```text
+读取当前浏览器保存的 Agent API 与 Team Token
+-> GET /v1/map-config
+-> 获得 Web JS Key、/_AMapService 地址和 normal 样式
+-> 设置 window._AMapSecurityConfig.serviceHost
+-> 加载高德 JS API 2.0
+-> 创建 2D 地图并规划一次驾车路线
+-> 再连接 /v1/state 与 /v1/stream
+```
+
+`/v1/map-config` 不返回 Security JS Code。高德服务请求由 Agent `/_AMapService` 代理注入安全密钥，并限制允许的 HMI Origin。
+
 ## 本地 Demo 配置
 
 打开 HMI：
@@ -67,16 +83,16 @@ iOS Key
 http://127.0.0.1:5174/apps/vehicle-hmi/
 ```
 
-点击左侧 `连接`，在“导航地图”中填写：
+如果本地 Agent 已配置下面的环境变量，只需保存 Agent 地址并重连，无需在浏览器填写地图密钥：
 
-```text
-地图来源：高德在线地图
-高德 Web JS API Key：申请的 JS API Key
-Security JS Code：与 Key 配套的安全密钥
-安全代理地址：本地 Demo 可留空
+```dotenv
+AMAP_JS_API_KEY=<Web端 JS API Key>
+AMAP_SECURITY_JS_CODE=<安全密钥>
+AMAP_PUBLIC_BASE_URL=http://127.0.0.1:8000
+AMAP_ALLOWED_ORIGINS=http://127.0.0.1:5174,http://localhost:5174
 ```
 
-点击 `保存并重连`。
+浏览器手动填写 Key 和 Security JS Code 仅保留给地图负责人本机诊断，不用于公网部署。
 
 成功时：
 
@@ -143,7 +159,7 @@ HMI
   -> 高德 Web API
 ```
 
-HMI 配置中的“安全代理地址”应填写完整服务地址，例如：
+HMI 自动获得的“安全代理地址”应为完整服务地址，例如：
 
 ```text
 https://example.com/_AMapService
@@ -173,7 +189,7 @@ PR 描述
 前端默认配置
 ```
 
-本轮六周 Demo 可以使用浏览器本地配置的明文方式验证，但对外长期部署前必须切换到代理模式。
+本轮公网 Demo 已按代理模式实现。浏览器本地明文方式只用于一次性诊断，不作为团队运行方式。
 
 ## 数据和隐私边界
 
@@ -188,15 +204,16 @@ Demo 要求：
 
 ## 测试
 
-2026-07-28 已使用有效的 Web端（JS API）Key 做一次最小调用冒烟测试，结果：
+2026-07-28 已使用有效的 Web端（JS API）Key 做真实浏览器冒烟测试，结果：
 
 ```text
 AMap JS API 2.0 加载成功
 AMap.Driving 路线规划成功
-高德底图、实时交通图层、Logo 和版权信息正常显示
+博世苏州起点、Demo 学校终点和真实路线正常显示
+高德真实 2D 底图、道路 POI、实时交通图层、Logo 和版权信息正常显示
 HMI map status = online
 下一道路指令和距离已由高德路线结果更新
-1600px 车机视口无页面溢出
+1600×814 车机视口无页面溢出或信息遮挡
 ```
 
 测试密钥只写入临时浏览器 `localStorage`，未写入代码、Git、截图说明或团队文档。
@@ -292,6 +309,8 @@ Demo 使用建议：
 
 ## 官方资料
 
+- 博世苏州公开地址：<https://www.bosch-engineering.cn/公司/全球办事处/>
+- 高德“博世汽车部件（苏州）有限公司”地点页：<https://www.amap.com/place/B02000IQKF>
 - 高德地图 JS API 2.0 准备：<https://lbs.amap.com/api/javascript-api-v2/prerequisites>
 - JS API 安全密钥：<https://lbs.amap.com/api/javascript-api-v2/guide/abc/jscode>
 - 驾车路线规划：<https://lbs.amap.com/api/javascript-api-v2/guide/services/navigation>

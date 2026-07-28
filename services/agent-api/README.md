@@ -44,6 +44,25 @@ DEMO_MODE=true
 
 密钥不得提交。`/health` 只返回是否完成配置，不返回密钥或完整请求信息。
 
+### 高德车机地图代理
+
+车机 HMI 默认通过 Agent 自动获取高德地图配置。服务端环境变量：
+
+```dotenv
+AMAP_JS_API_KEY=<Web端 JS API Key>
+AMAP_SECURITY_JS_CODE=<安全密钥>
+AMAP_PUBLIC_BASE_URL=https://auri-langchain-agent-api.onrender.com
+AMAP_ALLOWED_ORIGINS=https://wangwang20.github.io,http://127.0.0.1:5174,http://localhost:5174
+```
+
+接口职责：
+
+- `GET /v1/map-config`：需要 `X-Agent-Token`，只返回公开 Web JS Key、代理地址和样式，不返回安全密钥。
+- `GET /_AMapService/*`：按允许的浏览器 Origin 转发高德请求，并在服务端注入 `AMAP_SECURITY_JS_CODE`。
+- `GET /health`：仅返回 `amap_configured=true/false`。
+
+公网部署必须把两个高德密钥配置为 Render Secret，不得写入 YAML、前端或 Git。
+
 ## 团队共享模式
 
 共享后端必须设置独立的团队令牌；它不是 Bosch API Key，只用于阻止同一网络上的陌生客户端调用 Demo 控制接口。

@@ -33,5 +33,13 @@ services:
         value: "30"
       - key: AGENT_SHARED_TOKEN
         sync: false
+      - key: AMAP_JS_API_KEY
+        sync: false
+      - key: AMAP_SECURITY_JS_CODE
+        sync: false
+      - key: AMAP_PUBLIC_BASE_URL
+        value: https://auri-langchain-agent-api.onrender.com
+      - key: AMAP_ALLOWED_ORIGINS
+        value: https://wangwang20.github.io,http://localhost:5174,http://127.0.0.1:5174
       - key: CORS_ORIGINS
         value: "*"

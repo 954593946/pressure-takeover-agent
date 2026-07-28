@@ -22,6 +22,10 @@ class FakeClassList {
 }
 
 class FakeMap {
+  constructor(_container, options) {
+    this.options = options;
+  }
+
   add(value) {
     calls.push(["add", value]);
   }
@@ -172,6 +176,9 @@ async function main() {
   assert.equal(initialized.mode, "online");
   assert.equal(container.hidden, false);
   assert.equal(mapWrap.classList.contains("is-amap-online"), true);
+  assert.equal(adapter.map.options.viewMode, "2D");
+  assert.equal(adapter.map.options.mapStyle, "amap://styles/normal");
+  assert.equal(adapter.overlays.originMarker.options.anchor, "bottom-left");
   assert.equal(route.instruction, "左转进入学院路");
   assert.deepEqual(route.nextDistance, { value: "3.9", unit: "公里" });
 
@@ -191,6 +198,7 @@ async function main() {
     adapter.overlays.vehicleMarker.position,
     adapter.overlays.routePassed.path[adapter.overlays.routePassed.path.length - 1]
   );
+  assert.equal(adapter.overlays.originMarker.visible, false);
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   assert.deepEqual(adapter.getUsage(), {
