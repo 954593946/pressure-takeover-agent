@@ -7,256 +7,89 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>AURI 车机 HMI | 随行压力接管 Agent</title>
-  <link rel="stylesheet" href="./styles.css?v=auri-driver-agent-20260728" />
+  <link rel="stylesheet" href="./styles.css?v=auri-cockpit-20260728" />
 </head>
 <body>
   <main class="screen" aria-label="AURI 车机 HMI">
     <aside class="launcher" aria-label="车机快捷栏">
-      <div class="brand-mark auri-logo compact" aria-label="AURI">
-        <span class="logo-icon"><img src="../../icon.png" alt="AURI" /></span>
-      </div>
-      <button class="launch active" title="导航"><span>⌖</span><em>导航</em></button>
-      <button class="launch" title="任务"><span>☑</span><em>任务</em></button>
-      <button class="launch" title="消息"><span>✉</span><em>消息</em></button>
-      <button class="launch" title="腕上"><span>◉</span><em>腕上</em></button>
-      <button class="launch" title="车控"><span>⚙</span><em>车控</em></button>
+      <button class="brand-mark launch-brand" type="button" aria-label="AURI 首页">
+        <img src="../../icon.png" alt="AURI" />
+      </button>
+      <nav aria-label="常用功能">
+        <button class="launch active" type="button" data-home title="导航">
+          <span aria-hidden="true">⌖</span><em>导航</em>
+        </button>
+        <button class="launch" type="button" data-detail="plan" title="任务与方案">
+          <span aria-hidden="true">✓</span><em>任务</em>
+        </button>
+        <button class="launch" type="button" data-detail="drafts" title="消息草稿">
+          <span aria-hidden="true">✉</span><em>消息</em>
+        </button>
+        <button class="launch" type="button" data-detail="sync" title="多端同步">
+          <span aria-hidden="true">◉</span><em>同步</em>
+        </button>
+        <button class="launch" type="button" data-detail="vehicle" title="座舱状态">
+          <span aria-hidden="true">⌁</span><em>车控</em>
+        </button>
+      </nav>
+      <button id="configBtn" class="launch settings-launch" type="button" title="Agent 连接">
+        <span aria-hidden="true">⚙</span><em>连接</em>
+      </button>
     </aside>
 
-    <section class="drive-card" aria-label="驾驶可视化">
-      <header class="mini-status">
-        <div><strong id="speed">42</strong><span>km/h</span></div>
-        <div><strong id="gear">D</strong><span>舒适</span></div>
+    <aside class="agent" aria-label="驾驶员侧 Agent 面板">
+      <header class="agent-header">
+        <div class="auri-lockup">
+          <span class="logo-icon"><img src="../../icon.png" alt="" /></span>
+          <span><strong>AURI</strong><em>你只管开，我来处理</em></span>
+        </div>
+        <span id="riskBadge" class="risk-badge">○ L0 低干扰</span>
       </header>
 
-      <div class="vehicle-view" aria-label="车辆状态可视化">
-        <div class="road-perspective">
-          <span class="road-line l1"></span>
-          <span class="road-line l2"></span>
-          <span class="road-line r1"></span>
-          <span class="road-line r2"></span>
-        </div>
-        <div class="sensor-ring ring-a"></div>
-        <div class="sensor-ring ring-b"></div>
-        <div class="vehicle-top">
-          <span class="windshield"></span>
-          <span class="roof"></span>
-          <span class="hood"></span>
-          <span class="wheel w1"></span>
-          <span class="wheel w2"></span>
-          <span class="wheel w3"></span>
-          <span class="wheel w4"></span>
-        </div>
-        <div class="vehicle-label">
-          <strong>AURI</strong>
-          <span id="vehicleAssist">车机接管主展示</span>
-        </div>
-        <div class="front-object" id="frontCar"><span></span></div>
-      </div>
-
-      <section class="device-stack" aria-label="四屏一腕上同步">
-        <div class="device phone" id="phoneDevice">
-          <span>手机</span>
-          <strong id="phoneStatus">待创建任务</strong>
-          <small id="phoneDetail">PWA 已连接</small>
-        </div>
-        <div class="device watch" id="watchDevice">
-          <span>腕上</span>
-          <strong id="watchStatus">常态</strong>
-          <small id="watchDetail">低干扰</small>
-        </div>
-        <div class="device console">
-          <span>控制台</span>
-          <strong id="consoleStatus">待机</strong>
-          <small>模拟外部世界</small>
-        </div>
-      </section>
-    </section>
-
-    <section class="center" aria-label="高德风格地图与任务">
-      <header class="topbar">
-        <div class="destination">
-          <span id="modeChip">驾驶模式</span>
-          <h1 id="destination">阳光小学</h1>
-          <p id="headline">等待任务创建，车机处于低干扰待机。</p>
-        </div>
-        <div class="top-metrics">
-          <div><span>到达</span><strong id="eta">--:--</strong><em id="etaNote">等待路线</em></div>
-          <div><span>责任窗口</span><strong id="windowState">未建立</strong><em>18:10 接孩子</em></div>
-          <div><span>连接</span><strong id="connectionState">未连接</strong><em id="connectionDetail">health --</em></div>
-        </div>
-      </header>
-
-      <section class="map-wrap amap daynav" aria-label="高德风格车机导航">
-        <svg class="map nav-map" viewBox="0 0 1200 720" role="img" aria-label="车机导航地图">
-          <defs>
-            <linearGradient id="mapSurface" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="#eef4f6"/>
-              <stop offset="100%" stop-color="#dfe9ed"/>
-            </linearGradient>
-            <linearGradient id="routeMain" x1="0" y1="1" x2="1" y2="0">
-              <stop offset="0%" stop-color="#2f6bff"/>
-              <stop offset="68%" stop-color="#2f6bff"/>
-              <stop offset="100%" stop-color="#e6a700"/>
-            </linearGradient>
-            <filter id="softMapShadow" x="-20%" y="-20%" width="140%" height="140%">
-              <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#0b1b33" flood-opacity=".16"/>
-            </filter>
-          </defs>
-          <rect class="map-surface" width="1200" height="720"/>
-          <g class="map-grid">
-            <path d="M0 120 H1200 M0 250 H1200 M0 385 H1200 M0 520 H1200 M185 0 V720 M372 0 V720 M560 0 V720 M748 0 V720 M936 0 V720"/>
-          </g>
-          <g class="city-blocks" filter="url(#softMapShadow)">
-            <path d="M72 74h122v68H72zM260 42h150v86H260zM644 58h170v104H644zM902 54h142v92H902z"/>
-            <path d="M70 430h150v96H70zM684 392h214v112H684zM938 310h138v112H938zM982 536h152v94H982z"/>
-            <path d="M328 556h176v78H328zM512 256h126v70H512zM794 214h124v70H794z"/>
-          </g>
-          <g class="minor-roads">
-            <path d="M-80 176 C170 150 302 194 484 154 C642 120 718 118 842 172 S1040 220 1280 178"/>
-            <path d="M-60 332 C144 286 302 280 472 308 S802 390 1010 346 1180 292 1260 286"/>
-            <path d="M92 720 C206 610 336 566 516 588 S828 664 1136 522"/>
-            <path d="M-20 610 C156 522 272 506 414 512 S642 546 812 484 1060 326 1240 250"/>
-          </g>
-          <g class="route-road" filter="url(#softMapShadow)">
-            <path class="route-casing" d="M70 668 C202 568 296 526 430 530 C564 534 592 410 704 354 C820 296 898 396 1010 312 C1082 258 1124 174 1174 54"/>
-            <path class="route-passed" d="M70 668 C202 568 296 526 430 530"/>
-            <path class="route-live" d="M430 530 C564 534 592 410 704 354 C820 296 898 396 1010 312 C1082 258 1124 174 1174 54"/>
-            <path class="route-congested" d="M1010 312 C1082 258 1124 174 1174 54"/>
-            <path class="route-lane" d="M454 520 C568 512 604 402 706 356 C810 310 892 386 990 322"/>
-          </g>
-          <g class="road-labels">
-            <text x="604" y="438">学院路高架</text>
-            <text x="870" y="224">育才路</text>
-            <text x="260" y="612">当前道路</text>
-          </g>
-          <g class="camera-poi" transform="translate(914 330)">
-            <circle r="18"/>
-            <path d="M-8-3h16v10h-16zM-4-7h8l3 4h-14z"/>
-          </g>
-          <g class="traffic-light" transform="translate(832 340)">
-            <rect x="-12" y="-31" width="24" height="62" rx="12"/>
-            <circle cx="0" cy="-18" r="6"/>
-            <circle cx="0" cy="0" r="6"/>
-            <circle cx="0" cy="18" r="6"/>
-          </g>
-          <g class="traffic" id="traffic" transform="translate(910 280)">
-            <rect x="-104" y="-27" width="208" height="54" rx="27"/>
-            <text y="7" text-anchor="middle">前方拥堵 · 晚到 18 分钟</text>
-          </g>
-          <g class="car-pin" transform="translate(430 530) rotate(-86)">
-            <circle r="31"/>
-            <path d="M0-18 15 18 0 11 -15 18z"/>
-          </g>
-          <g class="pin end" transform="translate(1174 54)">
-            <circle r="30"/>
-            <path d="M-10-8h20v16h-20z"/>
-          </g>
-          <g class="school-label" transform="translate(1010 74)">
-            <rect x="-68" y="-22" width="136" height="44" rx="22"/>
-            <text y="7" text-anchor="middle">阳光小学</text>
-          </g>
-        </svg>
-
-        <div class="amap-turn-card">
-          <div class="turn-symbol">↰</div>
-          <div class="turn-copy">
-            <strong><span id="turnDistance">1.5</span><small>公里</small></strong>
-            <em>左转进入 学院路高架</em>
-          </div>
-          <button type="button">×</button>
-        </div>
-
-        <div class="lane-board" aria-label="车道级导航">
-          <div class="lane-cell active">↑</div>
-          <div class="lane-cell active">↑</div>
-          <div class="lane-cell active">↰</div>
-          <div class="lane-cell bus">公交</div>
-          <div class="lane-cell">↱</div>
-        </div>
-
-        <div class="speed-card">
-          <strong id="speedLimit">40</strong>
-          <span>km/h</span>
-          <em>25-60 建议车速</em>
-        </div>
-
-        <div class="signal-countdown">
-          <span>绿波</span>
-          <strong id="lightCountdown">65</strong>
-        </div>
-
-        <div class="right-progress">
-          <div class="progress-track"><i id="routeProgress"></i></div>
-          <span>全程</span>
-        </div>
-
-        <button class="overview-btn" type="button">全览</button>
-        <button class="parking-btn" type="button">P<br><span>停车推荐</span></button>
-
-        <div class="map-tools" aria-label="地图快捷工具">
-          <button type="button">+</button>
-          <button type="button">−</button>
-          <button type="button">北</button>
-        </div>
-
-        <div class="amap-bottom">
-          <div><span>剩余</span><strong id="amapRemain">7.8 公里</strong></div>
-          <div><span>用时</span><strong id="amapDuration">18 分钟</strong></div>
-          <div><span>预计到达</span><strong id="amapArrival">18:10</strong></div>
-        </div>
-
-        <div class="task-board" aria-label="任务结构化">
-          <div class="task-card rigid" id="kidTask">
-            <span>刚性责任</span>
-            <strong>18:10 接孩子</strong>
-            <em id="kidTaskState">等待创建</em>
-          </div>
-          <div class="task-card flexible" id="shopTask">
-            <span>弹性任务</span>
-            <strong>之后去超市</strong>
-            <em id="shopTaskState">等待创建</em>
-          </div>
-        </div>
-      </section>
-    </section>
-
-    <aside class="agent" aria-label="Agent 接管面板">
       <section class="agent-state" id="agentState">
-        <div class="auri-logo panel-logo" aria-label="AURI">
-          <span class="logo-icon"><img src="../../icon.png" alt="AURI" /></span>
-          <span class="logo-word">AURI</span>
-        </div>
-        <div>
-          <span>AURI 当前判断</span>
-          <h2 id="agentTitle">等待任务创建</h2>
-          <p id="agentText">创建任务后，AURI 会识别刚性责任和弹性任务。</p>
-        </div>
+        <span class="eyebrow">AURI 当前判断</span>
+        <h1 id="agentTitle">等待任务创建</h1>
+        <p id="agentText">创建任务后，AURI 会识别刚性责任和弹性任务。</p>
+      </section>
+
+      <section class="conclusion" aria-label="现实结论">
+        <span class="eyebrow">现实结论</span>
+        <p id="realConclusion">暂无风险结论。</p>
       </section>
 
       <section class="agent-controls" aria-label="Agent 快捷交互">
         <button id="quickAskBtn" class="voice-action" type="button">
-          <span>语音求助</span>
-          <strong>我还来得及吗？</strong>
+          <span class="voice-orb" aria-hidden="true"></span>
+          <span><em id="quickAskMode">语音求助</em><strong id="quickAskLabel">我还来得及吗？</strong></span>
+          <b aria-hidden="true">›</b>
         </button>
         <div class="control-row">
-          <button id="openPlan" type="button">方案</button>
-          <button id="openVehicle" type="button">车况</button>
-          <button id="openSync" type="button">同步</button>
+          <button id="openPlan" type="button"><span aria-hidden="true">☷</span><em>方案</em></button>
+          <button id="openDrafts" type="button"><span aria-hidden="true">✉</span><em>消息</em></button>
+          <button id="openRoute" type="button"><span aria-hidden="true">⌖</span><em>行程</em></button>
         </div>
       </section>
 
-      <section class="conclusion">
-        <div class="section-head"><strong>现实结论</strong><span id="riskBadge">低干扰</span></div>
-        <p id="realConclusion">暂无风险结论。</p>
-      </section>
-
-      <section class="actions">
-        <div class="section-head"><strong>Agent 已处理</strong><span id="actionState">待机</span></div>
+      <section class="actions" aria-label="Agent 动作组">
+        <div class="section-head">
+          <strong>Agent 已处理</strong>
+          <span id="actionState">待机</span>
+        </div>
         <ol id="actionList"></ol>
       </section>
 
-      <section class="vehicle-state" aria-label="车辆状态">
-        <div class="section-head"><strong>座舱状态</strong><span id="acState">AC 未开启</span></div>
+      <section class="secondary-entry" aria-label="更多状态">
+        <button id="openSync" type="button">
+          <span><b class="status-dot"></b><strong>多端同步</strong></span>
+          <em id="syncSummary">状态一致</em>
+        </button>
+        <button id="openVehicle" type="button">
+          <span><b class="status-dot gold"></b><strong>座舱状态</strong></span>
+          <em id="acState">AC 未开启</em>
+        </button>
+      </section>
+
+      <section class="vehicle-state detail-source" aria-hidden="true">
         <div class="ac-grid">
           <div><span>温度</span><strong id="acTemp">24°</strong></div>
           <div><span>模式</span><strong id="acMode">自动</strong></div>
@@ -264,13 +97,8 @@
         </div>
       </section>
 
-      <section class="detail-actions" aria-label="二级信息入口">
-        <button id="openDrafts" type="button"><strong>消息草稿</strong><span id="draftState">未生成</span></button>
-        <button id="openRoute" type="button"><strong>行程详情</strong><span id="routeSummary">等待路线</span></button>
-      </section>
-
       <section class="drafts detail-source" aria-hidden="true">
-        <div class="section-head"><strong>消息草稿</strong><span id="draftStateHidden">未生成</span></div>
+        <span id="draftStateHidden">未生成</span>
         <div class="tabs">
           <button class="active" data-draft="teacher" type="button">老师</button>
           <button data-draft="family" type="button">家人</button>
@@ -279,22 +107,326 @@
       </section>
 
       <section class="sync detail-source" aria-hidden="true">
-        <div class="section-head"><strong>三端同步</strong><span>&lt;1s</span></div>
-        <div class="sync-row"><b class="ok"></b><span>手机端</span><em id="syncPhone">待创建任务</em></div>
-        <div class="sync-row"><b id="syncWatchDot"></b><span>腕上端</span><em id="syncWatch">常态</em></div>
-        <div class="sync-row"><b class="ok"></b><span>车机端</span><em id="syncCar">待机</em></div>
+        <div><span>手机端</span><em id="syncPhone">待创建任务</em></div>
+        <div><b id="syncWatchDot"></b><span>腕上端</span><em id="syncWatch">常态</em></div>
+        <div><span>车机端</span><em id="syncCar">待机</em></div>
       </section>
     </aside>
 
+    <section class="center" aria-label="导航主画布">
+      <header class="topbar">
+        <div class="destination">
+          <span id="modeChip">驾驶模式</span>
+          <div>
+            <h2 id="destination">阳光小学</h2>
+            <p id="headline">等待任务创建，车机处于低干扰待机。</p>
+          </div>
+        </div>
+        <div class="top-metrics" aria-label="驾驶关键信息">
+          <div class="eta-metric">
+            <span>预计到达</span>
+            <strong id="eta">--:--</strong>
+            <em id="etaNote">等待路线</em>
+          </div>
+          <div>
+            <span>责任窗口</span>
+            <strong id="windowState">未建立</strong>
+            <em>18:10 接孩子</em>
+          </div>
+          <div class="connection-metric">
+            <span class="connection-dot"></span>
+            <strong id="connectionState">未连接</strong>
+            <em id="connectionDetail">health --</em>
+          </div>
+        </div>
+      </header>
+
+      <section class="map-wrap amap daynav" aria-label="高德风格车机导航">
+        <svg class="map nav-map" viewBox="0 0 1200 720" role="img" aria-label="车机导航地图">
+          <defs>
+            <linearGradient id="mapSurface" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#f4f7f6"/>
+              <stop offset="58%" stop-color="#e8efed"/>
+              <stop offset="100%" stop-color="#dce6e4"/>
+            </linearGradient>
+            <linearGradient id="buildingFront" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#d8e1e3"/>
+              <stop offset="100%" stop-color="#c6d1d5"/>
+            </linearGradient>
+            <linearGradient id="buildingSide" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#bcc9ce"/>
+              <stop offset="100%" stop-color="#aebdc2"/>
+            </linearGradient>
+            <filter id="softMapShadow" x="-20%" y="-20%" width="140%" height="140%">
+              <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0b1b33" flood-opacity=".13"/>
+            </filter>
+            <filter id="buildingShadow" x="-40%" y="-40%" width="180%" height="180%">
+              <feDropShadow dx="0" dy="8" stdDeviation="7" flood-color="#526775" flood-opacity=".18"/>
+            </filter>
+          </defs>
+          <rect class="map-surface" width="1200" height="720"/>
+          <path class="park" d="M760 0h440v190c-80 28-160 9-222 59-52 42-130 49-226 16z"/>
+          <path class="water" d="M0 101c137 42 269 26 385 59 128 36 192 23 285-5 107-32 192-15 287 12 91 25 163 21 243-2v54c-102 26-194 20-298-4-91-21-165-20-254 8-111 35-208 47-319 10C229 200 129 194 0 160z"/>
+          <g class="map-grid">
+            <path d="M0 118 H1200 M0 250 H1200 M0 392 H1200 M0 535 H1200 M182 0 V720 M376 0 V720 M570 0 V720 M764 0 V720 M958 0 V720"/>
+          </g>
+          <g class="green-zones">
+            <path d="M91 286h194v118H91zM707 443h190v132H707zM972 25h183v126H972z"/>
+            <circle cx="805" cy="508" r="42"/>
+          </g>
+          <g class="buildings" filter="url(#buildingShadow)">
+            <g class="building" transform="translate(46 42)">
+              <path class="building-front" d="M0 18l76 18v74L0 90z"/>
+              <path class="building-side" d="M76 36l28-16v72l-28 18z"/>
+              <path class="building-roof" d="M0 18 29 0l75 20-28 16z"/>
+            </g>
+            <g class="building" transform="translate(166 30)">
+              <path class="building-front" d="M0 28l112 24v76L0 103z"/>
+              <path class="building-side" d="M112 52l29-18v75l-29 19z"/>
+              <path class="building-roof" d="M0 28 30 8l111 26-29 18z"/>
+            </g>
+            <g class="building tall" transform="translate(350 16)">
+              <path class="building-front" d="M0 43l75 17v96L0 138z"/>
+              <path class="building-side" d="M75 60l28-17v95l-28 18z"/>
+              <path class="building-roof" d="M0 43 29 25l74 18-28 17z"/>
+            </g>
+            <g class="building" transform="translate(478 40)">
+              <path class="building-front" d="M0 23l108 22v77L0 99z"/>
+              <path class="building-side" d="M108 45l32-18v76l-32 19z"/>
+              <path class="building-roof" d="M0 23 33 4l107 23-32 18z"/>
+            </g>
+            <g class="building slim" transform="translate(644 32)">
+              <path class="building-front" d="M0 34l59 15v82L0 116z"/>
+              <path class="building-side" d="M59 49l25-15v82l-25 15z"/>
+              <path class="building-roof" d="M0 34 25 18l59 16-25 15z"/>
+            </g>
+            <g class="building" transform="translate(797 63)">
+              <path class="building-front" d="M0 20l104 22v69L0 88z"/>
+              <path class="building-side" d="M104 42l29-16v68l-29 17z"/>
+              <path class="building-roof" d="M0 20 30 3l103 23-29 16z"/>
+            </g>
+            <g class="building" transform="translate(997 201)">
+              <path class="building-front" d="M0 21l114 25v82L0 102z"/>
+              <path class="building-side" d="M114 46l33-18v81l-33 19z"/>
+              <path class="building-roof" d="M0 21 34 2l113 26-33 18z"/>
+            </g>
+            <g class="building" transform="translate(61 431)">
+              <path class="building-front" d="M0 22l132 28v88L0 109z"/>
+              <path class="building-side" d="M132 50l34-18v86l-34 20z"/>
+              <path class="building-roof" d="M0 22 35 2l131 30-34 18z"/>
+            </g>
+            <g class="building" transform="translate(250 388)">
+              <path class="building-front" d="M0 28l91 22v83L0 109z"/>
+              <path class="building-side" d="M91 50l30-18v82l-30 19z"/>
+              <path class="building-roof" d="M0 28 31 9l90 23-30 18z"/>
+            </g>
+            <g class="building tall" transform="translate(390 273)">
+              <path class="building-front" d="M0 43l86 19v112L0 154z"/>
+              <path class="building-side" d="M86 62l31-18v110l-31 20z"/>
+              <path class="building-roof" d="M0 43 32 24l85 20-31 18z"/>
+            </g>
+            <g class="building" transform="translate(538 267)">
+              <path class="building-front" d="M0 24l110 25v82L0 105z"/>
+              <path class="building-side" d="M110 49l32-18v80l-32 20z"/>
+              <path class="building-roof" d="M0 24 33 5l109 26-32 18z"/>
+            </g>
+            <g class="building" transform="translate(722 244)">
+              <path class="building-front" d="M0 27l117 24v74L0 100z"/>
+              <path class="building-side" d="M117 51l31-17v73l-31 18z"/>
+              <path class="building-roof" d="M0 27 32 9l116 25-31 17z"/>
+            </g>
+            <g class="building" transform="translate(884 437)">
+              <path class="building-front" d="M0 25l116 26v85L0 109z"/>
+              <path class="building-side" d="M116 51l34-19v84l-34 20z"/>
+              <path class="building-roof" d="M0 25 35 5l115 27-34 19z"/>
+            </g>
+            <g class="building" transform="translate(1044 391)">
+              <path class="building-front" d="M0 22l92 20v88L0 109z"/>
+              <path class="building-side" d="M92 42l29-17v86l-29 19z"/>
+              <path class="building-roof" d="M0 22 30 4l91 21-29 17z"/>
+            </g>
+          </g>
+          <g class="local-roads">
+            <path d="M-30 224 C162 186 286 205 438 180 S778 133 1230 184"/>
+            <path d="M-30 375 C138 335 300 335 478 372 S830 438 1230 346"/>
+            <path d="M-20 622 C156 560 286 522 454 545 S770 640 1230 488"/>
+            <path d="M137 750 C213 615 311 535 452 455 S647 310 726 184"/>
+            <path d="M898 750 C854 631 867 532 938 431 S1086 232 1167 -20"/>
+          </g>
+          <g class="arterial-roads">
+            <path class="road-casing" d="M-40 609 C150 548 286 518 433 536 C568 553 616 433 715 383 C826 327 913 410 1020 320 C1080 270 1115 201 1140 128"/>
+            <path class="road-fill" d="M-40 609 C150 548 286 518 433 536 C568 553 616 433 715 383 C826 327 913 410 1020 320 C1080 270 1115 201 1140 128"/>
+            <path class="road-divider" d="M-40 609 C150 548 286 518 433 536 C568 553 616 433 715 383 C826 327 913 410 1020 320 C1080 270 1115 201 1140 128"/>
+          </g>
+          <g class="alternative-route">
+            <path d="M430 548 C510 615 635 663 752 615 C892 558 948 463 1018 319"/>
+          </g>
+          <g class="road-names">
+            <text x="82" y="257">科苑路</text>
+            <text x="487" y="245">学院路</text>
+            <text x="790" y="468">育才路</text>
+            <text x="1014" y="232">阳光大道</text>
+            <text x="324" y="657">软件园路</text>
+            <text x="911" y="610">锦绣路</text>
+          </g>
+          <g class="road-shields">
+            <g transform="translate(615 448)"><rect x="-29" y="-15" width="58" height="30" rx="8"/><text y="7" text-anchor="middle">S102</text></g>
+            <g transform="translate(1057 292)"><rect x="-34" y="-15" width="68" height="30" rx="8"/><text y="7" text-anchor="middle">学院路</text></g>
+          </g>
+          <g class="poi-labels">
+            <g transform="translate(188 330)"><circle r="14"/><text class="poi-icon" y="6" text-anchor="middle">P</text><text x="23" y="7">创新科技园</text></g>
+            <g transform="translate(690 197)"><circle r="14"/><text class="poi-icon" y="6" text-anchor="middle">树</text><text x="23" y="7">城市公园</text></g>
+            <g transform="translate(820 540)"><circle r="14"/><text class="poi-icon" y="6" text-anchor="middle">医</text><text x="23" y="7">育才社区医院</text></g>
+            <g transform="translate(1052 515)"><circle r="14"/><text class="poi-icon" y="6" text-anchor="middle">购</text><text x="23" y="7">阳光里</text></g>
+          </g>
+          <g class="route-road" filter="url(#softMapShadow)">
+            <path class="route-casing" d="M78 638 C202 573 306 526 430 546 C552 566 600 442 714 382 C826 324 907 409 1018 318 C1074 272 1110 206 1138 129"/>
+            <path class="route-passed" d="M78 638 C202 573 306 526 430 546"/>
+            <path class="route-live" d="M430 546 C552 566 600 442 714 382 C826 324 907 409 1018 318"/>
+            <path class="route-congested" d="M1018 318 C1074 272 1110 206 1138 129"/>
+            <path class="route-lane" d="M459 545 C554 550 617 432 718 383 C822 334 909 398 995 335"/>
+            <path class="route-arrow" d="M598 450l18-20 18 20"/>
+            <path class="route-arrow" d="M848 362l20 7-13 17"/>
+          </g>
+          <g class="traffic-light" transform="translate(903 381)">
+            <rect x="-12" y="-31" width="24" height="62" rx="12"/>
+            <circle cx="0" cy="-18" r="6"/>
+            <circle cx="0" cy="0" r="6"/>
+            <circle cx="0" cy="18" r="6"/>
+          </g>
+          <g class="traffic" id="traffic" transform="translate(916 270)">
+            <rect x="-124" y="-27" width="248" height="54" rx="14"/>
+            <text y="7" text-anchor="middle">前方拥堵 · 晚到 18 分钟</text>
+          </g>
+          <g class="departure-flag" transform="translate(448 603)">
+            <rect x="-78" y="-23" width="156" height="46" rx="13"/>
+            <circle cx="-52" cy="0" r="9"/>
+            <text x="-34" y="7">17:38 前出发</text>
+          </g>
+          <g class="resolved-flag" transform="translate(913 269)">
+            <rect x="-112" y="-27" width="224" height="54" rx="14"/>
+            <circle cx="-84" cy="0" r="10"/>
+            <path d="m-89 0 4 4 8-10"/>
+            <text x="-65" y="7">已处理 · 保持当前速度</text>
+          </g>
+          <g class="car-pin" transform="translate(430 546) rotate(-84)">
+            <circle r="31"/>
+            <path d="M0-18 15 18 0 11 -15 18z"/>
+          </g>
+          <g class="pin end" transform="translate(1138 129)">
+            <circle r="30"/>
+            <path d="M-10-8h20v16h-20z"/>
+          </g>
+          <g class="school-label" transform="translate(1050 130)">
+            <rect x="-68" y="-22" width="136" height="44" rx="12"/>
+            <text y="7" text-anchor="middle">阳光小学</text>
+          </g>
+        </svg>
+
+        <div class="amap-turn-card">
+          <div class="turn-symbol" aria-hidden="true">↰</div>
+          <div class="turn-copy">
+            <strong><span id="turnDistance">1.5</span><small id="turnUnit">公里</small></strong>
+            <em id="turnInstruction">左转进入 学院路高架</em>
+          </div>
+          <div class="lane-preview" aria-label="车道级导航，保持左侧两车道">
+            <div class="lane-scene" aria-hidden="true">
+              <i class="lane-route"></i>
+              <i class="lane-line one"></i>
+              <i class="lane-line two"></i>
+              <i class="lane-line three"></i>
+              <span class="lane-arrow first">↑</span>
+              <span class="lane-arrow second">↰</span>
+              <span class="lane-arrow third">↑</span>
+            </div>
+            <span id="laneGuidance">保持左侧 2 车道</span>
+          </div>
+        </div>
+
+        <div class="map-stage-chip" aria-live="polite">
+          <span id="mapStageIcon" aria-hidden="true">◎</span>
+          <strong id="mapStageLabel">路线预览</strong>
+        </div>
+
+        <div class="map-status-cluster">
+          <div class="speed-card">
+            <span>当前</span><strong id="speed">42</strong><em>km/h</em>
+          </div>
+          <div class="speed-limit"><span>限速</span><strong id="speedLimit">40</strong></div>
+          <div class="gear-card"><span>档位</span><strong id="gear">D</strong></div>
+        </div>
+
+        <div class="signal-countdown">
+          <span>绿波</span><strong id="lightCountdown">65</strong><em>秒</em>
+        </div>
+
+        <div class="map-tools" aria-label="地图快捷工具">
+          <button type="button" aria-label="放大地图">+</button>
+          <button type="button" aria-label="缩小地图">−</button>
+          <button type="button" aria-label="地图朝向">北</button>
+        </div>
+
+        <div class="right-progress" aria-label="路线进度">
+          <div class="progress-track"><i id="routeProgress"></i></div>
+          <span>全程</span>
+        </div>
+
+        <div class="map-bottom-sheet">
+          <div class="task-board" aria-label="任务责任">
+            <button class="task-card rigid" id="kidTask" type="button">
+              <span>刚性责任</span><strong>18:10 接孩子</strong><em id="kidTaskState">等待创建</em>
+            </button>
+            <button class="task-card flexible" id="shopTask" type="button">
+              <span>弹性任务</span><strong>之后去超市</strong><em id="shopTaskState">等待创建</em>
+            </button>
+          </div>
+          <button id="openRouteSummary" class="trip-summary" type="button" aria-label="打开行程详情">
+            <span><em>剩余</em><strong id="amapRemain">7.8 公里</strong></span>
+            <span><em>用时</em><strong id="amapDuration">18 分钟</strong></span>
+            <span><em>到达</em><strong id="amapArrival">18:10</strong></span>
+            <b aria-hidden="true">›</b>
+          </button>
+        </div>
+
+        <section class="device-stack" aria-label="多端连接状态">
+          <div class="device phone" id="phoneDevice">
+            <span>手机</span><strong id="phoneStatus">待创建任务</strong><small id="phoneDetail">PWA 已连接</small>
+          </div>
+          <div class="device watch" id="watchDevice">
+            <span>腕上</span><strong id="watchStatus">常态</strong><small id="watchDetail">低干扰</small>
+          </div>
+          <div class="device console">
+            <span>控制台</span><strong id="consoleStatus">待机</strong><small>模拟外部世界</small>
+          </div>
+        </section>
+      </section>
+    </section>
+
     <footer class="vehicle-bar">
-      <div class="climate"><button disabled>−</button><strong id="climateTemp">24.0°</strong><button disabled>+</button><span id="climateMode">AC 只读 · 自动</span></div>
-      <div class="voice"><i></i><strong id="voiceHint">手机端可语音创建任务</strong></div>
-      <button id="configBtn" class="config-entry" type="button">Agent</button>
-      <button id="confirmBtn" class="confirm" disabled><strong id="confirmLabel">无需确认</strong><span id="confirmSub">等待风险成立</span></button>
+      <button id="confirmBtn" class="confirm" disabled>
+        <span class="confirm-icon" aria-hidden="true">✓</span>
+        <span><strong id="confirmLabel">无需确认</strong><em id="confirmSub">等待风险成立</em></span>
+      </button>
+      <div class="voice">
+        <i aria-hidden="true"></i>
+        <strong id="voiceHint">手机端可语音创建任务</strong>
+      </div>
+      <button class="dock-button" type="button" data-detail="route" title="行程">
+        <span aria-hidden="true">⌖</span><em>行程</em>
+      </button>
+      <button class="dock-button" type="button" data-detail="drafts" title="消息">
+        <span aria-hidden="true">✉</span><em>消息</em>
+      </button>
+      <div class="climate">
+        <button disabled aria-label="降低温度">−</button>
+        <strong id="climateTemp">24.0°</strong>
+        <button disabled aria-label="升高温度">+</button>
+        <span id="climateMode">AC 只读 · 自动</span>
+      </div>
     </footer>
 
     <section class="demo" aria-label="Demo 控制台">
-      <header><strong>3-5 分钟 Demo 控制台</strong><span>模拟外部世界，不模拟产品闭环</span></header>
+      <header><strong>HMI 内置调试</strong><span>正式演示使用独立控制台</span></header>
       <div class="demo-grid">
         <button data-event="create_task">创建任务</button>
         <button data-event="meeting_delayed">会议延迟</button>
@@ -314,10 +446,7 @@
   <section class="config-panel" id="configPanel" aria-label="Agent 连接配置" hidden>
     <form class="config-card" id="configForm">
       <header>
-        <div>
-          <span>Agent Connection</span>
-          <strong>连接配置</strong>
-        </div>
+        <div><span>Agent Connection</span><strong>连接配置</strong></div>
         <button id="closeConfig" type="button" aria-label="关闭">×</button>
       </header>
       <label>
@@ -334,25 +463,25 @@
         <button id="useLocalAgent" type="button">本地 Agent</button>
         <button class="primary" type="submit">保存并重连</button>
       </div>
-      <p>默认公网 Agent 使用 LangChain 工具编排服务；旧版 Render 地址仅作为回退。Team Token 只保存在本浏览器。</p>
+      <p>默认使用统一 LangChain Agent；Team Token 只保存在当前浏览器。</p>
     </form>
   </section>
 
-  <section class="detail-panel" id="detailPanel" aria-label="二级信息" hidden>
+  <section class="detail-panel" id="detailPanel" aria-label="驾驶员侧二级信息" hidden>
     <div class="detail-card">
       <header>
-        <div>
-          <span>AURI Detail</span>
-          <strong id="detailTitle">详情</strong>
-        </div>
-        <button id="closeDetail" type="button" aria-label="关闭">×</button>
+        <button id="closeDetail" class="back-button" type="button" aria-label="返回主界面">‹</button>
+        <div><span>AURI</span><strong id="detailTitle">详情</strong></div>
       </header>
       <div id="detailBody" class="detail-body"></div>
     </div>
   </section>
 
-  <div class="portrait"><strong>请横屏展示 AURI 车机 HMI</strong><span>推荐 16:9 大屏或平板横屏。</span></div>
+  <div class="portrait">
+    <strong>请横屏展示 AURI 车机 HMI</strong>
+    <span>推荐 16:9 大屏或平板横屏。</span>
+  </div>
 
-  <script src="./app.js?v=auri-driver-agent-20260728"></script>
+  <script src="./app.js?v=auri-cockpit-20260728"></script>
 </body>
 </html>

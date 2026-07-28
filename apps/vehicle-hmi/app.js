@@ -24,6 +24,7 @@ const DRAFTS = {
 };
 
 const STAGE_VIEW = {
+  connecting: ["idle", "AURI 正在连接", "正在读取当前行程和座舱状态。", "正在同步当前状态。", "正在连接 Agent", "无需确认", "请稍候", "连接中"],
   off_vehicle_idle: ["idle", "等待任务创建", "手机端创建任务后，AURI 会识别刚性责任和弹性任务。", "暂无风险结论。", "手机端可语音创建任务", "无需确认", "等待风险成立", "待机"],
   pre_departure_warning: ["delayed", "最晚出发窗口被压缩", "会议延迟已写入 World State，腕上设备进入黄色提醒。", "仍可能准时，但容错时间明显减少。", "腕上已提醒，车机保持低干扰", "无需确认", "继续观察 ETA", "监控中"],
   handover_to_vehicle: ["warning", "正在交接到车机", "用户接近车辆，车机预加载驾驶页。", "准备进入驾驶模式，手机确认入口将失效。", "准备进入车辆", "无需确认", "等待车辆状态", "交接中"],
@@ -38,6 +39,24 @@ const STAGE_VIEW = {
   cooldown: ["done", "低干扰恢复", "压力源已处理，AURI 进入冷却状态。", "后续详情停车后在手机端复盘。", "AURI 保持安静", "已完成", "等待停车复盘", "恢复"],
   parked_review: ["done", "停车后复盘", "主交互端回到手机，车机结束本次处理。", "请在手机端查看消息、订单和 Action Ledger。", "手机端复盘", "车机结束", "手机为主端", "复盘"],
   error: ["risk", "连接或状态异常", "请检查 Agent 服务或控制台事件。", "当前无法确认动作，请使用控制台或手机兜底。", "连接异常", "不可确认", "等待状态恢复", "错误"]
+};
+
+const MAP_STAGE_VIEW = {
+  connecting: ["overview", "同步中", "", "正在读取路线和车辆状态", "等待 Agent", "◎"],
+  off_vehicle_idle: ["overview", "路线", "预览", "手机创建任务后准备学校路线", "路线预览", "⌖"],
+  pre_departure_warning: ["preview", "17:38", "前出发", "最晚出发窗口已压缩", "出发窗口提醒", "◷"],
+  handover_to_vehicle: ["preview", "路线", "流转中", "手机路线正在交接到车机", "导航流转中", "⇢"],
+  vehicle_observation: ["guidance", "1.5", "公里", "左转进入 学院路高架", "驾驶导航", "⌖"],
+  takeover_L2: ["alert", "420", "米", "前方拥堵，保持当前车道", "拥堵风险成立", "!"],
+  takeover_L3: ["alert", "420", "米", "高负荷保护，减少非必要提示", "高负荷保护", "!"],
+  planning: ["takeover", "420", "米", "继续当前路线，AURI 正在处理", "Agent 接管中", "●"],
+  service_prepared: ["takeover", "420", "米", "方案已准备，保持当前路线", "方案等待确认", "●"],
+  waiting_confirmation: ["takeover", "420", "米", "方案已准备，保持当前路线", "3 项动作待确认", "●"],
+  executing: ["takeover", "420", "米", "正在执行动作，继续安全驾驶", "动作执行中", "●"],
+  action_completed: ["recovery", "1.3", "公里", "方案已处理，继续安全驾驶", "压力源已处理", "✓"],
+  cooldown: ["recovery", "1.3", "公里", "保持当前路线，AURI 已降低打扰", "低干扰恢复", "✓"],
+  parked_review: ["overview", "已到达", "", "本次行程已结束", "停车后复盘", "✓"],
+  error: ["overview", "--", "", "导航状态暂不可用", "等待连接恢复", "!"]
 };
 
 const EVENT_BUTTONS = {
@@ -58,18 +77,22 @@ const ui = {
   watchStatus: $("#watchStatus"), watchDetail: $("#watchDetail"), consoleStatus: $("#consoleStatus"), kidTask: $("#kidTask"),
   shopTask: $("#shopTask"), kidTaskState: $("#kidTaskState"), shopTaskState: $("#shopTaskState"), agentTitle: $("#agentTitle"),
   agentText: $("#agentText"), realConclusion: $("#realConclusion"), riskBadge: $("#riskBadge"), actionState: $("#actionState"),
-  actionList: $("#actionList"), draftState: $("#draftState"), draftBody: $("#draftBody"), tabs: $(".tabs"), syncPhone: $("#syncPhone"),
+  actionList: $("#actionList"), draftState: $("#draftState") || $("#draftStateHidden"), draftBody: $("#draftBody"), tabs: $(".tabs"), syncPhone: $("#syncPhone"),
   syncWatch: $("#syncWatch"), syncWatchDot: $("#syncWatchDot"), syncCar: $("#syncCar"), voiceHint: $("#voiceHint"),
   confirmBtn: $("#confirmBtn"), confirmLabel: $("#confirmLabel"), confirmSub: $("#confirmSub"), timeline: $("#timeline"),
-  speedLimit: $("#speedLimit"), lightCountdown: $("#lightCountdown"), turnDistance: $("#turnDistance"), routeProgress: $("#routeProgress"),
+  speedLimit: $("#speedLimit"), lightCountdown: $("#lightCountdown"), turnDistance: $("#turnDistance"), turnUnit: $("#turnUnit"),
+  routeProgress: $("#routeProgress"), turnInstruction: $("#turnInstruction"), laneGuidance: $("#laneGuidance"),
+  mapStageLabel: $("#mapStageLabel"), mapStageIcon: $("#mapStageIcon"), mapWrap: $(".map-wrap"),
   amapRemain: $("#amapRemain"), amapDuration: $("#amapDuration"), amapArrival: $("#amapArrival"), configBtn: $("#configBtn"),
   configPanel: $("#configPanel"), configForm: $("#configForm"), closeConfig: $("#closeConfig"), configApiBase: $("#configApiBase"),
   configToken: $("#configToken"), usePublicAgent: $("#usePublicAgent"), useLegacyAgent: $("#useLegacyAgent"), useLocalAgent: $("#useLocalAgent"),
   connectionState: $("#connectionState"), connectionDetail: $("#connectionDetail"), acState: $("#acState"), acTemp: $("#acTemp"),
   acMode: $("#acMode"), acFan: $("#acFan"), climateTemp: $("#climateTemp"), climateMode: $("#climateMode"),
   quickAskBtn: $("#quickAskBtn"), openPlan: $("#openPlan"), openVehicle: $("#openVehicle"), openSync: $("#openSync"),
+  quickAskMode: $("#quickAskMode"), quickAskLabel: $("#quickAskLabel"),
   openDrafts: $("#openDrafts"), openRoute: $("#openRoute"), routeSummary: $("#routeSummary"), detailPanel: $("#detailPanel"),
-  closeDetail: $("#closeDetail"), detailTitle: $("#detailTitle"), detailBody: $("#detailBody")
+  closeDetail: $("#closeDetail"), detailTitle: $("#detailTitle"), detailBody: $("#detailBody"),
+  syncSummary: $("#syncSummary"), openRouteSummary: $("#openRouteSummary")
 };
 
 let worldState = null;
@@ -78,6 +101,9 @@ let lastRevision = -1;
 let eventSeq = 0;
 let pollTimer = null;
 let healthState = null;
+let activeDetail = null;
+let lastMapStage = null;
+let mapAnimationTimer = null;
 const timeline = [];
 
 function normalizeConfig(config, useProvidedStreamUrl = false) {
@@ -282,15 +308,41 @@ function parseStreamChunk(chunk) {
 }
 
 function stageView() {
+  if (!worldState) return STAGE_VIEW.connecting;
   return STAGE_VIEW[worldState?.stage] || STAGE_VIEW.error;
 }
 
+function mapStageView() {
+  if (!worldState) return MAP_STAGE_VIEW.connecting;
+  return MAP_STAGE_VIEW[worldState?.stage] || MAP_STAGE_VIEW.error;
+}
+
+function animateMapStage(nextStage) {
+  if (!ui.mapWrap || nextStage === lastMapStage) return;
+  lastMapStage = nextStage;
+  ui.mapWrap.classList.remove("is-stage-changing");
+  void ui.mapWrap.offsetWidth;
+  ui.mapWrap.classList.add("is-stage-changing");
+  window.clearTimeout(mapAnimationTimer);
+  mapAnimationTimer = window.setTimeout(() => ui.mapWrap.classList.remove("is-stage-changing"), 720);
+}
+
 function riskLabel(stage, risk) {
+  if (stage === "error") return "⚠ 连接异常";
   if (["action_completed", "cooldown", "parked_review"].includes(stage)) return "✓ 已处理";
   if (risk.pressure_level === "L3") return "⚠ L3 高负荷";
   if (risk.pressure_level === "L2") return "⚠ L2 接管";
   if (risk.pressure_level === "L1") return "⏱ L1 注意";
   return "○ L0 低干扰";
+}
+
+function driverConclusion(viewConclusion, risk, order) {
+  if (order?.error_code) return `服务暂不可用，已保留消息方案。`;
+  if (risk.late_minutes > 0 && worldState?.confirmation?.status === "pending") {
+    return "继续加速无法明显缩短时间。方案已准备，确认后执行。";
+  }
+  const output = worldState?.output?.conclusion?.trim();
+  return output && output.length <= 42 ? output : viewConclusion;
 }
 
 function formatTime(value) {
@@ -316,8 +368,22 @@ function fanLabel(speed) {
   return { low: "低", medium: "中", high: "高" }[speed] || "中";
 }
 
+function orderStatusLabel(status) {
+  return {
+    awaiting_confirmation: "待确认",
+    completed: "已完成",
+    blocked: "已阻断",
+    failed: "失败",
+    preview: "预览"
+  }[status] || status || "待准备";
+}
+
 function actionText(action) {
-  const prefix = action.type === "message" ? "消息" : action.type === "service_order" ? "模拟订单" : "任务调整";
+  const prefix = action.type === "message"
+    ? `${action.target || "联系人"}消息`
+    : action.type === "service_order"
+      ? "超市配送"
+      : "任务调整";
   const status = {
     awaiting_confirmation: "待确认",
     completed: "已完成",
@@ -326,7 +392,7 @@ function actionText(action) {
     planned: "已规划",
     ready: "已准备"
   }[action.status] || action.status;
-  return `${prefix} · ${action.target} · ${status}：${action.summary}`;
+  return `${prefix} · ${status}`;
 }
 
 function renderActions() {
@@ -335,7 +401,7 @@ function renderActions() {
     ui.actionList.innerHTML = "<li>等待 Agent 生成动作组</li>";
     return;
   }
-  ui.actionList.innerHTML = actions.map((action) => {
+  ui.actionList.innerHTML = actions.slice(0, 3).map((action) => {
     const cls = action.status === "completed" ? "done" : action.status === "awaiting_confirmation" ? "pending" : "";
     return `<li class="${cls}">${actionText(action)}</li>`;
   }).join("");
@@ -371,6 +437,12 @@ function detailItem(label, value, cls = "") {
   return `<div class="detail-item ${cls}"><span>${label}</span><strong>${value}</strong></div>`;
 }
 
+function setActiveLauncher(kind = "home") {
+  document.querySelectorAll(".launch[data-detail], .launch[data-home]").forEach((button) => {
+    button.classList.toggle("active", kind === "home" ? button.hasAttribute("data-home") : button.dataset.detail === kind);
+  });
+}
+
 function openDetail(kind) {
   const risk = worldState?.risk || { pressure_level: "L0", late_minutes: 0 };
   const eta = formatTime(worldState?.eta);
@@ -399,7 +471,7 @@ function openDetail(kind) {
         ${detailItem("刚性责任", pickup ? "18:10 接孩子 · 不可后置" : "等待手机端创建任务")}
         ${detailItem("弹性任务", grocery ? `${grocery.status === "rescheduled" ? "已后置" : "可调整"} · 之后去超市` : "等待识别弹性任务")}
         ${detailItem("动作组", actions.length ? `${actions.length} 个动作 · ${worldState?.confirmation?.status === "pending" ? "等待确认" : "已同步"}` : "尚未生成动作组")}
-        ${detailItem("服务方案", order ? `${order.status} · ${order.total || 0} 元 · ${order.delivery_window || "待定"}` : "未生成模拟配送方案")}
+        ${detailItem("服务方案", order ? `${orderStatusLabel(order.status)} · ${order.total || 0} 元 · ${order.delivery_window || "待定"}` : "未生成模拟配送方案")}
       </div>
       <small>主屏保留一句判断和一个主要确认入口，复杂内容进入二级页。</small>
     `;
@@ -436,16 +508,22 @@ function openDetail(kind) {
       <small>三端读取同一状态版本，确保现场联动可追踪。</small>
     `;
   }
+  activeDetail = kind;
+  setActiveLauncher(kind);
   ui.detailPanel.hidden = false;
 }
 
 function closeDetail() {
+  activeDetail = null;
   ui.detailPanel.hidden = true;
+  setActiveLauncher("home");
 }
 
 function render() {
   const view = stageView();
+  const mapView = mapStageView();
   const [className, title, text, conclusion, voice, confirmLabel, confirmSub, actionState] = view;
+  const [mapStage, mapDistance, mapUnit, mapInstruction, mapLabel, mapIcon] = mapView;
   const risk = worldState?.risk || { pressure_level: "L0", late_minutes: 0 };
   const eta = formatTime(worldState?.eta);
   const pickup = pickupTask();
@@ -462,7 +540,8 @@ function render() {
   const acFan = fanLabel(vehicleState.fan_speed);
   const showDebugDemo = queryParams.get("debug") === "1" || queryParams.get("demo") === "1";
 
-  ui.root.className = `screen state-${className}${showDebugDemo ? " debug-demo" : ""}`;
+  ui.root.className = `screen state-${className} map-stage-${mapStage}${showDebugDemo ? " debug-demo" : ""}`;
+  animateMapStage(mapStage);
   ui.speed.textContent = driving ? "42" : "--";
   ui.headline.textContent = worldState?.output?.conclusion || text;
   ui.eta.textContent = eta;
@@ -473,7 +552,7 @@ function render() {
   ui.phoneDetail.textContent = pickup ? "任务已创建" : "等待任务";
   ui.watchStatus.textContent = worldState?.wearable?.text || "AURI 就绪";
   ui.watchDetail.textContent = `${worldState?.wearable?.mode || "idle"} · ${worldState?.wearable?.haptic || "none"}`;
-  ui.consoleStatus.textContent = `r${worldState?.revision ?? 0} · ${worldState?.stage || "未连接"}`;
+  ui.consoleStatus.textContent = worldState ? "状态已同步" : "待机";
   ui.connectionState.textContent = worldState ? "已连接" : "未连接";
   ui.connectionDetail.textContent = healthState
     ? `${healthState.llm_framework || "agent"} · r${worldState?.revision ?? "--"}`
@@ -484,7 +563,7 @@ function render() {
   ui.shopTaskState.textContent = grocery ? (grocery.status === "rescheduled" ? "已后置" : "可调整") : "等待创建";
   ui.agentTitle.textContent = title;
   ui.agentText.textContent = text;
-  ui.realConclusion.textContent = worldState?.output?.conclusion || (order?.error_code ? `服务异常：${order.error_code}，驾驶中不展开复杂选择。` : conclusion);
+  ui.realConclusion.textContent = driverConclusion(conclusion, risk, order);
   ui.riskBadge.textContent = riskLabel(worldState?.stage, risk);
   ui.actionState.textContent = actionState;
   renderActions();
@@ -492,10 +571,23 @@ function render() {
   ui.syncPhone.textContent = worldState?.primary_surface === "mobile" ? "主端" : "同步";
   ui.syncWatch.textContent = worldState?.wearable?.mode || "idle";
   ui.syncCar.textContent = worldState?.primary_surface === "vehicle_hmi" ? "主端" : "只读";
+  if (ui.syncSummary) ui.syncSummary.textContent = worldState ? `r${worldState.revision} · 状态一致` : "等待连接";
   ui.syncWatchDot.className = worldState?.wearable?.mode === "completed" ? "done" : worldState?.wearable?.mode === "warning" ? "warn" : "ok";
-  ui.routeSummary.textContent = risk.late_minutes > 0 ? `晚到 ${risk.late_minutes} 分钟` : eta === "--:--" ? "等待路线" : `${eta} 到达`;
+  if (ui.routeSummary) {
+    ui.routeSummary.textContent = risk.late_minutes > 0 ? `晚到 ${risk.late_minutes} 分钟` : eta === "--:--" ? "等待路线" : `${eta} 到达`;
+  }
   ui.quickAskBtn.disabled = !canQuickAsk();
   ui.quickAskBtn.classList.toggle("enabled", canQuickAsk());
+  if (["action_completed", "cooldown", "parked_review"].includes(worldState?.stage)) {
+    ui.quickAskMode.textContent = "低干扰";
+    ui.quickAskLabel.textContent = "需要时再叫我";
+  } else if (worldState?.confirmation?.status === "pending") {
+    ui.quickAskMode.textContent = "方案已准备";
+    ui.quickAskLabel.textContent = "请在下方确认处理";
+  } else {
+    ui.quickAskMode.textContent = "语音求助";
+    ui.quickAskLabel.textContent = "我还来得及吗？";
+  }
   ui.voiceHint.textContent = voice;
   ui.confirmBtn.disabled = !canConfirm;
   ui.confirmBtn.classList.toggle("enabled", canConfirm);
@@ -509,11 +601,25 @@ function render() {
   ui.climateMode.textContent = `${acOn ? "AC 开启" : "AC 关闭"} · ${acMode} · 风量${acFan}`;
   ui.speedLimit.textContent = driving ? "40" : "--";
   ui.lightCountdown.textContent = risk.late_minutes > 0 ? "21" : "65";
-  ui.turnDistance.textContent = driving ? "1.5" : "--";
+  ui.turnDistance.textContent = mapDistance;
+  ui.turnUnit.textContent = mapUnit;
+  ui.turnInstruction.textContent = mapInstruction;
+  ui.laneGuidance.textContent = mapStage === "overview"
+    ? "等待车辆导航信号"
+    : mapStage === "preview"
+      ? "路线与车辆状态同步"
+      : mapStage === "alert"
+        ? "保持当前车道"
+        : mapStage === "takeover"
+          ? "无需额外操作"
+          : "保持左侧 2 车道";
+  ui.mapStageLabel.textContent = mapLabel;
+  ui.mapStageIcon.textContent = mapIcon;
   ui.routeProgress.style.height = worldState?.stage === "action_completed" ? "76%" : risk.late_minutes > 0 ? "58%" : "35%";
   ui.amapRemain.textContent = driving ? "7.8 公里" : "--";
   ui.amapDuration.textContent = risk.late_minutes > 0 ? "36 分钟" : driving ? "18 分钟" : "--";
   ui.amapArrival.textContent = eta;
+  if (activeDetail && !ui.detailPanel.hidden) openDetail(activeDetail);
 }
 
 document.querySelector(".demo")?.addEventListener("click", async (event) => {
@@ -555,6 +661,15 @@ ui.openPlan.addEventListener("click", () => openDetail("plan"));
 ui.openVehicle.addEventListener("click", () => openDetail("vehicle"));
 ui.openSync.addEventListener("click", () => openDetail("sync"));
 ui.openRoute.addEventListener("click", () => openDetail("route"));
+ui.openRouteSummary?.addEventListener("click", () => openDetail("route"));
+ui.kidTask.addEventListener("click", () => openDetail("plan"));
+ui.shopTask.addEventListener("click", () => openDetail("plan"));
+document.querySelectorAll("[data-detail]").forEach((button) => {
+  button.addEventListener("click", () => openDetail(button.dataset.detail));
+});
+document.querySelectorAll("[data-home], .launch-brand").forEach((button) => {
+  button.addEventListener("click", closeDetail);
+});
 ui.quickAskBtn.addEventListener("click", async () => {
   if (!canQuickAsk()) return;
   ui.quickAskBtn.disabled = true;
@@ -579,6 +694,11 @@ ui.configBtn.addEventListener("click", openConfig);
 ui.closeConfig.addEventListener("click", closeConfig);
 ui.configPanel.addEventListener("click", (event) => {
   if (event.target === ui.configPanel) closeConfig();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (!ui.configPanel.hidden) closeConfig();
+  if (!ui.detailPanel.hidden) closeDetail();
 });
 ui.usePublicAgent.addEventListener("click", () => {
   ui.configApiBase.value = PUBLIC_AGENT_API;
@@ -605,6 +725,8 @@ window.AURI_HMI = {
 };
 
 render();
+const initialDetail = queryParams.get("detail");
+if (["plan", "drafts", "route", "sync", "vehicle"].includes(initialDetail)) openDetail(initialDetail);
 loadHealth("health").catch((error) => log("health-error", friendlyError(error)));
 loadState("load").then(() => {
   connectStream();
