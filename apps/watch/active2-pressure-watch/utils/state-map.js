@@ -97,7 +97,24 @@ const LEGACY_STATE_MAP = {
 const LEGACY_HAPTIC_MAP = {
   none: HAPTIC_PATTERNS.NONE,
   short: HAPTIC_PATTERNS.SINGLE_SHORT,
-  rhythmic: HAPTIC_PATTERNS.TRIPLE
+  rhythmic: HAPTIC_PATTERNS.TRIPLE,
+  double_short: HAPTIC_PATTERNS.DOUBLE_SHORT,
+  single_short: HAPTIC_PATTERNS.SINGLE_SHORT,
+  single_pulse: HAPTIC_PATTERNS.SINGLE_SHORT,
+  triple: HAPTIC_PATTERNS.TRIPLE,
+  three_beat: HAPTIC_PATTERNS.TRIPLE,
+  gentle_short: HAPTIC_PATTERNS.GENTLE_SHORT,
+  soft_short: HAPTIC_PATTERNS.GENTLE_SHORT,
+  error_combo: HAPTIC_PATTERNS.ERROR_COMBO,
+  error_once: HAPTIC_PATTERNS.ERROR_COMBO
+};
+
+const NAMED_COLOR_MAP = {
+  navy: AURI_COLORS.PROCESSING,
+  blue: AURI_COLORS.PROCESSING,
+  yellow: AURI_COLORS.WARNING,
+  green: AURI_COLORS.SUCCESS,
+  red: AURI_COLORS.CRITICAL
 };
 
 function parseColor(input, fallback) {
@@ -110,7 +127,19 @@ function parseColor(input, fallback) {
     return Number.isNaN(parsed) ? fallback : parsed;
   }
 
+  if (typeof input === "string" && NAMED_COLOR_MAP[input]) {
+    return NAMED_COLOR_MAP[input];
+  }
+
   return fallback;
+}
+
+function normalizeHaptic(input, fallback) {
+  if (!input) {
+    return fallback;
+  }
+
+  return LEGACY_HAPTIC_MAP[input] || fallback;
 }
 
 export function isSupportedMode(mode) {
@@ -135,7 +164,7 @@ export function normalizeWearableCommand(input = {}) {
     text: input.text || input.subtitle || config.text,
     color: parseColor(input.color, config.color),
     dimColor: parseColor(input.dimColor, config.dimColor),
-    haptic: input.haptic || LEGACY_HAPTIC_MAP[input.vibration] || config.haptic,
+    haptic: normalizeHaptic(input.haptic || input.vibration, config.haptic),
     duration_ms: input.duration_ms || input.durationMs || 3000,
     version: input.version || input.revision || 0,
     source: input.source || "local"

@@ -26,6 +26,7 @@ import com.pressureagent.mobile.ui.theme.*
 fun ProfileScreen(
     viewModel: ProfileViewModel = hiltViewModel(),
     onNavigateToReview: () -> Unit = {},
+    onNavigateToWearable: () -> Unit = {},
     onNavigateToDebug: () -> Unit = {},
     onNavigateToLogViewer: () -> Unit = {},
 ) {
@@ -189,6 +190,8 @@ fun ProfileScreen(
         Spacer(Modifier.height(2.dp))
 
         // ─── 腕上设备 ──────────────────────────────────────────────────────
+        val gatewayConnected = state.wearableGateway.lastSideContactAt > 0L &&
+            System.currentTimeMillis() - state.wearableGateway.lastSideContactAt <= 60_000L
         val wearableSubtitle = state.wearable?.let { w ->
             val mode = when (w.mode) {
                 WearableMode.IDLE -> "待命"
@@ -198,13 +201,13 @@ fun ProfileScreen(
                 WearableMode.COMPLETED -> "✅ 完成"
                 WearableMode.ERROR -> "❌ 异常"
             }
-            "${if (w.connected) "已连接" else "未连接"} · $mode"
-        } ?: "未配对"
+            "${if (w.connected || gatewayConnected) "已连接" else "未连接"} · $mode"
+        } ?: if (gatewayConnected) "已连接 · 调试可用" else "未配对"
         EntryCard(
             icon = "⌚",
             title = "腕上设备",
             subtitle = wearableSubtitle,
-            onClick = { /* TODO: wearable detail page */ },
+            onClick = onNavigateToWearable,
         )
 
         Spacer(Modifier.height(10.dp))
