@@ -35,7 +35,7 @@ fun WearableScreen(viewModel: WearableViewModel = hiltViewModel()) {
             Column(modifier = Modifier.padding(20.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("⌚ 腕上设备", fontWeight = FontWeight.SemiBold, color = AuriNavy)
-                    val connected = state.wearable?.connected == true
+                    val connected = state.wearable?.connected == true || state.gateway.isWatchRecentlySeen()
                     Surface(shape = RoundedCornerShape(8.dp), color = if (connected) AuriSuccess.copy(alpha = 0.1f) else Color(0xFFF0F0F0)) {
                         Text(
                             if (connected) "已连接" else "未连接",
@@ -203,6 +203,11 @@ private fun hapticLabel(h: HapticPattern): String = when (h) {
     HapticPattern.THREE_BEAT -> "三拍"
     HapticPattern.SOFT_SHORT -> "柔和短震"
     HapticPattern.ERROR_ONCE -> "错误震"
+}
+
+private fun com.pressureagent.mobile.data.wearablegateway.WearableGatewaySnapshot.isWatchRecentlySeen(): Boolean {
+    val lastSeen = lastSideContactAt
+    return lastSeen > 0L && System.currentTimeMillis() - lastSeen <= 60_000L
 }
 
 private fun summarizeAck(ack: JsonObject?): String {

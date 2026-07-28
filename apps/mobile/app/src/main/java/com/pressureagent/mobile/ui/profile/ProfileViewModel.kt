@@ -5,8 +5,11 @@ import androidx.lifecycle.viewModelScope
 import com.pressureagent.mobile.data.local.AppLogger
 import com.pressureagent.mobile.data.remote.AgentApiService
 import com.pressureagent.mobile.data.repository.WorldStateRepository
+import com.pressureagent.mobile.data.wearablegateway.WearableGateway
+import com.pressureagent.mobile.data.wearablegateway.WearableGatewaySnapshot
 import com.pressureagent.mobile.domain.model.*
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,6 +20,7 @@ import javax.inject.Inject
 data class ProfileUiState(
     val profile: Profile? = null,
     val wearable: Wearable? = null,
+    val wearableGateway: WearableGatewaySnapshot = WearableGatewaySnapshot(),
     val hasReviewData: Boolean = false,
     val reviewSummary: String = "",
     val completedActions: List<Action> = emptyList(),
@@ -41,6 +45,7 @@ enum class ProfilePreset(val label: String, val subtitle: String) {
 class ProfileViewModel @Inject constructor(
     private val repository: WorldStateRepository,
     private val api: AgentApiService,
+    private val wearableGateway: WearableGateway,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProfileUiState())
@@ -55,15 +60,19 @@ class ProfileViewModel @Inject constructor(
         }
 
     init {
+        wearableGateway.start()
         viewModelScope.launch {
             try {
-                repository.worldState.collect { ws ->
+                repository.worldState.combine(wearableGateway.state) { ws, gateway ->
+                    ws to gateway
+                }.collect { (ws, gateway) ->
                     val completed = ws.actions.filter { it.status == ActionStatus.COMPLETED }
                     val completedOrders = ws.serviceOrders.filter { it.status == ServiceOrderStatus.SUBMITTED }
                     _uiState.update {
                         it.copy(
                             profile = ws.profile,
                             wearable = ws.wearable,
+                            wearableGateway = gateway,
                             hasReviewData = ws.actionLedger.isNotEmpty() || completed.isNotEmpty() || completedOrders.isNotEmpty(),
                             reviewSummary = buildReviewSummary(completed, completedOrders),
                             completedActions = completed,

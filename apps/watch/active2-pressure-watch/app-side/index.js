@@ -39,8 +39,10 @@ const MOCK_UNSUPPORTED_STATE = {
 let timers = [];
 let heartbeatTimer = null;
 let gatewayPollTimer = null;
-let lastGatewayCommandId = "";
-let lastGatewaySensorRequestId = "";
+let lastAckedGatewayCommandId = "";
+let pendingGatewayCommandId = "";
+let lastCompletedSensorRequestId = "";
+let pendingSensorRequestId = "";
 let gatewayReachable = null;
 
 function getMethod(message = {}) {
@@ -133,7 +135,7 @@ function startGatewayPolling(service) {
 }
 
 async function pollGateway(service) {
-  const path = `/v1/watch/outbox?last_command_id=${encodeURIComponent(lastGatewayCommandId)}&last_sensor_request_id=${encodeURIComponent(lastGatewaySensorRequestId)}`;
+  const path = `/v1/watch/outbox?last_command_id=${encodeURIComponent(lastAckedGatewayCommandId)}&last_sensor_request_id=${encodeURIComponent(lastCompletedSensorRequestId)}`;
   const data = await gatewayRequest(service, path);
   if (!data || data.result !== "ok") {
     return;
@@ -141,18 +143,18 @@ async function pollGateway(service) {
 
   if (data.set_state && data.set_state.params) {
     const commandId = data.set_state.params.command_id || "";
-    if (commandId && commandId !== lastGatewayCommandId) {
+    if (commandId && commandId !== lastAckedGatewayCommandId) {
       if (sendToDevice(service, "watch.setState", data.set_state.params)) {
-        lastGatewayCommandId = commandId;
+        pendingGatewayCommandId = commandId;
       }
     }
   }
 
   if (data.sensor_request && data.sensor_request.params) {
     const requestId = data.sensor_request.params.request_id || "";
-    if (requestId && requestId !== lastGatewaySensorRequestId) {
+    if (requestId && requestId !== lastCompletedSensorRequestId) {
       if (sendToDevice(service, "watch.sensorRequest", data.sensor_request.params)) {
-        lastGatewaySensorRequestId = requestId;
+        pendingSensorRequestId = requestId;
       }
     }
   }
@@ -222,6 +224,7 @@ AppSideService(BaseSideService({
     const method = getMethod(message);
     if (method === "watch.hello" || method === "watch.ack" || method === "watch.sensor" || method === "watch.pong") {
       logSide(this, `AURI_SIDE_CALL ${method}`, JSON.stringify(message));
+      markGatewayDeliveryComplete(message);
       postInbox(this, message);
     }
   },
@@ -232,3 +235,29 @@ AppSideService(BaseSideService({
     }
   }
 }));
+
+function markGatewayDeliveryComplete(message = {}) {
+  const params = message.params || message;
+  const method = getMethod(message);
+
+  if (method === "watch.ack") {
+    const commandId = params.command_id || "";
+    const result = params.result || "";
+    if (commandId && (result === "ok" || result === "duplicate")) {
+      lastAckedGatewayCommandId = commandId;
+      if (pendingGatewayCommandId === commandId) {
+        pendingGatewayCommandId = "";
+      }
+    }
+  }
+
+  if (method === "watch.sensor") {
+    const requestId = params.request_id || pendingSensorRequestId || "";
+    if (requestId) {
+      lastCompletedSensorRequestId = requestId;
+      if (pendingSensorRequestId === requestId) {
+        pendingSensorRequestId = "";
+      }
+    }
+  }
+}
