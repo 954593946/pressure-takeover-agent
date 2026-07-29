@@ -5,8 +5,10 @@ from fastapi.testclient import TestClient
 
 from auri_agent.agent import AuriAgent
 from auri_agent.app import create_app
+from auri_agent.chat import ChatAgent
 from auri_agent.config import Settings
 from auri_agent.models import initial_state
+from auri_agent.runtime import AgentRuntime
 from auri_agent.tools import AURI_TOOLS, AgentToolbox, TaskDraft
 
 
@@ -127,6 +129,91 @@ async def test_completed_tool_state_survives_final_model_timeout() -> None:
     assert "机场" in result.reply
 
 
+@pytest.mark.asyncio
+async def test_standalone_ac_command_skips_model_and_preserves_existing_tasks() -> None:
+    class MustNotRunGraph:
+        async def ainvoke(self, *_args, **_kwargs) -> dict:
+            raise AssertionError("standalone AC command must not be routed through prior chat history")
+
+    state = initial_state("demo_ac_after_task")
+    setup = AgentToolbox(state, event_id="evt_setup_task", source="mobile", original_text="创建任务")
+    setup.create_tasks([task("今晚9点打游戏", "flexible")], replace_existing=False)
+
+    agent = AuriAgent(Settings(llm_enabled=False, openai_api_key=""))
+    agent.graph = MustNotRunGraph()
+    result = await agent.handle(
+        "然后请帮我打开空调",
+        state,
+        source="mobile",
+        event_id="evt_open_ac",
+    )
+
+    assert result.mode == "deterministic_tool"
+    assert result.called_tools == ["control_ac"]
+    assert result.state.vehicle_state.ac_on is True
+    assert [item.title for item in result.state.tasks] == ["今晚9点打游戏"]
+    assert "空调已打开" in result.reply
+
+
+def test_ac_status_question_is_not_mistaken_for_a_control_command() -> None:
+    assert AuriAgent._parse_explicit_ac_command("空调打开了吗？") is None
+    assert AuriAgent._parse_explicit_ac_command("现在空调是不是打开的？") is None
+
+
+@pytest.mark.asyncio
+async def test_ac_temperature_and_close_commands_are_deterministic() -> None:
+    agent = AuriAgent(Settings(llm_enabled=False, openai_api_key=""))
+    opened = await agent.handle(
+        "把空调开到22度",
+        initial_state("demo_ac_temperature"),
+        source="mobile",
+        event_id="evt_ac_temperature",
+    )
+    closed = await agent.handle(
+        "关闭空调",
+        opened.state,
+        source="mobile",
+        event_id="evt_ac_close",
+    )
+
+    assert opened.called_tools == ["control_ac"]
+    assert opened.state.vehicle_state.ac_on is True
+    assert opened.state.vehicle_state.ac_target_temp == 22
+    assert closed.called_tools == ["control_ac"]
+    assert closed.state.vehicle_state.ac_on is False
+    assert "空调已关闭" in closed.reply
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_opens_ac_on_first_request_after_task_creation() -> None:
+    runtime = AgentRuntime(Settings(llm_enabled=False, openai_api_key=""))
+    chat = ChatAgent(runtime)
+    initial = await runtime.get_state()
+
+    async for _event in chat.chat_stream(
+        "请记一个今天晚上9点打游戏的任务",
+        initial.session_id,
+    ):
+        pass
+    events = [
+        event
+        async for event in chat.chat_stream(
+            "打开空调",
+            initial.session_id,
+        )
+    ]
+    state = await runtime.get_state()
+
+    tool_names = [
+        event["function"]["name"]
+        for event in events
+        if event.get("type") == "tool_call"
+    ]
+    assert tool_names == ["control_ac"]
+    assert state.vehicle_state.ac_on is True
+    assert len(state.tasks) == 1
+
+
 def test_user_utterance_fallback_changes_state_only_when_needed() -> None:
     app = create_app(Settings(llm_enabled=False, openai_api_key="", agent_shared_token=""))
     client = TestClient(app)
@@ -156,6 +243,11 @@ def test_user_utterance_fallback_changes_state_only_when_needed() -> None:
     assert len(created["state"]["tasks"]) == 1
     assert "超市" in created["state"]["tasks"][0]["title"]
     assert created["state"]["output"]["conclusion"] != greeting["state"]["output"]["conclusion"]
+
+    ac = utterance("evt_ac", "打开空调")
+    assert ac["state"]["vehicle_state"]["ac_on"] is True
+    assert len(ac["state"]["tasks"]) == 1
+    assert "空调已打开" in ac["state"]["output"]["conclusion"]
 
     status = utterance("evt_status", "现在有什么任务？")
     assert status["state"]["actions"] == []

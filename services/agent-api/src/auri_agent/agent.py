@@ -79,6 +79,27 @@ class AuriAgent:
         event_id: str,
     ) -> AgentRunResult:
         original = state.model_copy(deep=True)
+        explicit_ac = self._parse_explicit_ac_command(text)
+        if explicit_ac is not None:
+            toolbox = AgentToolbox(
+                original.model_copy(deep=True),
+                event_id=event_id,
+                source=source,
+                original_text=text,
+            )
+            toolbox.control_ac(**explicit_ac)
+            reply = self._state_reply(toolbox.state, toolbox.called_tools)
+            reply = self._ground_reply(reply, toolbox.state, toolbox.called_tools)
+            self._apply_reply(toolbox.state, reply)
+            self.last_mode = "deterministic_tool"
+            self.last_tools = list(toolbox.called_tools)
+            return AgentRunResult(
+                state=toolbox.state,
+                reply=reply,
+                mode=self.last_mode,
+                called_tools=list(toolbox.called_tools),
+            )
+
         if self.graph is not None:
             toolbox = AgentToolbox(
                 original.model_copy(deep=True),
@@ -126,6 +147,67 @@ class AuriAgent:
         self.last_mode = fallback.mode
         self.last_tools = list(fallback.called_tools)
         return fallback
+
+    @staticmethod
+    def _parse_explicit_ac_command(text: str) -> dict[str, Any] | None:
+        """Recognise a standalone, unambiguous AC command without consulting chat history."""
+        compact = re.sub(r"[\s，。！？!?、,.；;：:]", "", text).lower()
+        if "空调" not in compact:
+            return None
+        if compact.endswith("吗") or any(marker in compact for marker in ("是否", "是不是", "有没有", "空调状态")):
+            return None
+
+        # Compound requests still go through the agent so another intent is not
+        # silently discarded by the deterministic fast path.
+        other_intent_markers = (
+            "任务",
+            "提醒",
+            "日程",
+            "会议",
+            "路况",
+            "消息",
+            "下单",
+            "采购",
+            "超市",
+            "接孩子",
+        )
+        if any(marker in compact for marker in other_intent_markers):
+            return None
+
+        off_markers = (
+            "关空调",
+            "关闭空调",
+            "把空调关",
+            "空调关掉",
+            "空调关闭",
+            "不要开空调",
+            "别开空调",
+            "不用开空调",
+        )
+        on_markers = (
+            "开空调",
+            "打开空调",
+            "开启空调",
+            "空调打开",
+            "空调开启",
+            "空调开一下",
+        )
+        turn_off = any(marker in compact for marker in off_markers)
+        turn_on = any(marker in compact for marker in on_markers)
+        temperature_match = re.search(
+            r"(?:调到|设为|设置为|调成|开到|到)(\d{1,2})(?:度|℃)",
+            compact,
+        )
+
+        if turn_off:
+            return {"ac_on": False}
+        if not turn_on and temperature_match is None:
+            return None
+
+        command: dict[str, Any] = {"ac_on": True}
+        if temperature_match is not None:
+            command["target_temp"] = float(temperature_match.group(1))
+        return command
 
     async def compose_confirmation_reply(self, state: WorldState, *, decision: str) -> str:
         if self.model is not None:
@@ -259,6 +341,12 @@ class AuriAgent:
             changed = [task for task in state.tasks if task.status == "rescheduled"]
             if changed:
                 return f"已把“{changed[-1].title}”调整到新的时间，我会按更新后的安排继续跟进。"
+        if "control_ac" in called_tools:
+            vehicle = state.vehicle_state
+            if not vehicle.ac_on:
+                return "空调已关闭，车机和手机状态已经同步。"
+            temperature = int(vehicle.ac_target_temp) if vehicle.ac_target_temp.is_integer() else vehicle.ac_target_temp
+            return f"空调已打开，当前设为{temperature}℃，车机和手机状态已经同步。"
         if "report_meeting_delay" in called_tools:
             return f"会议延迟已经记下，当前压力等级为{state.risk.pressure_level.value}。我会继续结合任务和路况判断是否需要介入。"
         if "get_status" in called_tools:
