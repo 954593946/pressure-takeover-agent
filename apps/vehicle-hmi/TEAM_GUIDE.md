@@ -58,7 +58,7 @@
 不需要拉代码或启动静态服务器，横屏打开：
 
 ```text
-https://wangwang20.github.io/auri-pressure-takeover-web/apps/vehicle-hmi/
+https://954593946.github.io/pressure-takeover-agent/apps/vehicle-hmi/
 ```
 
 第一次使用仍需点击左侧 `连接`，填写团队 Agent API 和负责人单独提供的 Team Token。公网静态页面不包含 Token、OpenAI API Key 或后端环境变量。

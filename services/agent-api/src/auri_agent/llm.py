@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from .config import Settings
 from .models import Task
+from .prompts import TASK_RIGIDITY_POLICY
 
 
 logger = logging.getLogger(__name__)
@@ -21,10 +22,16 @@ class ExtractedTask(BaseModel):
     title: str = Field(min_length=1, max_length=80)
     scheduled_at: datetime | None = None
     location: str | None = Field(default=None, max_length=120)
-    task_type: Literal["rigid", "flexible"]
+    task_type: Literal["rigid", "flexible"] = Field(
+        description="按系统责任后果规则判断；具体时间本身不能作为 rigid 依据"
+    )
     priority: Literal["low", "medium", "high"]
-    adjustable: bool
-    waiting_party: list[str] = Field(default_factory=list, max_length=10)
+    adjustable: bool = Field(description="通常 rigid=false、flexible=true；以任务真实可调整性为准")
+    waiting_party: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="只填写用户明确提到或上下文已经存在的等待方，不得臆造",
+    )
     capability_tags: list[str] = Field(default_factory=list, max_length=10)
 
 
@@ -121,7 +128,7 @@ class TaskParser:
         today = datetime.now(TZ).date().isoformat()
         return (
             "你是 AURI 的任务理解 Agent。把用户输入拆成独立的通勤或生活责任，并按给定结构返回。"
-            "刚性任务是有明确时间窗口或有人等待的责任；可替代、可延后的事项是弹性任务。"
+            f"{TASK_RIGIDITY_POLICY}"
             "超市、买菜或采购任务必须包含 capability tag grocery_delivery。"
             "不要创建用户没有提到的孩子、地点、联系人或任务。"
             "你只负责理解任务，绝不能决定 L0-L3、权限、金额、确认归属或执行动作。"

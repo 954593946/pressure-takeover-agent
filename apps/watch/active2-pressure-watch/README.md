@@ -21,6 +21,7 @@ A Zepp OS app for Amazfit Active 2 NFC (Round). The watch acts as a low-interrup
 - Duplicate command handling is still preserved for real repeated `command_id` messages.
 - The red `error` haptic no longer uses a continuous reminder scene; it uses bounded short pulses and explicitly stops.
 - Side Service is registered and uses Zepp ZML as the P0 Bluetooth bridge. The experimental raw BLE bridge remains in `utils/raw-bridge.js`, but it is not started on the P0 path.
+- Final demo state changes are driven by Agent `WorldState` updates through the Android Wearable Gateway, not by the local debug button.
 
 ## Protocol
 
@@ -90,6 +91,14 @@ Android Wearable Gateway / Agent
 - `processing`: three short pulses
 - `completed`: gentle short vibration
 - `error`: bounded strong/middle/strong pulse combo, then stop
+
+## Final Demo Behavior
+
+- `pre_departure_warning / L1`: yellow `warning`, one double-short vibration.
+- `handover_to_vehicle`, `vehicle_observation`, `takeover_L2`, `planning`, `waiting_confirmation`: blue `handover` or `processing` visual state, no repeated haptic feedback.
+- `action_completed`: green `completed`, one gentle short vibration.
+- `cooldown` and `parked_review`: low-interruption `idle`, no vibration.
+- The watch never owns confirmation in the demo; confirmation remains on `vehicle_hmi`.
 
 ## Commands
 

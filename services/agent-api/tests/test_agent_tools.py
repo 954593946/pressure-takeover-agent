@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
 from auri_agent.agent import AuriAgent
 from auri_agent.app import create_app
@@ -140,44 +141,45 @@ async def test_completed_tool_state_survives_final_model_timeout() -> None:
     assert "机场" in result.reply
 
 
-def test_user_utterance_fallback_changes_state_only_when_needed() -> None:
+@pytest.mark.asyncio
+async def test_user_utterance_fallback_changes_state_only_when_needed() -> None:
     app = create_app(Settings(llm_enabled=False, openai_api_key="", agent_shared_token=""))
-    client = TestClient(app)
-    session_id = client.get("/v1/state").json()["session_id"]
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        session_id = (await client.get("/v1/state")).json()["session_id"]
 
-    def utterance(event_id: str, text: str) -> dict:
-        response = client.post(
-            "/v1/event",
-            json={
-                "schema_version": "0.2.0",
-                "event_id": event_id,
-                "session_id": session_id,
-                "type": "user.utterance",
-                "source": "mobile",
-                "timestamp": datetime.now(TZ).isoformat(),
-                "payload": {"text": text},
-            },
-        )
-        assert response.status_code == 202
-        return response.json()
+        async def utterance(event_id: str, text: str) -> dict:
+            response = await client.post(
+                "/v1/event",
+                json={
+                    "schema_version": "0.2.0",
+                    "event_id": event_id,
+                    "session_id": session_id,
+                    "type": "user.utterance",
+                    "source": "mobile",
+                    "timestamp": datetime.now(TZ).isoformat(),
+                    "payload": {"text": text},
+                },
+            )
+            assert response.status_code == 202
+            return response.json()
 
-    greeting = utterance("evt_hello", "你好，今天辛苦了")
-    assert greeting["state"]["tasks"] == []
-    assert greeting["state"]["actions"] == []
+        greeting = await utterance("evt_hello", "你好，今天辛苦了")
+        assert greeting["state"]["tasks"] == []
+        assert greeting["state"]["actions"] == []
 
-    created = utterance("evt_create", "请记一个今天晚上去超市采购的任务")
-    assert len(created["state"]["tasks"]) == 1
-    assert "超市" in created["state"]["tasks"][0]["title"]
-    assert created["state"]["output"]["conclusion"] != greeting["state"]["output"]["conclusion"]
+        created = await utterance("evt_create", "请记一个今天晚上去超市采购的任务")
+        assert len(created["state"]["tasks"]) == 1
+        assert "超市" in created["state"]["tasks"][0]["title"]
+        assert created["state"]["output"]["conclusion"] != greeting["state"]["output"]["conclusion"]
 
-    status = utterance("evt_status", "现在有什么任务？")
-    assert status["state"]["actions"] == []
-    assert "1项待办" in status["state"]["output"]["conclusion"]
+        status = await utterance("evt_status", "现在有什么任务？")
+        assert status["state"]["actions"] == []
+        assert "1项待办" in status["state"]["output"]["conclusion"]
 
-    assistance = utterance("evt_help", "帮我处理这些事情，先准备方案给我确认")
-    assert assistance["state"]["confirmation"]["status"] == "pending"
-    assert len(assistance["state"]["actions"]) == 1
+        assistance = await utterance("evt_help", "帮我处理这些事情，先准备方案给我确认")
+        assert assistance["state"]["confirmation"]["status"] == "pending"
+        assert len(assistance["state"]["actions"]) == 1
 
-    duplicate = utterance("evt_status", "这条文本不会被重复执行")
-    assert duplicate["duplicate"] is True
-    assert duplicate["revision"] == assistance["revision"]
+        duplicate = await utterance("evt_status", "这条文本不会被重复执行")
+        assert duplicate["duplicate"] is True
+        assert duplicate["revision"] == assistance["revision"]

@@ -4,13 +4,14 @@ from pathlib import Path
 
 import json
 import pytest
-from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 from jsonschema import Draft202012Validator
 
 from auri_agent.app import create_app
 from auri_agent.config import Settings
 from auri_agent.llm import ExtractedTask, TaskExtraction, TaskParser
-from auri_agent.models import ConfirmationRequest, Event, now
+from auri_agent.models import ConfirmationRequest, Event, initial_state, now
+from auri_agent.prompts import TASK_RIGIDITY_POLICY, build_agent_prompt
 from auri_agent.runtime import AgentRuntime
 
 
@@ -19,13 +20,14 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 @pytest.fixture
-def client() -> TestClient:
+async def client():
     app = create_app(Settings(llm_enabled=False, openai_api_key="", agent_shared_token=""))
-    return TestClient(app)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as test_client:
+        yield test_client
 
 
-def event(client: TestClient, event_id: str, event_type: str, payload: dict, source: str = "demo_console") -> dict:
-    session_id = client.get("/v1/state").json()["session_id"]
+async def event(client: AsyncClient, event_id: str, event_type: str, payload: dict, source: str = "demo_console") -> dict:
+    session_id = (await client.get("/v1/state")).json()["session_id"]
     return {
         "schema_version": "0.2.0",
         "event_id": event_id,
@@ -37,17 +39,20 @@ def event(client: TestClient, event_id: str, event_type: str, payload: dict, sou
     }
 
 
-def prepare_confirmation(client: TestClient) -> dict:
-    client.post("/v1/event", json=event(client, "evt_task", "task.created", {"text": "今天18:10接孩子，之后去超市"}, "mobile"))
-    client.post("/v1/event", json=event(client, "evt_meeting", "meeting.overrun", {"delay_minutes": 20}))
-    client.post("/v1/event", json=event(client, "evt_vehicle", "scene.vehicle_entered", {}))
-    client.post(
+async def prepare_confirmation(client: AsyncClient) -> dict:
+    await client.post(
         "/v1/event",
-        json=event(client, "evt_traffic", "traffic.updated", {"eta": "2026-07-15T18:28:00+08:00", "late_minutes": 18}),
+        json=await event(client, "evt_task", "task.created", {"text": "今天18:10接孩子，之后去超市"}, "mobile"),
     )
-    response = client.post(
+    await client.post("/v1/event", json=await event(client, "evt_meeting", "meeting.overrun", {"delay_minutes": 20}))
+    await client.post("/v1/event", json=await event(client, "evt_vehicle", "scene.vehicle_entered", {}))
+    await client.post(
         "/v1/event",
-        json=event(
+        json=await event(client, "evt_traffic", "traffic.updated", {"eta": "2026-07-15T18:28:00+08:00", "late_minutes": 18}),
+    )
+    response = await client.post(
+        "/v1/event",
+        json=await event(
             client,
             "evt_help",
             "user.utterance",
@@ -63,14 +68,26 @@ def prepare_confirmation(client: TestClient) -> dict:
     return state
 
 
-def test_health_never_exposes_key(client: TestClient) -> None:
-    response = client.get("/health")
+@pytest.mark.asyncio
+async def test_health_never_exposes_key(client: AsyncClient) -> None:
+    response = await client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     assert response.json()["llm_framework"] == "langchain"
     assert response.json()["agent_tools_enabled"] is False
     assert response.json()["agent_last_tools"] == []
     assert "api_key" not in response.text.lower()
+
+
+def test_task_rigidity_policy_is_shared_by_both_real_agent_paths() -> None:
+    parser = TaskParser(Settings(llm_enabled=False, openai_api_key=""))
+    conversation_prompt = build_agent_prompt(initial_state("test_prompt"))
+
+    assert TASK_RIGIDITY_POLICY in parser._system_prompt()
+    assert TASK_RIGIDITY_POLICY in conversation_prompt
+    assert "仅仅出现“9 点”“今晚”“周六”等明确时间，不能作为刚性依据" in TASK_RIGIDITY_POLICY
+    assert "今晚 9 点去打游戏”是 `flexible`" in TASK_RIGIDITY_POLICY
+    assert "缺席会导致全队弃权”是 `rigid`" in TASK_RIGIDITY_POLICY
 
 
 @pytest.mark.asyncio
@@ -139,24 +156,25 @@ async def test_langchain_agent_output_is_normalised_to_public_task_contract() ->
     assert all("孩子" not in task.title for task in tasks)
 
 
-def test_shared_backend_requires_team_token() -> None:
+@pytest.mark.asyncio
+async def test_shared_backend_requires_team_token() -> None:
     app = create_app(Settings(llm_enabled=False, openai_api_key="", agent_shared_token="team-test-token"))
-    secured_client = TestClient(app)
-    health = secured_client.get("/health")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as secured_client:
+        health = await secured_client.get("/health")
+        missing = await secured_client.get("/v1/state")
+        wrong = await secured_client.get("/v1/state", headers={"X-Agent-Token": "wrong"})
+        allowed = await secured_client.get("/v1/state", headers={"X-Agent-Token": "team-test-token"})
     assert health.status_code == 200
     assert health.json()["shared_access_enabled"] is True
     assert "team-test-token" not in health.text
-
-    missing = secured_client.get("/v1/state")
-    wrong = secured_client.get("/v1/state", headers={"X-Agent-Token": "wrong"})
-    allowed = secured_client.get("/v1/state", headers={"X-Agent-Token": "team-test-token"})
     assert missing.status_code == 401
     assert wrong.status_code == 401
     assert allowed.status_code == 200
 
 
-def test_happy_path_and_duplicate_confirmation(client: TestClient) -> None:
-    state = prepare_confirmation(client)
+@pytest.mark.asyncio
+async def test_happy_path_and_duplicate_confirmation(client: AsyncClient) -> None:
+    state = await prepare_confirmation(client)
     assert state["stage"] == "waiting_confirmation"
     assert state["primary_surface"] == "vehicle_hmi"
     assert state["risk"]["pressure_level"] == "L2"
@@ -164,8 +182,8 @@ def test_happy_path_and_duplicate_confirmation(client: TestClient) -> None:
     confirmation_id = state["confirmation"]["confirmation_id"]
 
     body = {"confirmation_id": confirmation_id, "decision": "accept", "confirmed_by": "vehicle_hmi", "input_mode": "button"}
-    first = client.post("/v1/confirm", json=body)
-    second = client.post("/v1/confirm", json={**body, "input_mode": "voice"})
+    first = await client.post("/v1/confirm", json=body)
+    second = await client.post("/v1/confirm", json={**body, "input_mode": "voice"})
     assert first.status_code == 200
     assert second.status_code == 200
     first_state = first.json()
@@ -175,9 +193,10 @@ def test_happy_path_and_duplicate_confirmation(client: TestClient) -> None:
     assert first_state["revision"] == second_state["revision"]
 
 
-def test_confirmation_rejects_non_owner_surface(client: TestClient) -> None:
-    state = prepare_confirmation(client)
-    response = client.post(
+@pytest.mark.asyncio
+async def test_confirmation_rejects_non_owner_surface(client: AsyncClient) -> None:
+    state = await prepare_confirmation(client)
+    response = await client.post(
         "/v1/confirm",
         json={
             "confirmation_id": state["confirmation"]["confirmation_id"],
@@ -190,33 +209,35 @@ def test_confirmation_rejects_non_owner_surface(client: TestClient) -> None:
     assert response.json()["detail"]["code"] == "WRONG_SURFACE"
 
 
-def test_duplicate_event_is_idempotent(client: TestClient) -> None:
-    payload = event(client, "evt_same", "meeting.overrun", {"delay_minutes": 20})
-    first = client.post("/v1/event", json=payload).json()
-    second = client.post("/v1/event", json=payload).json()
+@pytest.mark.asyncio
+async def test_duplicate_event_is_idempotent(client: AsyncClient) -> None:
+    payload = await event(client, "evt_same", "meeting.overrun", {"delay_minutes": 20})
+    first = (await client.post("/v1/event", json=payload)).json()
+    second = (await client.post("/v1/event", json=payload)).json()
     assert first["duplicate"] is False
     assert second["duplicate"] is True
     assert first["revision"] == second["revision"]
 
 
-def test_l3_requires_two_auxiliary_signal_classes(client: TestClient) -> None:
-    client.post("/v1/event", json=event(client, "evt_vehicle", "scene.vehicle_entered", {}))
-    client.post(
+@pytest.mark.asyncio
+async def test_l3_requires_two_auxiliary_signal_classes(client: AsyncClient) -> None:
+    await client.post("/v1/event", json=await event(client, "evt_vehicle", "scene.vehicle_entered", {}))
+    await client.post(
         "/v1/event",
-        json=event(client, "evt_traffic", "traffic.updated", {"eta": "2026-07-15T18:28:00+08:00", "late_minutes": 18}),
+        json=await event(client, "evt_traffic", "traffic.updated", {"eta": "2026-07-15T18:28:00+08:00", "late_minutes": 18}),
     )
-    one = client.post(
+    one = (await client.post(
         "/v1/event",
-        json=event(client, "evt_hr", "wearable.signal", {"heart_rate": 120, "confidence": 0.9}, "wearable"),
-    ).json()["state"]
+        json=await event(client, "evt_hr", "wearable.signal", {"heart_rate": 120, "confidence": 0.9}, "wearable"),
+    )).json()["state"]
     assert one["risk"]["pressure_level"] == "L2"
     assert one["wearable"]["text"] == "压力信号升高"
     assert one["wearable"]["color"] == "yellow"
     assert one["wearable"]["haptic"] == "double_short"
-    two = client.post(
+    two = (await client.post(
         "/v1/event",
-        json=event(client, "evt_brake", "driving.signal", {"harsh_brake": True}),
-    ).json()["state"]
+        json=await event(client, "evt_brake", "driving.signal", {"harsh_brake": True}),
+    )).json()["state"]
     assert two["risk"]["pressure_level"] == "L3"
     assert two["stage"] == "takeover_L3"
     assert two["wearable"]["text"] == "高负荷保护"
@@ -224,21 +245,22 @@ def test_l3_requires_two_auxiliary_signal_classes(client: TestClient) -> None:
     assert two["wearable"]["haptic"] == "error_once"
 
 
-def test_over_budget_order_is_not_confirmable(client: TestClient) -> None:
-    client.post(
+@pytest.mark.asyncio
+async def test_over_budget_order_is_not_confirmable(client: AsyncClient) -> None:
+    await client.post(
         "/v1/event",
-        json=event(client, "evt_task", "task.created", {"text": "今天18:10接孩子，之后去超市"}, "mobile"),
+        json=await event(client, "evt_task", "task.created", {"text": "今天18:10接孩子，之后去超市"}, "mobile"),
     )
-    client.post("/v1/event", json=event(client, "evt_vehicle", "scene.vehicle_entered", {}))
-    client.post("/v1/event", json=event(client, "evt_mock", "service.mock.config", {"mode": "over_budget"}))
-    client.post(
+    await client.post("/v1/event", json=await event(client, "evt_vehicle", "scene.vehicle_entered", {}))
+    await client.post("/v1/event", json=await event(client, "evt_mock", "service.mock.config", {"mode": "over_budget"}))
+    await client.post(
         "/v1/event",
-        json=event(client, "evt_traffic", "traffic.updated", {"eta": "2026-07-15T18:28:00+08:00", "late_minutes": 18}),
+        json=await event(client, "evt_traffic", "traffic.updated", {"eta": "2026-07-15T18:28:00+08:00", "late_minutes": 18}),
     )
-    state = client.post(
+    state = (await client.post(
         "/v1/event",
-        json=event(client, "evt_help", "user.utterance", {"text": "帮我处理"}, "vehicle_hmi"),
-    ).json()["state"]
+        json=await event(client, "evt_help", "user.utterance", {"text": "帮我处理"}, "vehicle_hmi"),
+    )).json()["state"]
     order_action = next(action for action in state["actions"] if action["type"] == "service_order")
     assert order_action["status"] == "blocked"
     assert order_action["action_id"] not in state["confirmation"]["action_ids"]
