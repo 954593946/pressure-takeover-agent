@@ -115,9 +115,9 @@ class ActionPlanner:
         message_targets: list[str] = []
         if include_messages:
             for task in rigid_tasks:
-                message_targets.extend(task.waiting_party)
+                message_targets.extend("孩子妈妈" if target == "家人" else target for target in task.waiting_party)
                 if "孩子" in task.title and not task.waiting_party:
-                    message_targets.extend(["老师", "家人"])
+                    message_targets.extend(["老师", "孩子妈妈"])
         message_targets = list(dict.fromkeys(target for target in message_targets if target))[:2]
 
         message_actions: list[Action] = []

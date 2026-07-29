@@ -51,6 +51,12 @@ const state = {
   },
   output: {
     conclusion: "空调已开启，设到 21°C，自动模式，中风量。手机和车机状态会同步显示。"
+  },
+  last_utterance: {
+    text: "我还来得及吗？帮我处理",
+    source: "mobile",
+    input_mode: "voice",
+    received_at: "2026-07-29T18:28:00+08:00"
   }
 };
 
@@ -91,6 +97,14 @@ assert.equal(
   "当前任务暂无行程风险。"
 );
 assert.match(view.planSummary(state), /^1\/3 项动作已完成。/);
+assert.deepEqual(view.utterance(state), {
+  available: true,
+  text: "我还来得及吗？帮我处理",
+  source: "mobile",
+  inputMode: "voice",
+  sourceLabel: "手机"
+});
+assert.equal(view.utterance({}).available, false);
 
 const noVehicleState = view.climate({});
 assert.equal(noVehicleState.available, false);

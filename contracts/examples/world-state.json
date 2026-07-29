@@ -22,7 +22,7 @@
       "priority": "high",
       "adjustable": false,
       "status": "pending",
-      "waiting_party": ["王老师", "家人"],
+      "waiting_party": ["王老师", "孩子妈妈"],
       "capability_tags": []
     },
     {
@@ -41,11 +41,12 @@
   "eta": "2026-07-15T18:28:00+08:00",
   "actions": [
     {"action_id": "action_message_teacher", "type": "message", "target": "王老师", "status": "awaiting_confirmation", "risk": "medium", "requires_confirmation": true, "summary": "通知预计晚到18分钟", "details_ref": "message_teacher", "error_code": null},
+    {"action_id": "action_message_family", "type": "message", "target": "孩子妈妈", "status": "awaiting_confirmation", "risk": "medium", "requires_confirmation": true, "summary": "同步接送进度", "details_ref": "message_family", "error_code": null},
     {"action_id": "action_grocery_order", "type": "service_order", "target": "模拟商超", "status": "awaiting_confirmation", "risk": "medium", "requires_confirmation": true, "summary": "8件商品，共186元，20:00-21:00送达", "details_ref": "preview_demo_001", "error_code": null}
   ],
   "confirmation": {
     "confirmation_id": "confirm_all_001",
-    "action_ids": ["action_message_teacher", "action_grocery_order"],
+    "action_ids": ["action_message_teacher", "action_message_family", "action_grocery_order"],
     "expires_at": "2026-07-15T18:33:00+08:00",
     "status": "pending",
     "confirmed_by": null,
@@ -102,6 +103,12 @@
     "expires_at": "2026-07-15T18:33:00+08:00",
     "requires_confirmation": true,
     "conclusion": "预计晚到18分钟，消息和采购方案已准备。"
+  },
+  "last_utterance": {
+    "text": "我还来得及吗？帮我处理",
+    "source": "mobile",
+    "input_mode": "voice",
+    "received_at": "2026-07-15T18:28:00+08:00"
   },
   "action_ledger": ["event:evt_traffic_001", "plan:confirm_all_001"],
   "service_mock_mode": "success",

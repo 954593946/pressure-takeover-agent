@@ -95,6 +95,17 @@
         "fan_speed": {"enum": ["low", "medium", "high"], "default": "medium"}
       }
     },
+    "UtteranceState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "source", "input_mode", "received_at"],
+      "properties": {
+        "text": {"type": "string"},
+        "source": {"enum": ["mobile", "vehicle_hmi", "wearable", "demo_console", "agent_api"]},
+        "input_mode": {"enum": ["voice", "text"]},
+        "received_at": {"type": "string", "format": "date-time"}
+      }
+    },
     "ServiceItem": {
       "type": "object",
       "additionalProperties": false,
@@ -170,6 +181,7 @@
         "wearable": {"$ref": "#/$defs/WearableState"},
         "service_orders": {"type": "array", "items": {"$ref": "#/$defs/ServiceOrder"}},
         "output": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/InteractionOutput"}]},
+        "last_utterance": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/UtteranceState"}]},
         "action_ledger": {"type": "array", "items": {"type": "string"}},
         "service_mock_mode": {"enum": ["success", "out_of_stock", "over_budget"]},
         "vehicle_state": {"$ref": "#/$defs/VehicleState"}

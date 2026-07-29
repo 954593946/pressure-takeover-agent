@@ -55,7 +55,7 @@ def test_assistance_is_grounded_in_existing_tasks() -> None:
 
     assert result["requires_confirmation"] is True
     assert {action.type for action in state.actions} == {"message", "service_order"}
-    assert {action.target for action in state.actions if action.type == "message"} == {"老师", "家人"}
+    assert {action.target for action in state.actions if action.type == "message"} == {"老师", "孩子妈妈"}
     assert len(state.service_orders) == 1
     assert state.confirmation is not None
 
@@ -73,6 +73,19 @@ def test_assistance_does_not_invent_grocery_or_child_contacts() -> None:
     assert [action.target for action in state.actions] == ["同事"]
     assert state.service_orders == []
     assert all("老师" not in action.target and "家人" not in action.target for action in state.actions)
+
+
+def test_assistance_preserves_specific_family_contact() -> None:
+    state = initial_state("demo_grandparent")
+    toolbox = AgentToolbox(state, event_id="evt_grandparent", source="mobile", original_text="接孩子")
+    toolbox.create_tasks(
+        [task("18:10去学校接孩子", "rigid", adjustable=False, waiting_party=["王老师", "孩子奶奶"])],
+        replace_existing=False,
+    )
+
+    toolbox.prepare_assistance(include_messages=True, include_grocery=False)
+
+    assert {action.target for action in state.actions} == {"王老师", "孩子奶奶"}
 
 
 def test_confirmation_requires_explicit_words_and_owner_surface() -> None:

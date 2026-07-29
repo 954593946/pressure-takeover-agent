@@ -196,6 +196,13 @@ class InteractionOutput(StrictModel):
     conclusion: str
 
 
+class UtteranceState(StrictModel):
+    text: str
+    source: Literal["mobile", "vehicle_hmi", "wearable", "demo_console", "agent_api"]
+    input_mode: Literal["voice", "text"] = "voice"
+    received_at: datetime = Field(default_factory=now)
+
+
 class VehicleState(StrictModel):
     """Phone ↔ vehicle shared control state. Agent writes, both screens read."""
 
@@ -222,6 +229,7 @@ class WorldState(StrictModel):
     wearable: WearableState = Field(default_factory=WearableState)
     service_orders: list[ServiceOrder] = Field(default_factory=list)
     output: InteractionOutput | None = None
+    last_utterance: UtteranceState | None = None
     action_ledger: list[str] = Field(default_factory=list)
     service_mock_mode: Literal["success", "out_of_stock", "over_budget"] = "success"
     vehicle_state: VehicleState = Field(default_factory=VehicleState)

@@ -1,6 +1,6 @@
 # 跨端契约 v0.2 候选基线
 
-本目录是手机、车机、腕上、控制台和 Agent 的唯一机器契约来源。当前候选版覆盖 `Task`、`Event`、`WorldState`、`Action`、`Confirmation`、`Profile`、`WearableState`、`VehicleState` 和 `ServiceOrder`。
+本目录是手机、车机、腕上、控制台和 Agent 的唯一机器契约来源。当前候选版覆盖 `Task`、`Event`、`WorldState`、`Action`、`Confirmation`、`Profile`、`WearableState`、`VehicleState`、`UtteranceState` 和 `ServiceOrder`。
 
 ## 文件
 
@@ -18,6 +18,10 @@
 4. 在 PR 中写清兼容性、迁移方式和受影响模块。
 
 客户端不得直接设置最终 `stage`、压力等级或动作状态。客户端只消费更高 `revision` 的完整快照；重复 `event_id`、`confirmation_id`、`action_id` 和 `order_id` 不得重复执行。
+
+## UtteranceState
+
+手机端完成 ASR 后提交 `user.utterance`，Agent 将最近一次转写保存到 `WorldState.last_utterance`。车机只读消费该字段并随 revision 更新，不提供车机语音输入。字段包含 `text`、`source`、`input_mode` 和 `received_at`；旧状态没有该字段时客户端显示“等待用户在手机端求助”。
 
 ## VehicleState
 

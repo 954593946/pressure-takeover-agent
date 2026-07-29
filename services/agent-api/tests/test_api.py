@@ -10,7 +10,8 @@ from jsonschema import Draft202012Validator
 from auri_agent.app import create_app
 from auri_agent.config import Settings
 from auri_agent.llm import ExtractedTask, TaskExtraction, TaskParser
-from auri_agent.models import ConfirmationRequest, Event
+from auri_agent.models import ConfirmationRequest, Event, now
+from auri_agent.runtime import AgentRuntime
 
 
 TZ = timezone(timedelta(hours=8), name="Asia/Shanghai")
@@ -46,10 +47,20 @@ def prepare_confirmation(client: TestClient) -> dict:
     )
     response = client.post(
         "/v1/event",
-        json=event(client, "evt_help", "user.utterance", {"text": "我还来得及吗？帮我处理"}, "vehicle_hmi"),
+        json=event(
+            client,
+            "evt_help",
+            "user.utterance",
+            {"text": "我还来得及吗？帮我处理", "input_mode": "voice"},
+            "mobile",
+        ),
     )
     assert response.status_code == 202
-    return response.json()["state"]
+    state = response.json()["state"]
+    assert state["last_utterance"]["text"] == "我还来得及吗？帮我处理"
+    assert state["last_utterance"]["source"] == "mobile"
+    assert state["last_utterance"]["input_mode"] == "voice"
+    return state
 
 
 def test_health_never_exposes_key(client: TestClient) -> None:
@@ -60,6 +71,30 @@ def test_health_never_exposes_key(client: TestClient) -> None:
     assert response.json()["agent_tools_enabled"] is False
     assert response.json()["agent_last_tools"] == []
     assert "api_key" not in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_mobile_voice_transcript_is_written_to_world_state() -> None:
+    runtime = AgentRuntime(Settings(llm_enabled=False, openai_api_key="", agent_shared_token=""))
+    state = await runtime.get_state()
+    accepted = await asyncio.wait_for(
+        runtime.submit_event(
+            Event(
+                event_id="evt_mobile_voice",
+                session_id=state.session_id,
+                type="user.utterance",
+                source="mobile",
+                timestamp=now(),
+                payload={"text": "我还来得及吗？帮我处理", "input_mode": "voice"},
+            )
+        ),
+        timeout=5,
+    )
+
+    assert accepted.state.last_utterance is not None
+    assert accepted.state.last_utterance.text == "我还来得及吗？帮我处理"
+    assert accepted.state.last_utterance.source == "mobile"
+    assert accepted.state.last_utterance.input_mode == "voice"
 
 
 @pytest.mark.asyncio
