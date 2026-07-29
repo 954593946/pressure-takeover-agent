@@ -261,11 +261,19 @@ Content-Type: application/json
 | 5 | `user.utterance`（“帮我处理”） | 根据已有任务规划消息和订单 | 保存完整明细 | 处理中 | 处理中 |
 | 6 | Agent 生成 Action | `waiting_confirmation` | 确认入口失效 | 唯一确认按钮 | 不可操作 |
 | 7 | `POST /v1/confirm` | 动作组只执行一次 | 同步状态 | 按钮禁用 | 处理中 |
-| 8 | 执行完成 | `action_completed` | 订单/消息卡 | 一句完成 | 绿态柔和短震 |
+| 8 | 执行完成 | `action_completed` | 完整订单/消息回执卡 | 一句具体回执 | 绿态柔和短震 |
 | 9 | `cooldown.elapsed` | `cooldown` | 后台 | 安静 | 静默 |
 | 10 | `scene.parked` | `parked_review` | 完整复盘 | 结束 | 已同步 |
 
 ## 8. 每个成员具体怎么接
+
+执行详情已经放进现有 v0.2 字段，不需要各端等待新契约：
+
+- 消息草稿和确认后的完整模拟发送正文：`actions[type=message].summary`。
+- 采购方式、全部商品、金额、配送时段、替换规则和确认后的模拟订单号：`actions[type=service_order].summary`。
+- 需要逐项渲染商品卡时使用 `service_orders[].items`，订单状态和订单号使用 `service_orders[].status/order_id`。
+- `output.conclusion` 只用于当前场景的一句话回执；客户端不能靠这句话判断是否真的完成，必须读取上述结构化状态。
+- 所有消息和订单均为 Demo 模拟；UI 必须保留后端返回的模拟标识，不得改写成真实短信或真实支付。
 
 ### 8.1 手机开发 A：业务 UI
 

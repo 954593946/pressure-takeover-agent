@@ -46,6 +46,28 @@ def compact_state(state: WorldState) -> dict[str, object]:
             }
             for action in state.actions
         ],
+        "service_orders": [
+            {
+                "order_id": order.order_id,
+                "preview_id": order.preview_id,
+                "items": [
+                    {
+                        "name": item.name,
+                        "quantity": item.quantity,
+                        "unit_price": item.unit_price,
+                        "subtotal": item.subtotal,
+                    }
+                    for item in order.items
+                ],
+                "total": order.total,
+                "budget_limit": order.budget_limit,
+                "budget_status": order.budget_status,
+                "delivery_window": order.delivery_window,
+                "status": order.status,
+                "error_code": order.error_code,
+            }
+            for order in state.service_orders
+        ],
         "confirmation": (
             {
                 "confirmation_id": state.confirmation.confirmation_id,
@@ -120,5 +142,6 @@ def build_completion_prompt(state: WorldState, decision: str) -> str:
 决定是 {decision}。{length_rule}
 不得虚构联系人、任务或执行结果；模拟消息和订单必须说明是 Demo 模拟。
 如果方案被拒绝，明确说明没有执行；如果被接受，只总结状态中确实 completed/submitted 的事项。
+接受方案后的回复不能只说“处理好了”：必须写出消息收件人和实际消息要点；如有订单，还必须写出至少两项商品及数量、总金额、配送方式与配送时段。状态中有订单号时也要写出订单号。
 当前状态：{state_json}
 """.strip()
