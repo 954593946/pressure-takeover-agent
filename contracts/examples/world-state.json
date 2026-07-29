@@ -40,9 +40,9 @@
   ],
   "eta": "2026-07-15T18:28:00+08:00",
   "actions": [
-    {"action_id": "action_message_teacher", "type": "message", "target": "王老师", "status": "awaiting_confirmation", "risk": "medium", "requires_confirmation": true, "summary": "通知预计晚到18分钟", "details_ref": "message_teacher", "error_code": null},
-    {"action_id": "action_message_family", "type": "message", "target": "孩子妈妈", "status": "awaiting_confirmation", "risk": "medium", "requires_confirmation": true, "summary": "同步接送进度", "details_ref": "message_family", "error_code": null},
-    {"action_id": "action_grocery_order", "type": "service_order", "target": "模拟商超", "status": "awaiting_confirmation", "risk": "medium", "requires_confirmation": true, "summary": "8件商品，共186元，20:00-21:00送达", "details_ref": "preview_demo_001", "error_code": null}
+    {"action_id": "action_message_teacher", "type": "message", "target": "王老师", "status": "awaiting_confirmation", "risk": "medium", "requires_confirmation": true, "summary": "给王老师的消息草稿：您好，我正在前往处理“去学校接孩子”，预计18:28到，会晚18分钟。麻烦先照看一下孩子，谢谢。（Demo 模拟消息，未连接真实通讯服务）", "details_ref": "message_teacher", "error_code": null},
+    {"action_id": "action_message_family", "type": "message", "target": "孩子妈妈", "status": "awaiting_confirmation", "risk": "medium", "requires_confirmation": true, "summary": "给孩子妈妈的消息草稿：我正在前往处理“去学校接孩子”，预计18:28到，会晚18分钟。我会安全驾驶并继续同步进度。（Demo 模拟消息，未连接真实通讯服务）", "details_ref": "message_family", "error_code": null},
+    {"action_id": "action_grocery_order", "type": "service_order", "target": "模拟商超配送", "status": "awaiting_confirmation", "risk": "medium", "requires_confirmation": true, "summary": "模拟商超配送预览：牛奶×2、鸡蛋×1、水果组合×1、蔬菜组合×1、大米×1、面包×1、酸奶×1、纸巾×1；共9件（8种），合计186元，20:00-21:00送达；按最快配送选择，缺货时仅同规格且预算内替换。（Demo 模拟订单，未发生真实支付）", "details_ref": "preview_demo_001", "error_code": null}
   ],
   "confirmation": {
     "confirmation_id": "confirm_all_001",
@@ -102,7 +102,7 @@
     "suppressed_surfaces": ["mobile", "wearable"],
     "expires_at": "2026-07-15T18:33:00+08:00",
     "requires_confirmation": true,
-    "conclusion": "预计晚到18分钟，消息和采购方案已准备。"
+    "conclusion": "已准备：给王老师、孩子妈妈的消息草稿为“预计18:28到，会晚18分钟，我会继续同步进度”；模拟商超配送预览为牛奶×2、鸡蛋×1等8种商品，共186元，20:00-21:00送达。确认后才会模拟执行。"
   },
   "last_utterance": {
     "text": "我还来得及吗？帮我处理",

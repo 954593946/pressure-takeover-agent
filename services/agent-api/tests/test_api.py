@@ -4,6 +4,7 @@ from pathlib import Path
 
 import json
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from jsonschema import Draft202012Validator
 
@@ -19,7 +20,7 @@ TZ = timezone(timedelta(hours=8), name="Asia/Shanghai")
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client():
     app = create_app(Settings(llm_enabled=False, openai_api_key="", agent_shared_token=""))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as test_client:
@@ -179,6 +180,13 @@ async def test_happy_path_and_duplicate_confirmation(client: AsyncClient) -> Non
     assert state["primary_surface"] == "vehicle_hmi"
     assert state["risk"]["pressure_level"] == "L2"
     assert state["service_orders"][0]["total"] == 186
+    message_action = next(action for action in state["actions"] if action["type"] == "message")
+    order_action = next(action for action in state["actions"] if action["type"] == "service_order")
+    assert "消息草稿" in message_action["summary"]
+    assert "预计18:28到" in message_action["summary"]
+    assert "牛奶×2" in order_action["summary"]
+    assert "鸡蛋×1" in order_action["summary"]
+    assert "模拟商超配送" in order_action["summary"]
     confirmation_id = state["confirmation"]["confirmation_id"]
 
     body = {"confirmation_id": confirmation_id, "decision": "accept", "confirmed_by": "vehicle_hmi", "input_mode": "button"}
@@ -191,6 +199,12 @@ async def test_happy_path_and_duplicate_confirmation(client: AsyncClient) -> Non
     assert first_state["stage"] == "action_completed"
     assert first_state["service_orders"][0]["order_id"] == second_state["service_orders"][0]["order_id"]
     assert first_state["revision"] == second_state["revision"]
+    completed_order = next(action for action in first_state["actions"] if action["type"] == "service_order")
+    assert first_state["service_orders"][0]["order_id"] in completed_order["summary"]
+    assert "牛奶×2" in first_state["output"]["conclusion"]
+    assert "鸡蛋×1" in first_state["output"]["conclusion"]
+    assert "186元" in first_state["output"]["conclusion"]
+    assert "20:00-21:00" in first_state["output"]["conclusion"]
 
 
 @pytest.mark.asyncio

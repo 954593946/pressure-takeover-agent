@@ -11,6 +11,7 @@ import logging
 from typing import AsyncGenerator
 from uuid import uuid4
 
+from .engine import build_execution_receipt, build_preparation_receipt
 from .runtime import AgentRuntime
 
 logger = logging.getLogger(__name__)
@@ -108,9 +109,11 @@ class ChatAgent:
             return f"延迟已记录，压力等级 {state.risk.pressure_level.value}"
         if tool_name == "reschedule_task":
             return "任务已调整"
+        if tool_name == "control_ac":
+            vehicle = state.vehicle_state
+            return f"空调已{'打开' if vehicle.ac_on else '关闭'}，目标温度 {vehicle.ac_target_temp:g}℃"
         if tool_name == "prepare_assistance":
-            actions = len(state.actions)
-            return f"已准备 {actions} 项方案"
+            return build_preparation_receipt(state)
         if tool_name == "confirm_current_actions":
-            return "已确认执行"
+            return build_execution_receipt(state)
         return "完成"

@@ -6,8 +6,10 @@ from httpx import ASGITransport, AsyncClient
 
 from auri_agent.agent import AuriAgent
 from auri_agent.app import create_app
+from auri_agent.chat import ChatAgent
 from auri_agent.config import Settings
 from auri_agent.models import initial_state
+from auri_agent.runtime import AgentRuntime
 from auri_agent.tools import AURI_TOOLS, AgentToolbox, TaskDraft
 
 
@@ -57,6 +59,10 @@ def test_assistance_is_grounded_in_existing_tasks() -> None:
     assert result["requires_confirmation"] is True
     assert {action.type for action in state.actions} == {"message", "service_order"}
     assert {action.target for action in state.actions if action.type == "message"} == {"老师", "孩子妈妈"}
+    family_action = next(action for action in state.actions if action.target == "孩子妈妈")
+    assert family_action.action_id == "action_message_family"
+    assert "我会安全驾驶并继续同步进度" in family_action.summary
+    assert "你先安心等我" not in family_action.summary
     assert len(state.service_orders) == 1
     assert state.confirmation is not None
 
@@ -115,6 +121,69 @@ def test_confirmation_requires_explicit_words_and_owner_surface() -> None:
     assert state.service_orders[0].status == "submitted"
 
 
+def test_demo_receipts_include_message_body_and_purchase_details() -> None:
+    state = initial_state("demo_receipts")
+    state.eta = datetime(2026, 7, 29, 18, 28, tzinfo=TZ)
+    state.risk.late_minutes = 18
+    setup = AgentToolbox(state, event_id="evt_receipts", source="mobile", original_text="帮我处理")
+    setup.create_tasks(
+        [
+            task(
+                "18:10去学校接孩子",
+                "rigid",
+                priority="high",
+                adjustable=False,
+                waiting_party=["孩子"],
+            ),
+            task("之后去超市采购", "flexible", capability_tags=["grocery_delivery"]),
+        ],
+        replace_existing=False,
+    )
+
+    prepared = setup.prepare_assistance(include_messages=True, include_grocery=True)
+    message = next(action for action in state.actions if action.type == "message")
+    order_action = next(action for action in state.actions if action.type == "service_order")
+
+    assert "给孩子的消息草稿" in message.summary
+    assert "预计18:28到" in message.summary
+    assert "你先安心等我" in message.summary
+    assert "未连接真实通讯服务" in message.summary
+    assert "牛奶×2" in order_action.summary
+    assert "鸡蛋×1" in order_action.summary
+    assert "共9件（8种）" in order_action.summary
+    assert "模拟商超配送" in order_action.summary
+    assert "未发生真实支付" in order_action.summary
+    assert "牛奶×2" in state.output.conclusion
+    assert prepared["requires_confirmation"] is True
+
+    confirmation = AgentToolbox(
+        state,
+        event_id="evt_receipts_confirm",
+        source="mobile",
+        original_text="确认执行吧",
+    ).confirm_current_actions("accept")
+
+    assert confirmation["ok"] is True
+    assert confirmation["execution_receipts"]
+    assert message.summary.startswith("已模拟发送给孩子：")
+    assert order_action.details_ref == state.service_orders[0].order_id
+    assert state.service_orders[0].order_id in order_action.summary
+    assert "孩子" in state.output.conclusion
+    assert "牛奶×2" in state.output.conclusion
+    assert "186元" in state.output.conclusion
+    assert "20:00-21:00" in state.output.conclusion
+
+    grounded = AuriAgent(Settings(llm_enabled=False, openai_api_key=""))._ground_reply(
+        "都处理好了。",
+        state,
+        ["confirm_current_actions"],
+    )
+    assert "孩子" in grounded
+    assert "牛奶×2" in grounded
+    assert "鸡蛋×1" in grounded
+    assert "20:00-21:00" in grounded
+
+
 @pytest.mark.asyncio
 async def test_completed_tool_state_survives_final_model_timeout() -> None:
     class ToolThenTimeoutGraph:
@@ -139,6 +208,91 @@ async def test_completed_tool_state_survives_final_model_timeout() -> None:
     assert result.called_tools == ["create_tasks"]
     assert [item.title for item in result.state.tasks] == ["20:00去机场接同事"]
     assert "机场" in result.reply
+
+
+@pytest.mark.asyncio
+async def test_standalone_ac_command_skips_model_and_preserves_existing_tasks() -> None:
+    class MustNotRunGraph:
+        async def ainvoke(self, *_args, **_kwargs) -> dict:
+            raise AssertionError("standalone AC command must not be routed through prior chat history")
+
+    state = initial_state("demo_ac_after_task")
+    setup = AgentToolbox(state, event_id="evt_setup_task", source="mobile", original_text="创建任务")
+    setup.create_tasks([task("今晚9点打游戏", "flexible")], replace_existing=False)
+
+    agent = AuriAgent(Settings(llm_enabled=False, openai_api_key=""))
+    agent.graph = MustNotRunGraph()
+    result = await agent.handle(
+        "然后请帮我打开空调",
+        state,
+        source="mobile",
+        event_id="evt_open_ac",
+    )
+
+    assert result.mode == "deterministic_tool"
+    assert result.called_tools == ["control_ac"]
+    assert result.state.vehicle_state.ac_on is True
+    assert [item.title for item in result.state.tasks] == ["今晚9点打游戏"]
+    assert "空调已打开" in result.reply
+
+
+def test_ac_status_question_is_not_mistaken_for_a_control_command() -> None:
+    assert AuriAgent._parse_explicit_ac_command("空调打开了吗？") is None
+    assert AuriAgent._parse_explicit_ac_command("现在空调是不是打开的？") is None
+
+
+@pytest.mark.asyncio
+async def test_ac_temperature_and_close_commands_are_deterministic() -> None:
+    agent = AuriAgent(Settings(llm_enabled=False, openai_api_key=""))
+    opened = await agent.handle(
+        "把空调开到22度",
+        initial_state("demo_ac_temperature"),
+        source="mobile",
+        event_id="evt_ac_temperature",
+    )
+    closed = await agent.handle(
+        "关闭空调",
+        opened.state,
+        source="mobile",
+        event_id="evt_ac_close",
+    )
+
+    assert opened.called_tools == ["control_ac"]
+    assert opened.state.vehicle_state.ac_on is True
+    assert opened.state.vehicle_state.ac_target_temp == 22
+    assert closed.called_tools == ["control_ac"]
+    assert closed.state.vehicle_state.ac_on is False
+    assert "空调已关闭" in closed.reply
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_opens_ac_on_first_request_after_task_creation() -> None:
+    runtime = AgentRuntime(Settings(llm_enabled=False, openai_api_key=""))
+    chat = ChatAgent(runtime)
+    initial = await runtime.get_state()
+
+    async for _event in chat.chat_stream(
+        "请记一个今天晚上9点打游戏的任务",
+        initial.session_id,
+    ):
+        pass
+    events = [
+        event
+        async for event in chat.chat_stream(
+            "打开空调",
+            initial.session_id,
+        )
+    ]
+    state = await runtime.get_state()
+
+    tool_names = [
+        event["function"]["name"]
+        for event in events
+        if event.get("type") == "tool_call"
+    ]
+    assert tool_names == ["control_ac"]
+    assert state.vehicle_state.ac_on is True
+    assert len(state.tasks) == 1
 
 
 @pytest.mark.asyncio
@@ -171,6 +325,11 @@ async def test_user_utterance_fallback_changes_state_only_when_needed() -> None:
         assert len(created["state"]["tasks"]) == 1
         assert "超市" in created["state"]["tasks"][0]["title"]
         assert created["state"]["output"]["conclusion"] != greeting["state"]["output"]["conclusion"]
+
+        ac = await utterance("evt_ac", "打开空调")
+        assert ac["state"]["vehicle_state"]["ac_on"] is True
+        assert len(ac["state"]["tasks"]) == 1
+        assert "空调已打开" in ac["state"]["output"]["conclusion"]
 
         status = await utterance("evt_status", "现在有什么任务？")
         assert status["state"]["actions"] == []

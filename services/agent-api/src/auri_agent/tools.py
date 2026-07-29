@@ -303,6 +303,17 @@ class AgentToolbox:
             "completed_actions": [
                 action.action_id for action in self.state.actions if action.status == "completed"
             ],
+            "execution_receipts": [
+                {
+                    "action_id": action.action_id,
+                    "type": action.type,
+                    "target": action.target,
+                    "summary": action.summary,
+                    "details_ref": action.details_ref,
+                }
+                for action in self.state.actions
+                if action.status == "completed"
+            ],
         }
 
     def _decision_is_explicit(self, decision: Literal["accept", "reject"]) -> bool:
