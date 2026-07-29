@@ -108,6 +108,9 @@ class ChatAgent:
             return f"延迟已记录，压力等级 {state.risk.pressure_level.value}"
         if tool_name == "reschedule_task":
             return "任务已调整"
+        if tool_name == "control_ac":
+            vehicle = state.vehicle_state
+            return f"空调已{'打开' if vehicle.ac_on else '关闭'}，目标温度 {vehicle.ac_target_temp:g}℃"
         if tool_name == "prepare_assistance":
             actions = len(state.actions)
             return f"已准备 {actions} 项方案"

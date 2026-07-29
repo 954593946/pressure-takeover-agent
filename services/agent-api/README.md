@@ -27,7 +27,7 @@ py -3.11 -m venv .venv
 - `GET http://127.0.0.1:8000/v1/stream`（SSE）
 - `WS  ws://127.0.0.1:8000/v1/ws`
 
-`GET /health` 中的 `llm_framework=langchain` 表示本构建使用 LangChain。`llm_last_mode=langchain_agent` 表示最近一次完整走过模型；`langchain_agent_fallback_reply` 表示模型已选择并执行工具、但最终文案超时后使用了状态兜底；`fallback` 表示模型调用前失败。`agent_last_tools` 会列出最近实际调用的工具名。
+`GET /health` 中的 `llm_framework=langchain` 表示本构建使用 LangChain。`llm_last_mode=langchain_agent` 表示最近一次完整走过模型；`deterministic_tool` 表示“打开/关闭/调节空调”等明确低风险指令直接走受控工具，不受历史消息或模型网络波动影响；`langchain_agent_fallback_reply` 表示模型已选择并执行工具、但最终文案超时后使用了状态兜底；`fallback` 表示模型调用前失败。`agent_last_tools` 会列出最近实际调用的工具名。
 
 完整工具、确认和 Event 边界见 [`contracts/tool-calling-spec.md`](../../contracts/tool-calling-spec.md)。
 
