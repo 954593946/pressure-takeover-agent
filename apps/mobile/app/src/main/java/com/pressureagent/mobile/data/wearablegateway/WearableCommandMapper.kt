@@ -1,24 +1,27 @@
 package com.pressureagent.mobile.data.wearablegateway
 
 import com.pressureagent.mobile.domain.model.HapticPattern
+import com.pressureagent.mobile.domain.model.PressureLevel
+import com.pressureagent.mobile.domain.model.Stage
+import com.pressureagent.mobile.domain.model.Wearable
 import com.pressureagent.mobile.domain.model.WearableColor
 import com.pressureagent.mobile.domain.model.WearableMode
 import com.pressureagent.mobile.domain.model.WorldState
 
 object WearableCommandMapper {
     fun toWatchCommand(worldState: WorldState): WatchSetStateCommand? {
-        val wearable = worldState.wearable ?: return null
-        val commandId = wearable.commandId.ifBlank {
-            "world-${worldState.sessionId}-${worldState.revision}"
-        }
+        val wearable = worldState.wearable
+        val demoState = demoStateFor(worldState, wearable)
+        val commandId = wearable?.commandId?.ifBlank { null }
+            ?: "world-${worldState.sessionId}-${worldState.revision}"
 
         return toWatchCommand(
             commandId = commandId,
-            mode = wearable.mode,
-            text = wearable.text,
-            color = wearable.color,
-            haptic = wearable.haptic,
-            source = "android-gateway",
+            mode = demoState.mode,
+            text = demoState.text,
+            color = demoState.color,
+            haptic = demoState.haptic,
+            source = "agent-world-state",
         )
     }
 
@@ -114,4 +117,89 @@ object WearableCommandMapper {
         HapticPattern.SOFT_SHORT -> "soft_short"
         HapticPattern.ERROR_ONCE -> "error_once"
     }
+
+    private fun demoStateFor(worldState: WorldState, wearable: Wearable?): DemoWatchState {
+        val wearableState = DemoWatchState(
+            mode = wearable?.mode ?: WearableMode.IDLE,
+            text = wearable?.text.orEmpty(),
+            color = wearable?.color ?: WearableColor.NAVY,
+            haptic = wearable?.haptic ?: HapticPattern.NONE,
+        )
+
+        return when (worldState.stage) {
+            Stage.OFF_VEHICLE_IDLE -> DemoWatchState(
+                mode = WearableMode.IDLE,
+                text = wearableState.text.ifBlank { "等待手机同步" },
+                color = WearableColor.BLUE,
+                haptic = HapticPattern.NONE,
+            )
+            Stage.PRE_DEPARTURE_WARNING -> {
+                if (worldState.risk.pressureLevel == PressureLevel.L1) {
+                    DemoWatchState(
+                        mode = WearableMode.WARNING,
+                        text = wearableState.text.ifBlank { "出发窗口收紧" },
+                        color = WearableColor.YELLOW,
+                        haptic = HapticPattern.DOUBLE_SHORT,
+                    )
+                } else {
+                    DemoWatchState(
+                        mode = WearableMode.IDLE,
+                        text = wearableState.text.ifBlank { "任务已同步" },
+                        color = WearableColor.BLUE,
+                        haptic = HapticPattern.NONE,
+                    )
+                }
+            }
+            Stage.HANDOVER_TO_VEHICLE,
+            Stage.VEHICLE_OBSERVATION -> DemoWatchState(
+                mode = WearableMode.HANDOVER,
+                text = wearableState.text.ifBlank { "车机负责确认" },
+                color = WearableColor.BLUE,
+                haptic = HapticPattern.NONE,
+            )
+            Stage.TAKEOVER_L2,
+            Stage.TAKEOVER_L3,
+            Stage.PLANNING,
+            Stage.SERVICE_PREPARED,
+            Stage.WAITING_CONFIRMATION,
+            Stage.EXECUTING -> DemoWatchState(
+                mode = WearableMode.PROCESSING,
+                text = wearableState.text.ifBlank { "AURI 正在协调" },
+                color = WearableColor.BLUE,
+                haptic = HapticPattern.NONE,
+            )
+            Stage.SERVICE_EXECUTED,
+            Stage.ACTION_COMPLETED -> DemoWatchState(
+                mode = WearableMode.COMPLETED,
+                text = wearableState.text.ifBlank { "已同步完成" },
+                color = WearableColor.GREEN,
+                haptic = HapticPattern.SOFT_SHORT,
+            )
+            Stage.COOLDOWN -> DemoWatchState(
+                mode = WearableMode.IDLE,
+                text = "已处理",
+                color = WearableColor.BLUE,
+                haptic = HapticPattern.NONE,
+            )
+            Stage.PARKED_REVIEW -> DemoWatchState(
+                mode = WearableMode.IDLE,
+                text = "手机复盘",
+                color = WearableColor.BLUE,
+                haptic = HapticPattern.NONE,
+            )
+            Stage.ERROR -> DemoWatchState(
+                mode = WearableMode.ERROR,
+                text = wearableState.text.ifBlank { "请看手机" },
+                color = WearableColor.RED,
+                haptic = HapticPattern.ERROR_ONCE,
+            )
+        }
+    }
+
+    private data class DemoWatchState(
+        val mode: WearableMode,
+        val text: String,
+        val color: WearableColor,
+        val haptic: HapticPattern,
+    )
 }

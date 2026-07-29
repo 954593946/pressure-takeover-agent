@@ -6,6 +6,8 @@ import com.pressureagent.mobile.data.repository.WorldStateRepository
 import com.pressureagent.mobile.data.wearablegateway.WearableGateway
 import com.pressureagent.mobile.data.wearablegateway.WearableGatewaySnapshot
 import com.pressureagent.mobile.domain.model.HapticPattern
+import com.pressureagent.mobile.domain.model.PrimarySurface
+import com.pressureagent.mobile.domain.model.Stage
 import com.pressureagent.mobile.domain.model.Wearable
 import com.pressureagent.mobile.domain.model.WearableMode
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -18,6 +20,9 @@ import javax.inject.Inject
 
 data class WearableUiState(
     val wearable: Wearable? = null,
+    val stage: Stage? = null,
+    val revision: Int = 0,
+    val primarySurface: PrimarySurface? = null,
     val gateway: WearableGatewaySnapshot = WearableGatewaySnapshot(),
 )
 
@@ -33,7 +38,13 @@ class WearableViewModel @Inject constructor(
         wearableGateway.start()
         viewModelScope.launch {
             repository.worldState.combine(wearableGateway.state) { ws, gateway ->
-                WearableUiState(wearable = ws.wearable, gateway = gateway)
+                WearableUiState(
+                    wearable = ws.wearable,
+                    stage = ws.stage,
+                    revision = ws.revision,
+                    primarySurface = ws.primarySurface,
+                    gateway = gateway,
+                )
             }.collect { next ->
                 _uiState.value = next
             }
