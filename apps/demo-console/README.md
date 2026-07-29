@@ -4,7 +4,7 @@
 
 定位：模拟本轮未接入的外部世界并保证现场可复现，不替 Agent 做判断。
 
-P0 操作：创建标准任务、会议延迟、进入车辆、触发拥堵、注入辅助信号、用户求助、确认发送和重置 Demo。控制台还应展示事件日志、当前 World State、连接状态和错误。
+P0 操作：可选载入演示预置任务、会议延迟、进入车辆、触发拥堵、注入辅助信号、用户求助、确认发送和重置 Demo。默认没有任务；正常主线由手机语音创建任务。控制台还应展示事件日志、当前 World State、连接状态和错误。
 
 当前控制台还提供现场预检、下一步引导、前置条件禁用、Reset 二次确认、技术验证折叠区、车辆状态摘要、Ledger 摘要和脱敏日志复制。
 
@@ -59,14 +59,15 @@ http://127.0.0.1:5174/apps/demo-console/
 
 | 控制台按钮 | 接口 | 事件或操作 | 说明 |
 | --- | --- | --- | --- |
-| 创建任务 | `POST /v1/event` | `task.created` | 模拟手机语音创建“18:10 接孩子，之后去超市”。 |
+| 同步手机语音任务 | `GET /v1/state` | 状态刷新 | 主流程必经步骤；初始保持空任务，等待手机语音创建并同步。 |
+| 载入演示预置任务 | `POST /v1/event` | `task.created` | 侧栏可选兜底：仅手机端不可用时模拟创建“18:10 接孩子，之后去超市”。 |
 | 会议延迟 | `POST /v1/event` | `meeting.overrun` | 延迟 20 分钟，触发最晚出发风险。 |
 | 接近车辆 | `POST /v1/event` | `scene.approaching` | 准备从随行/手机交接到车机。 |
 | 进入车辆 | `POST /v1/event` | `scene.vehicle_entered` | 车机成为主展示端。 |
-| 拥堵加剧 | `POST /v1/event` | `traffic.updated` | ETA 变为 18:28，晚到 18 分钟。 |
+| 拥堵加剧 | `POST /v1/event` | `traffic.updated` | 基于当前刚性任务的 `scheduled_at` 计算 ETA；演示默认注入晚到 18 分钟。 |
 | 压力辅助信号 | `POST /v1/event` | `wearable.signal` | 注入心率和置信度，只作辅助信号。 |
 | 急刹信号 | `POST /v1/event` | `driving.signal` | 模拟驾驶负荷升高。 |
-| 用户求助 | `POST /v1/event` | `user.utterance` | 用户说“我还来得及吗？帮我处理”。 |
+| 手机语音求助 | `POST /v1/event` | `user.utterance` | 以 `source=mobile`、`input_mode=voice` 模拟手机 ASR 转写；车机只读显示原文。 |
 | 服务成功/缺货/超预算 | `POST /v1/event` | `service.mock.config` | 控制模拟服务后端返回。 |
 | 确认发送 | `POST /v1/confirm` | `confirmed_by=vehicle_hmi` | 模拟车机大按钮确认。 |
 | 语音确认 | `POST /v1/confirm` | `input_mode=voice` | 模拟车机/手机语音确认兜底。 |
@@ -79,6 +80,6 @@ http://127.0.0.1:5174/apps/demo-console/
 - 控制台只注入外部世界事件，不生成业务结论。
 - 控制台不直接设置 stage、pressure、actions、confirmation。
 - 所有状态展示都来自 Agent 返回的 World State。
-- 现场失败时，控制台作为演示兜底入口，但仍走正式 API。
+- 现场手机端失败时，控制台侧栏的预置任务按钮作为可选兜底，但仍走正式 API。
 - 主故事创建任务后锁定服务模拟配置，避免现场误切成功/缺货/超预算分支。
 - 确认请求结果不明确时先重新读取 `/v1/state`，确认仍为 pending 才允许重试。

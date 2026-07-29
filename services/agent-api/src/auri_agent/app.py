@@ -1,10 +1,14 @@
+import asyncio
 import json
 import logging
 import secrets
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request as UrlRequest, urlopen
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Security, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 
@@ -61,7 +65,54 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "agent_tools_enabled": current_runtime.conversation_agent.configured,
             "agent_last_tools": current_runtime.conversation_agent.last_tools,
             "shared_access_enabled": current_settings.shared_access_enabled,
+            "amap_configured": current_settings.amap_configured,
         }
+
+    @app.get("/v1/map-config", dependencies=[Depends(require_shared_access)])
+    async def map_config(request: Request) -> dict[str, object]:
+        current_settings: Settings = request.app.state.settings
+        if not current_settings.amap_configured:
+            return {"enabled": False, "provider": "offline"}
+        public_base = current_settings.amap_public_base_url.strip().rstrip("/") or str(request.base_url).rstrip("/")
+        return {
+            "enabled": True,
+            "provider": "amap",
+            "key": current_settings.amap_js_api_key,
+            "service_host": f"{public_base}/_AMapService",
+            "style": "amap://styles/normal",
+        }
+
+    @app.get("/_AMapService/{proxy_path:path}")
+    async def amap_proxy(proxy_path: str, request: Request) -> Response:
+        current_settings: Settings = request.app.state.settings
+        if not current_settings.amap_configured:
+            raise HTTPException(status_code=503, detail={"code": "AMAP_NOT_CONFIGURED", "message": "AMap proxy is disabled"})
+        origin = (request.headers.get("origin") or "").rstrip("/")
+        if origin not in current_settings.amap_allowed_origin_list:
+            raise HTTPException(status_code=403, detail={"code": "AMAP_ORIGIN_DENIED", "message": "origin is not allowed"})
+        clean_path = proxy_path.lstrip("/")
+        if not clean_path or ".." in clean_path or "://" in clean_path:
+            raise HTTPException(status_code=400, detail={"code": "AMAP_PATH_INVALID", "message": "invalid proxy path"})
+        upstream_base = "https://webapi.amap.com/" if clean_path.startswith("v4/map/styles") else "https://restapi.amap.com/"
+        query_items = [(key, value) for key, value in request.query_params.multi_items() if key != "jscode"]
+        query_items.append(("jscode", current_settings.amap_security_js_code))
+        target_url = f"{upstream_base}{clean_path}?{urlencode(query_items, doseq=True)}"
+        try:
+            upstream_status, content_type, body = await asyncio.to_thread(
+                _fetch_amap,
+                target_url,
+                current_settings.amap_proxy_timeout_seconds,
+            )
+        except (HTTPError, URLError, TimeoutError) as exc:
+            raise HTTPException(
+                status_code=502,
+                detail={"code": "AMAP_UPSTREAM_ERROR", "message": "AMap upstream request failed"},
+            ) from exc
+        return Response(
+            content=body,
+            status_code=upstream_status,
+            media_type=content_type.split(";", 1)[0] if content_type else "application/json",
+        )
 
     @app.post("/v1/event", response_model=EventAccepted, status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(require_shared_access)])
     @app.post("/v1/events", response_model=EventAccepted, status_code=status.HTTP_202_ACCEPTED, include_in_schema=False, dependencies=[Depends(require_shared_access)])
@@ -191,6 +242,12 @@ def _http_error(exc: RuntimeErrorWithCode) -> HTTPException:
         "INVALID_MOCK_MODE": 400,
     }.get(exc.code, 400)
     return HTTPException(status_code=status_code, detail={"code": exc.code, "message": str(exc)})
+
+
+def _fetch_amap(url: str, timeout_seconds: float) -> tuple[int, str, bytes]:
+    request = UrlRequest(url, headers={"User-Agent": "AURI-Agent-Map-Proxy/1.0", "Accept": "application/json,*/*"})
+    with urlopen(request, timeout=timeout_seconds) as response:
+        return response.status, response.headers.get("Content-Type", "application/json"), response.read()
 
 
 app = create_app()

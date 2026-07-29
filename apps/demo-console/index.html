@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>AURI Demo 控制台</title>
-  <link rel="stylesheet" href="./styles.css?v=auri-p0-console-20260728b" />
+  <link rel="stylesheet" href="./styles.css?v=auri-p0-console-20260729c" />
 </head>
 <body>
   <main class="console-shell">
@@ -24,15 +24,15 @@
       <section class="connection-card" aria-label="连接配置">
         <label>
           <span>Agent API</span>
-          <input id="apiBase" value="https://auri-langchain-agent-api.onrender.com" autocomplete="off" />
+          <input id="apiBase" value="https://auri-agent-api.onrender.com" autocomplete="off" />
         </label>
         <label>
           <span>Team Token</span>
           <input id="token" type="password" placeholder="仅本地运行时填写，不提交仓库" autocomplete="off" />
         </label>
         <div class="connection-actions">
-          <button id="usePublicAgent" type="button">LangChain 公网</button>
-          <button id="useLegacyAgent" type="button">旧版回退</button>
+          <button id="usePublicAgent" type="button">团队公网</button>
+          <button id="useLegacyAgent" type="button">备用公网</button>
           <button id="useLocalAgent" type="button">本地 Agent</button>
           <button id="saveConfig" type="button">保存配置</button>
           <button id="preflightBtn" type="button">一键预检</button>
@@ -92,13 +92,13 @@
           <em id="hostCue">主持提示：确认三端连接同一个 session 后再开始。</em>
         </section>
         <div class="script-list">
-          <button data-action="task" type="button"><b>1</b><span>创建任务</span><em>手机语音：18:10 接孩子，之后去超市</em></button>
+          <button data-action="waitTask" type="button"><b>1</b><span>同步手机语音任务</span><em>默认空任务；点击后读取 Agent World State</em></button>
           <button data-action="meeting" type="button"><b>2</b><span>会议延迟</span><em>会议延迟 20 分钟，最晚出发窗口压缩</em></button>
           <button data-action="approach" type="button"><b>3</b><span>接近车辆</span><em>腕上提醒后准备交接到车机</em></button>
           <button data-action="vehicle" type="button"><b>4</b><span>进入车辆</span><em>车机成为主展示端</em></button>
-          <button data-action="traffic" type="button"><b>5</b><span>拥堵加剧</span><em>ETA 18:28，预计晚到 18 分钟</em></button>
+          <button data-action="traffic" type="button"><b>5</b><span>拥堵加剧</span><em>按当前刚性任务时间计算 ETA 与晚到</em></button>
           <button data-action="stress" type="button"><b>6</b><span>压力辅助信号</span><em>腕上心率升高，辅助判断高负荷</em></button>
-          <button data-action="utterance" type="button"><b>7</b><span>用户求助</span><em>“我还来得及吗？帮我处理”</em></button>
+          <button data-action="utterance" type="button"><b>7</b><span>手机语音求助</span><em>转写“我还来得及吗？帮我处理”并同步到车机</em></button>
           <button data-action="confirm" class="confirm-action" type="button"><b>8</b><span>确认发送</span><em>模拟车机大按钮确认，触发幂等执行</em></button>
           <button data-action="cooldown" type="button"><b>9</b><span>低干扰恢复</span><em>已处理，按当前速度驾驶即可</em></button>
           <button data-action="parked" type="button"><b>10</b><span>停车复盘</span><em>主交互端回到手机</em></button>
@@ -113,6 +113,14 @@
           </div>
         </div>
         <div class="technical-box">
+          <div class="optional-preset">
+            <span class="optional-preset-copy">
+              <em>可选兜底</em>
+              <strong>演示预置任务</strong>
+              <small>仅手机端暂不可用时，载入“18:10 接孩子，之后去超市”</small>
+            </span>
+            <button data-action="presetTask" type="button">载入</button>
+          </div>
           <button id="toggleTech" class="ghost" type="button">展开技术验证</button>
           <div id="technicalActions" hidden>
             <div class="button-row">
@@ -162,6 +170,6 @@
     </section>
   </main>
 
-  <script src="./app.js?v=auri-p0-console-20260728b"></script>
+  <script src="./app.js?v=auri-p0-console-20260729c"></script>
 </body>
 </html>

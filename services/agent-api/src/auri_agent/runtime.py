@@ -19,6 +19,7 @@ from .models import (
     Stage,
     Surface,
     Task,
+    UtteranceState,
     WearableState,
     WorldState,
     initial_state,
@@ -90,6 +91,12 @@ class AgentRuntime:
                     raise RuntimeErrorWithCode("SESSION_MISMATCH", "event session_id does not match the active session")
                 base_revision = self._state.revision
                 working_state = self._state.model_copy(deep=True)
+                working_state.last_utterance = UtteranceState(
+                    text=str(event.payload.get("text", "")).strip(),
+                    source=event.source,
+                    input_mode="text" if event.payload.get("input_mode") == "text" else "voice",
+                    received_at=event.timestamp,
+                )
 
             result = await self.conversation_agent.handle(
                 str(event.payload.get("text", "")),

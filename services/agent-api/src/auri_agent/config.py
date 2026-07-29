@@ -30,6 +30,15 @@ class Settings(BaseSettings):
     openai_timeout_seconds: float = 30.0
     llm_enabled: bool = True
     agent_shared_token: str = Field(default="", repr=False)
+    amap_js_api_key: str = Field(default="", repr=False)
+    amap_security_js_code: str = Field(default="", repr=False)
+    amap_public_base_url: str = ""
+    amap_allowed_origins: str = (
+        "http://localhost:5174,"
+        "http://127.0.0.1:5174,"
+        "https://wangwang20.github.io"
+    )
+    amap_proxy_timeout_seconds: float = 12.0
 
     model_config = SettingsConfigDict(
         env_file=(REPO_ROOT / ".env", SERVICE_ROOT / ".env"),
@@ -46,5 +55,13 @@ class Settings(BaseSettings):
         return bool(self.agent_shared_token)
 
     @property
+    def amap_configured(self) -> bool:
+        return bool(self.amap_js_api_key and self.amap_security_js_code)
+
+    @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def amap_allowed_origin_list(self) -> list[str]:
+        return [origin.strip().rstrip("/") for origin in self.amap_allowed_origins.split(",") if origin.strip()]

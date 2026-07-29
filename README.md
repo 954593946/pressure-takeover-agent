@@ -38,27 +38,27 @@ GitHub Pages 由本仓库的 `Web HMI and Console` 工作流自动部署。团�
 Demo 台:  https://954593946.github.io/pressure-takeover-agent/apps/demo-console/
 ```
 
-这些只是公开静态前端，不包含 Team Token 或 OpenAI API Key。首次打开后，在页面的连接设置中填写 `https://auri-langchain-agent-api.onrender.com` 和负责人单独提供的 Team Token。若两个页面看不到同一任务，首先检查二者是否连接了同一个 API 地址和同一个共享 Session。
+这些只是公开静态前端，不包含 Team Token 或 OpenAI API Key。首次打开后，在页面的连接设置中填写 `https://auri-agent-api.onrender.com` 和负责人单独提供的 Team Token。若两个页面看不到同一任务，首先检查二者是否连接了同一个 API 地址和同一个共享 Session。
 
 ## 团队快速接入：公网 Agent
 
-当前 README 记录的 LangChain 共享后端如下。仓库同时存在另一套 Render 地址，而两个进程内存状态不会共享；最终 Demo 必须先完成清单中的 `BLOCK-01`，由负责人公布唯一 canonical URL。各端在此之前不得自行混用两个地址：
+当前手机、车机与控制台统一使用以下共享后端。该地址已经运行 LangChain 工具编排；另一套 Render 地址只作为备用，两个进程内存中的 World State 不会共享，联调时不得混用：
 
 > PR #15 合并并由 Render 完成部署后，才可在共享实例使用完整工具编排。伙伴可通过 `/health` 的 `agent_tools_enabled=true` 和 `agent_last_tools` 判断新版本是否已经上线；部署前共享实例仍可能运行 PR #11 的任务解析版本。
 
 ```text
-API Base URL: https://auri-langchain-agent-api.onrender.com
-Health:       https://auri-langchain-agent-api.onrender.com/health
-Swagger:      https://auri-langchain-agent-api.onrender.com/docs
-SSE:          https://auri-langchain-agent-api.onrender.com/v1/stream
-WebSocket:    wss://auri-langchain-agent-api.onrender.com/v1/ws
+API Base URL: https://auri-agent-api.onrender.com
+Health:       https://auri-agent-api.onrender.com/health
+Swagger:      https://auri-agent-api.onrender.com/docs
+SSE:          https://auri-agent-api.onrender.com/v1/stream
+WebSocket:    wss://auri-agent-api.onrender.com/v1/ws
 ```
 
 伙伴不需要 Bosch API Key。请向 Agent Owner 单独索取 `AGENT_SHARED_TOKEN`，只放在自己未提交的本地环境变量中：
 
 ```dotenv
-AGENT_API_BASE_URL=https://auri-langchain-agent-api.onrender.com
-AGENT_STREAM_URL=https://auri-langchain-agent-api.onrender.com/v1/stream
+AGENT_API_BASE_URL=https://auri-agent-api.onrender.com
+AGENT_STREAM_URL=https://auri-agent-api.onrender.com/v1/stream
 AGENT_SHARED_TOKEN=向项目负责人索取，禁止提交
 ```
 
@@ -77,17 +77,17 @@ X-Agent-Token: <AGENT_SHARED_TOKEN>
 5. 通过 SSE 或 WebSocket 接收完整 World State 快照，刷新或断线后重新请求 `GET /v1/state` 对账。
 
 ```bash
-curl https://auri-langchain-agent-api.onrender.com/v1/state \
+curl https://auri-agent-api.onrender.com/v1/state \
   -H "X-Agent-Token: $AGENT_SHARED_TOKEN"
 ```
 
 浏览器原生 `EventSource` 不能设置自定义请求头，因此 Web 客户端应使用带请求头的流式 `fetch`，或使用 WebSocket。浏览器原生 WebSocket 不能设置请求头时，Demo 联调可使用：
 
 ```text
-wss://auri-langchain-agent-api.onrender.com/v1/ws?access_token=<AGENT_SHARED_TOKEN>
+wss://auri-agent-api.onrender.com/v1/ws?access_token=<AGENT_SHARED_TOKEN>
 ```
 
-这是一个共享单实例 Demo：所有伙伴看到同一个 Session 和 World State。不要在其他人联调时调用 `/v1/session/reset`；控制台、手机和车机也不得直接修改 World State。旧版 `https://auri-agent-api.onrender.com` 仅保留作回退。更完整的 Event 示例、错误处理和各端职责见 [Agent 接入与跨端协作指南](docs/agent-integration-guide.md)。
+这是一个共享单实例 Demo：所有伙伴看到同一个 Session 和 World State。不要在其他人联调时调用 `/v1/session/reset`；控制台、手机和车机也不得直接修改 World State。备用地址 `https://auri-langchain-agent-api.onrender.com` 仅在负责人明确切换时使用。更完整的 Event 示例、错误处理和各端职责见 [Agent 接入与跨端协作指南](docs/agent-integration-guide.md)。
 
 新成员或 AI 编程助手开始工作前，按这个顺序阅读：
 

@@ -22,7 +22,7 @@
   },
   "actions": [
     {"type": "message", "target": "老师", "status": "awaiting_confirmation"},
-    {"type": "message", "target": "家人", "status": "awaiting_confirmation"},
+    {"type": "message", "target": "孩子妈妈", "status": "awaiting_confirmation"},
     {"type": "service_order", "target": "超市配送", "status": "awaiting_confirmation"}
   ],
   "confirmation": {

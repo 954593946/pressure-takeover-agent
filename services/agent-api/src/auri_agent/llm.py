@@ -155,7 +155,7 @@ def fallback_tasks(text: str) -> list[Task]:
                 task_type="rigid",
                 priority="high",
                 adjustable=False,
-                waiting_party=["王老师", "家人"],
+                waiting_party=["王老师", "孩子妈妈"],
                 capability_tags=[],
             )
         )

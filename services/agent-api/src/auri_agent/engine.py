@@ -114,12 +114,21 @@ def _message_task(state: WorldState, target: str) -> Task | None:
     )
 
 
+def _is_child_target(target: str) -> bool:
+    return target.strip() in {"孩子", "儿子", "女儿", "小朋友"}
+
+
+def _is_family_target(target: str) -> bool:
+    family_terms = ("家人", "妈妈", "爸爸", "奶奶", "爷爷", "外婆", "外公", "爱人", "伴侣", "妻子", "丈夫")
+    return any(term in target for term in family_terms)
+
+
 def build_message_body(state: WorldState, target: str) -> str:
     """Build the concrete body persisted in Action.summary for the demo message."""
     task = _message_task(state, target)
     task_text = f"“{task.title}”" if task else "当前安排"
     timing = _timing_text(state)
-    if "孩子" in target:
+    if _is_child_target(target):
         body = f"我正在前往处理{task_text}，{timing}。你先安心等我，我会安全驾驶并继续同步进度。"
     elif "老师" in target:
         request = "麻烦先照看一下孩子" if task and "孩子" in task.title else "麻烦先协助等候"
@@ -156,7 +165,7 @@ def build_order_summary(state: WorldState, order: ServiceOrder, *, submitted: bo
 
 
 def _receipt_message_request(state: WorldState, actions: list[Action]) -> str:
-    if len(actions) == 1 and "孩子" in actions[0].target:
+    if len(actions) == 1 and _is_child_target(actions[0].target):
         return "请安心等我"
     if len(actions) == 1 and "老师" in actions[0].target:
         task = _message_task(state, actions[0].target)
@@ -225,9 +234,9 @@ class ActionPlanner:
         message_targets: list[str] = []
         if include_messages:
             for task in rigid_tasks:
-                message_targets.extend(task.waiting_party)
+                message_targets.extend("孩子妈妈" if target == "家人" else target for target in task.waiting_party)
                 if "孩子" in task.title and not task.waiting_party:
-                    message_targets.extend(["老师", "家人"])
+                    message_targets.extend(["老师", "孩子妈妈"])
         message_targets = list(dict.fromkeys(target for target in message_targets if target))[:2]
 
         message_actions: list[Action] = []
@@ -235,7 +244,7 @@ class ActionPlanner:
             if "老师" in target:
                 action_id = "action_message_teacher"
                 details_ref = "message_teacher"
-            elif "家" in target:
+            elif _is_family_target(target):
                 action_id = "action_message_family"
                 details_ref = "message_family"
             else:

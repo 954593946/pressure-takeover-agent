@@ -28,7 +28,7 @@
 
 消息草稿、行程详情、方案详情、车况详情和三端同步通过主驾驶侧原位二级页查看；二级页不得使用整屏灰色遮罩，导航和确认入口需要保持上下文可见。不得把控制台日志、商品长列表或消息全文铺在主屏上。
 
-底部任务和行程卡必须在 1280×720 完整显示 `18:10 接孩子`、`不可后置`、剩余距离、预计用时和预计到达，不得用省略号隐藏这些关键值。消息正文只能进入二级页，并按段落换行。
+底部任务和行程卡必须在 1280×720 完整显示 Agent 同步的任务标题、责任属性、剩余距离、预计用时和预计到达，不得用省略号隐藏这些关键值。消息正文只能进入二级页，并按段落换行。
 
 风险提醒采用短时或阶段内 Heads-up 通知：
 
@@ -49,7 +49,7 @@
 | `planning/waiting_confirmation/executing` | Agent 接管 | 地图保持驾驶上下文，提示无需额外操作或等待确认。 |
 | `action_completed/cooldown` | 恢复 | 路段恢复绿态，显示已处理提示并降低打扰。 |
 
-阶段变化应使用短时过渡动画，不使用循环闪烁。必须支持 `prefers-reduced-motion`。当前地图是 HMI 模拟图层，不接真实地图 SDK；不要在前端伪造实时导航数据，地图文本和 ETA 必须来自当前 Demo 状态或冻结演示数据。
+阶段变化应使用短时过渡动画，不使用循环闪烁。必须支持 `prefers-reduced-motion`。当前版本默认接入高德 JS API 2.0 真实 2D 底图、道路 POI、驾车路线和实时交通图层；高德不可用时才显示离线模拟图层。地图路线几何可来自高德，但 ETA、晚到判断、压力等级和任务状态必须来自当前 Agent World State。
 
 ## 启动页面
 
@@ -117,19 +117,19 @@ python -m uvicorn \
 推荐公网 Agent 地址：
 
 ```text
-https://auri-langchain-agent-api.onrender.com
+https://auri-agent-api.onrender.com
 ```
 
-旧版回退地址：
+备用公网地址：
 
 ```text
-https://auri-agent-api.onrender.com
+https://auri-langchain-agent-api.onrender.com
 ```
 
 打开车机 HMI 后：
 
 1. 点击左侧快捷栏底部 `连接`。
-2. 点击 `LangChain 公网`。
+2. 点击 `团队公网`。
 3. 在 `Team Token` 输入框填写团队负责人提供的令牌。
 4. 点击 `保存并重连`。
 
@@ -140,7 +140,49 @@ https://auri-agent-api.onrender.com
 - 不要把 OpenAI API Key 写入任何前端文件。
 - 如果页面部署在公网，Agent API 不能填 `127.0.0.1`，否则会访问使用者自己的电脑。
 - HMI 不直接调用 LangChain 工具，只消费 Agent 返回的 `WorldState`。
-- 旧版回退地址只在新版 LangChain 服务不可用时使用。
+- 备用公网地址只在负责人明确切换共享实例时使用。
+
+## 默认高德在线地图
+
+HMI 页面启动时会携带已保存的 Team Token 请求 Agent：
+
+```http
+GET /v1/map-config
+X-Agent-Token: <团队令牌>
+```
+
+Agent 配置完整时，HMI 自动加载高德真实 2D 地图，不需要协作同事填写地图 Key。自动配置失败时，可在左侧 `连接` 的“导航地图”区域查看状态或切换离线地图；仅地图负责人本机调试时才手动填写 Key。
+
+默认路线：
+
+```text
+起点：博世苏州・星龙街455号
+终点：阳光小学（Demo 冻结坐标）
+```
+
+安全和额度约束：
+
+- 不把 Key 或 Security JS Code 写入代码和团队文档。
+- 高德 Key 缺失或调用失败时自动回退离线地图。
+- 高德只负责地图上下文；Agent 的 ETA、晚到判断、任务和确认仍是唯一业务事实。
+- 公网 Key 必须允许当前 HMI 域名。
+- 公网环境必须使用 Agent `/_AMapService` 代理保存 Security JS Code。
+- 当前浏览器每月最多初始化地图 200 次、规划路线 200 次；达到后自动回退离线地图。
+- 重跑故事线使用 Console 的 `重置 Demo`，不要通过反复刷新 HMI 重置。
+- Console 事件、SSE 和轮询不会重新调用高德路线规划。
+
+检查本浏览器地图状态和调用计数：
+
+```js
+window.AURI_HMI.getMapStatus()
+window.AURI_HMI.getMapUsage()
+```
+
+完整说明见：
+
+```text
+docs/amap-hmi-integration.md
+```
 
 ## 车载状态和空调联动
 
@@ -186,22 +228,17 @@ HMI 不读取工具调用细节，不从聊天回复反推状态，也不直接�
 
 ## 主驾驶侧交互规则
 
-左侧 `我还来得及吗？` 是驾驶中主动求助入口，不是静态展示按钮。启用条件：
-
-```text
-primary_surface = vehicle_hmi
-stage in [vehicle_observation, takeover_L2, takeover_L3, planning]
-confirmation.status != pending
-```
-
-点击后页面提交标准事件：
+左侧手机语音卡是只读的跨端转写展示，不是车机输入按钮。手机提交：
 
 ```text
 POST /v1/event
 type = user.utterance
-source = vehicle_hmi
+source = mobile
 payload.text = 我还来得及吗？帮我处理
+payload.input_mode = voice
 ```
+
+Agent 将转写写入 `WorldState.last_utterance`；HMI 收到更高 revision 后展示原文。HMI 禁止自行提交 `user.utterance`。
 
 `方案`、`车况`、`同步`、`消息草稿`、`行程详情`均为二级信息入口，只读展示当前 `WorldState` 摘要，不直接改写状态。二级信息在主驾驶侧原位替换 AURI 面板，保持地图和底部确认入口可见，不做网页式全屏遮罩。二级页打开期间收到新 revision 时，内容必须同步刷新。
 
@@ -209,8 +246,20 @@ payload.text = 我还来得及吗？帮我处理
 
 - 主屏现实结论最多两句，优先呈现“继续加速无法明显缩短时间”等现实判断。
 - 动作组最多显示三条短摘要。
-- 待确认时只保留一个底部主要 CTA；语音求助入口进入不可操作提示态。
+- 待确认时只保留一个底部主要 CTA；手机语音卡保持只读。
 - 完成后显示“需要时再叫我”并降低视觉强调。
+
+二级页视觉与交互要求：
+
+- `任务`页使用一个责任总览、两张可展开任务卡和一个处理进度，不回退到键值表。
+- `消息`页使用联系人分段控件；联系人来自 Agent `actions[]`，老师、孩子妈妈、爷爷或奶奶变化时原位更新消息预览。
+- `同步`页必须同时显示三端流转关系、当前主交互端、设备状态和 World State revision。
+- 任务展开、联系人切换均需保持地图和底部唯一确认 CTA 可见。
+- 状态必须同时使用图形、颜色和文字，后端枚举不得直接暴露给用户。
+- 1280×720 和 1600×900 横屏下，三个页面不得产生页面级滚动或遮挡。
+- 主判断区必须使用“阶段状态卡 + 现实结论卡”，不得退回“标签 + 长标题 + 两段文字”的平铺方式。
+- `parked_review` 显示手机接续状态，并允许进入消息记录和处理结果；不再展示座舱状态入口。
+- 顶部接送状态使用“晚到 18 分钟”“出发时间紧张”“可按时到达”等用户语言，禁止使用“责任窗口突破/压缩”。
 
 ## 车机确认规则
 
