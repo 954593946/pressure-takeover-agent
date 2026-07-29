@@ -16,10 +16,19 @@ class TaskDraft(BaseModel):
     title: str = Field(min_length=1, max_length=80)
     scheduled_at: datetime | None = None
     location: str | None = Field(default=None, max_length=120)
-    task_type: Literal["rigid", "flexible"]
+    task_type: Literal["rigid", "flexible"] = Field(
+        description="按外部责任和失约后果判断；仅有具体时间仍可为 flexible"
+    )
     priority: Literal["low", "medium", "high"] = "medium"
-    adjustable: bool = True
-    waiting_party: list[str] = Field(default_factory=list, max_length=10)
+    adjustable: bool = Field(
+        default=True,
+        description="任务是否可延期或替代；个人娱乐通常为 true",
+    )
+    waiting_party: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="只填写用户明确提到或已有状态中的等待方",
+    )
     capability_tags: list[str] = Field(default_factory=list, max_length=10)
 
 

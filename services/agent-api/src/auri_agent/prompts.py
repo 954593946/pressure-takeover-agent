@@ -3,6 +3,17 @@ import json
 from .models import Scene, WorldState
 
 
+TASK_RIGIDITY_POLICY = """
+任务刚性判定规则：
+- `scheduled_at` 只表示计划时间。仅仅出现“9 点”“今晚”“周六”等明确时间，不能作为刚性依据。
+- 只有输入明确体现外部责任或显著失约后果时才判为 `rigid`：被照护者或安全责任正在等待；存在不可错过的外部截止，错过会导致取消、违约、明显损失；或用户明确表示必须按时履行且已有具体外部承诺。
+- 可以延期、替代或取消，且不会让他人承担明显后果的事项判为 `flexible`。娱乐、打游戏、锻炼、购物、喝咖啡、自主学习等个人安排默认是 `flexible`，即使用户给出了具体时间。
+- “有人一起”或普通社交约定本身不自动等于刚性；只有输入明确说明对方依赖、正式比赛、预约名额、违约代价等显著后果时，才升级为 `rigid`。
+- 证据不足时不得虚构等待方、责任或损失；默认 `flexible`、`adjustable=true`。
+- 对照示例：“今晚 9 点去打游戏”是 `flexible`；“今晚 9 点参加战队正式比赛，缺席会导致全队弃权”是 `rigid`；“18:10 接孩子”是 `rigid`。
+""".strip()
+
+
 def compact_state(state: WorldState) -> dict[str, object]:
     return {
         "session_id": state.session_id,
@@ -81,6 +92,8 @@ def build_agent_prompt(state: WorldState) -> str:
 - 用户报告会议延迟时调用 report_meeting_delay。
 - 用户说“帮我处理、怎么办、替我安排”时，根据已有任务调用 prepare_assistance；不要凭空增加采购或联系人。
 - 用户明确确认或拒绝当前方案时才调用 confirm_current_actions。
+
+{TASK_RIGIDITY_POLICY}
 
 表达要求：
 - 依据 Profile 语气：tone={state.profile.tone}，explanation_depth={state.profile.explanation_depth}。

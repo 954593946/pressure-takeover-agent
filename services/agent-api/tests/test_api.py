@@ -10,7 +10,8 @@ from jsonschema import Draft202012Validator
 from auri_agent.app import create_app
 from auri_agent.config import Settings
 from auri_agent.llm import ExtractedTask, TaskExtraction, TaskParser
-from auri_agent.models import ConfirmationRequest, Event
+from auri_agent.models import ConfirmationRequest, Event, initial_state
+from auri_agent.prompts import TASK_RIGIDITY_POLICY, build_agent_prompt
 
 
 TZ = timezone(timedelta(hours=8), name="Asia/Shanghai")
@@ -60,6 +61,17 @@ def test_health_never_exposes_key(client: TestClient) -> None:
     assert response.json()["agent_tools_enabled"] is False
     assert response.json()["agent_last_tools"] == []
     assert "api_key" not in response.text.lower()
+
+
+def test_task_rigidity_policy_is_shared_by_both_real_agent_paths() -> None:
+    parser = TaskParser(Settings(llm_enabled=False, openai_api_key=""))
+    conversation_prompt = build_agent_prompt(initial_state("test_prompt"))
+
+    assert TASK_RIGIDITY_POLICY in parser._system_prompt()
+    assert TASK_RIGIDITY_POLICY in conversation_prompt
+    assert "仅仅出现“9 点”“今晚”“周六”等明确时间，不能作为刚性依据" in TASK_RIGIDITY_POLICY
+    assert "今晚 9 点去打游戏”是 `flexible`" in TASK_RIGIDITY_POLICY
+    assert "缺席会导致全队弃权”是 `rigid`" in TASK_RIGIDITY_POLICY
 
 
 @pytest.mark.asyncio
