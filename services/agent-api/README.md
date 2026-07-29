@@ -100,6 +100,18 @@ AGENT_STREAM_URL=https://auri-langchain-agent-api.onrender.com/v1/stream
 
 标准事件序列位于 `packages/test-fixtures/happy-path.events.json`。客户端应先读取 `/v1/state` 获得当前 `session_id`，再上报事件；重复 `event_id` 或重复确认只返回第一次的状态，不重复发送消息、创建订单或震动。
 
+## Demo 消息与采购回执
+
+协助方案不再只返回“已准备/已处理”的泛化文案。客户端无需增加新接口，直接读取现有 v0.2 World State：
+
+- 确认前，消息类 `Action.summary` 包含收件人、完整消息草稿和“未连接真实通讯服务”标识。
+- 确认后，同一 `Action.summary` 变为“已模拟发送”，正文继续保留，方便手机复盘和 HMI 动作卡核验。
+- 采购类 `Action.summary` 包含全部商品与数量、总件数/品类数、总价、配送方式、配送时段、选择策略和替换规则；确认后还包含模拟 `order_id`。
+- `service_orders[].items` 仍是商品卡片的结构化权威数据；前端不要从自然语言回复反向解析商品或执行状态。
+- `output.conclusion` 和 Chat `tool_result.summary` 提供适合现场演示的简短回执，至少包含收件人/消息要点，以及前两项商品、金额和配送时段。
+
+所有这些结果仍是 Demo 模拟：不会真的发送短信，也不会发起真实支付。真实状态以 `Action.status`、`ServiceOrder.status` 和 `Confirmation.status` 为准。
+
 使用本机 `.env` 中的 Bosch 配置做完整模型验收：
 
 ```powershell

@@ -138,6 +138,13 @@ def test_happy_path_and_duplicate_confirmation(client: TestClient) -> None:
     assert state["primary_surface"] == "vehicle_hmi"
     assert state["risk"]["pressure_level"] == "L2"
     assert state["service_orders"][0]["total"] == 186
+    message_action = next(action for action in state["actions"] if action["type"] == "message")
+    order_action = next(action for action in state["actions"] if action["type"] == "service_order")
+    assert "消息草稿" in message_action["summary"]
+    assert "预计18:28到" in message_action["summary"]
+    assert "牛奶×2" in order_action["summary"]
+    assert "鸡蛋×1" in order_action["summary"]
+    assert "模拟商超配送" in order_action["summary"]
     confirmation_id = state["confirmation"]["confirmation_id"]
 
     body = {"confirmation_id": confirmation_id, "decision": "accept", "confirmed_by": "vehicle_hmi", "input_mode": "button"}
@@ -150,6 +157,12 @@ def test_happy_path_and_duplicate_confirmation(client: TestClient) -> None:
     assert first_state["stage"] == "action_completed"
     assert first_state["service_orders"][0]["order_id"] == second_state["service_orders"][0]["order_id"]
     assert first_state["revision"] == second_state["revision"]
+    completed_order = next(action for action in first_state["actions"] if action["type"] == "service_order")
+    assert first_state["service_orders"][0]["order_id"] in completed_order["summary"]
+    assert "牛奶×2" in first_state["output"]["conclusion"]
+    assert "鸡蛋×1" in first_state["output"]["conclusion"]
+    assert "186元" in first_state["output"]["conclusion"]
+    assert "20:00-21:00" in first_state["output"]["conclusion"]
 
 
 def test_confirmation_rejects_non_owner_surface(client: TestClient) -> None:

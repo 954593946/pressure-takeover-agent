@@ -101,6 +101,69 @@ def test_confirmation_requires_explicit_words_and_owner_surface() -> None:
     assert state.service_orders[0].status == "submitted"
 
 
+def test_demo_receipts_include_message_body_and_purchase_details() -> None:
+    state = initial_state("demo_receipts")
+    state.eta = datetime(2026, 7, 29, 18, 28, tzinfo=TZ)
+    state.risk.late_minutes = 18
+    setup = AgentToolbox(state, event_id="evt_receipts", source="mobile", original_text="帮我处理")
+    setup.create_tasks(
+        [
+            task(
+                "18:10去学校接孩子",
+                "rigid",
+                priority="high",
+                adjustable=False,
+                waiting_party=["孩子"],
+            ),
+            task("之后去超市采购", "flexible", capability_tags=["grocery_delivery"]),
+        ],
+        replace_existing=False,
+    )
+
+    prepared = setup.prepare_assistance(include_messages=True, include_grocery=True)
+    message = next(action for action in state.actions if action.type == "message")
+    order_action = next(action for action in state.actions if action.type == "service_order")
+
+    assert "给孩子的消息草稿" in message.summary
+    assert "预计18:28到" in message.summary
+    assert "你先安心等我" in message.summary
+    assert "未连接真实通讯服务" in message.summary
+    assert "牛奶×2" in order_action.summary
+    assert "鸡蛋×1" in order_action.summary
+    assert "共9件（8种）" in order_action.summary
+    assert "模拟商超配送" in order_action.summary
+    assert "未发生真实支付" in order_action.summary
+    assert "牛奶×2" in state.output.conclusion
+    assert prepared["requires_confirmation"] is True
+
+    confirmation = AgentToolbox(
+        state,
+        event_id="evt_receipts_confirm",
+        source="mobile",
+        original_text="确认执行吧",
+    ).confirm_current_actions("accept")
+
+    assert confirmation["ok"] is True
+    assert confirmation["execution_receipts"]
+    assert message.summary.startswith("已模拟发送给孩子：")
+    assert order_action.details_ref == state.service_orders[0].order_id
+    assert state.service_orders[0].order_id in order_action.summary
+    assert "孩子" in state.output.conclusion
+    assert "牛奶×2" in state.output.conclusion
+    assert "186元" in state.output.conclusion
+    assert "20:00-21:00" in state.output.conclusion
+
+    grounded = AuriAgent(Settings(llm_enabled=False, openai_api_key=""))._ground_reply(
+        "都处理好了。",
+        state,
+        ["confirm_current_actions"],
+    )
+    assert "孩子" in grounded
+    assert "牛奶×2" in grounded
+    assert "鸡蛋×1" in grounded
+    assert "20:00-21:00" in grounded
+
+
 @pytest.mark.asyncio
 async def test_completed_tool_state_survives_final_model_timeout() -> None:
     class ToolThenTimeoutGraph:

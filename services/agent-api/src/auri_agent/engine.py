@@ -97,6 +97,116 @@ class MockGroceryAdapter:
         )
 
 
+def _timing_text(state: WorldState) -> str:
+    parts: list[str] = []
+    if state.eta is not None:
+        parts.append(f"预计{state.eta.strftime('%H:%M')}到")
+    if state.risk.late_minutes > 0:
+        parts.append(f"会晚{state.risk.late_minutes}分钟")
+    return "，".join(parts) or "到达时间有变化"
+
+
+def _message_task(state: WorldState, target: str) -> Task | None:
+    rigid_tasks = [task for task in state.tasks if task.task_type == "rigid"]
+    return next(
+        (task for task in rigid_tasks if target in task.waiting_party),
+        rigid_tasks[0] if rigid_tasks else None,
+    )
+
+
+def build_message_body(state: WorldState, target: str) -> str:
+    """Build the concrete body persisted in Action.summary for the demo message."""
+    task = _message_task(state, target)
+    task_text = f"“{task.title}”" if task else "当前安排"
+    timing = _timing_text(state)
+    if "孩子" in target:
+        body = f"我正在前往处理{task_text}，{timing}。你先安心等我，我会安全驾驶并继续同步进度。"
+    elif "老师" in target:
+        request = "麻烦先照看一下孩子" if task and "孩子" in task.title else "麻烦先协助等候"
+        body = f"您好，我正在前往处理{task_text}，{timing}。{request}，谢谢。"
+    else:
+        body = f"我正在前往处理{task_text}，{timing}。我会安全驾驶并继续同步进度。"
+    return f"{body}（Demo 模拟消息，未连接真实通讯服务）"
+
+
+def _item_text(order: ServiceOrder, *, limit: int | None = None) -> str:
+    items = order.items if limit is None else order.items[:limit]
+    text = "、".join(f"{item.name}×{item.quantity}" for item in items)
+    if limit is not None and len(order.items) > limit:
+        text += f"等{len(order.items)}种商品"
+    return text
+
+
+def build_order_summary(state: WorldState, order: ServiceOrder, *, submitted: bool = False) -> str:
+    """Describe what is bought, how it is selected, and how it is delivered."""
+    total_quantity = sum(item.quantity for item in order.items)
+    priority = "按最快配送选择" if state.profile.delivery_priority == "fastest" else "按品质优先选择"
+    substitution = (
+        "缺货时仅同规格且预算内替换"
+        if state.profile.substitution_policy == "same_spec_within_budget"
+        else "缺货时仅同品牌替换"
+    )
+    phase = "已通过模拟商超配送提交" if submitted else "模拟商超配送预览"
+    order_id = f"；订单号 {order.order_id}" if submitted and order.order_id else ""
+    return (
+        f"{phase}：{_item_text(order)}；共{total_quantity}件（{len(order.items)}种），"
+        f"合计{order.total:.0f}元，{order.delivery_window}送达{order_id}；"
+        f"{priority}，{substitution}。（Demo 模拟订单，未发生真实支付）"
+    )
+
+
+def _receipt_message_request(state: WorldState, actions: list[Action]) -> str:
+    if len(actions) == 1 and "孩子" in actions[0].target:
+        return "请安心等我"
+    if len(actions) == 1 and "老师" in actions[0].target:
+        task = _message_task(state, actions[0].target)
+        return "请先照看孩子" if task and "孩子" in task.title else "请先协助等候"
+    return "我会继续同步进度"
+
+
+def build_preparation_receipt(state: WorldState) -> str:
+    message_actions = [action for action in state.actions if action.type == "message"]
+    parts: list[str] = []
+    if message_actions:
+        targets = "、".join(action.target for action in message_actions)
+        request = _receipt_message_request(state, message_actions)
+        parts.append(f"给{targets}的消息草稿为“{_timing_text(state)}，{request}”")
+    order = next((order for order in state.service_orders if order.status == "awaiting_confirmation"), None)
+    if order:
+        parts.append(
+            f"模拟商超配送预览为{_item_text(order, limit=2)}，"
+            f"共{order.total:.0f}元，{order.delivery_window}送达"
+        )
+    blocked_order = next((order for order in state.service_orders if order.status == "blocked"), None)
+    if blocked_order:
+        reason = "超出预算" if blocked_order.error_code == "OVER_BUDGET" else "商品缺货"
+        parts.append(f"模拟采购因{reason}已阻止，不会提交订单")
+    if not parts:
+        return "当前没有需要确认的可执行事项。"
+    return "已准备：" + "；".join(parts) + "。确认后才会模拟执行。"
+
+
+def build_execution_receipt(state: WorldState, *, include_order_id: bool = True) -> str:
+    completed_messages = [
+        action for action in state.actions if action.type == "message" and action.status == "completed"
+    ]
+    parts: list[str] = []
+    if completed_messages:
+        targets = "、".join(action.target for action in completed_messages)
+        request = _receipt_message_request(state, completed_messages)
+        parts.append(f"给{targets}发“{_timing_text(state)}，{request}”")
+    order = next((order for order in state.service_orders if order.status == "submitted"), None)
+    if order:
+        order_id = f"，订单号{order.order_id}" if include_order_id and order.order_id else ""
+        parts.append(
+            f"通过模拟商超配送购买{_item_text(order, limit=2)}，"
+            f"共{order.total:.0f}元，{order.delivery_window}送达{order_id}"
+        )
+    if not parts:
+        return "当前没有已执行的消息或订单。"
+    return "Demo 已模拟执行：" + "；".join(parts) + "。"
+
+
 class ActionPlanner:
     @staticmethod
     def prepare(
@@ -125,15 +235,13 @@ class ActionPlanner:
             if "老师" in target:
                 action_id = "action_message_teacher"
                 details_ref = "message_teacher"
-                summary = f"通知预计晚到{state.risk.late_minutes}分钟（模拟消息）"
             elif "家" in target:
                 action_id = "action_message_family"
                 details_ref = "message_family"
-                summary = "同步接送进度（模拟消息）"
             else:
                 action_id = f"action_message_{index + 1}"
                 details_ref = f"message_contact_{index + 1}"
-                summary = f"向{target}同步任务进度（模拟消息）"
+            summary = f"给{target}的消息草稿：{build_message_body(state, target)}"
             message_actions.append(
                 Action(
                     action_id=action_id,
@@ -155,11 +263,11 @@ class ActionPlanner:
                 Action(
                     action_id="action_grocery_order",
                     type="service_order",
-                    target="模拟商超",
+                    target="模拟商超配送",
                     status="awaiting_confirmation" if order.status == "awaiting_confirmation" else "blocked",
                     risk="medium",
                     requires_confirmation=True,
-                    summary=f"{len(order.items)}件商品，共{order.total:.0f}元，{order.delivery_window}送达（模拟订单）",
+                    summary=build_order_summary(state, order),
                     details_ref=order.preview_id,
                     error_code=order.error_code,
                 )
@@ -205,7 +313,7 @@ class ActionPlanner:
             suppressed_surfaces=["mobile", "wearable"] if state.primary_surface == Surface.VEHICLE_HMI else ["vehicle_hmi", "wearable"],
             expires_at=output_expiry(),
             requires_confirmation=True,
-            conclusion=f"预计晚到{state.risk.late_minutes}分钟，消息和采购方案已准备。",
+            conclusion=build_preparation_receipt(state),
         )
         state.action_ledger.append(f"plan:{state.confirmation.confirmation_id}")
         return state.actions
@@ -251,10 +359,20 @@ def consume_confirmation(state: WorldState, request: ConfirmationRequest) -> Non
     for action in state.actions:
         if action.action_id in confirmation.action_ids:
             action.status = "completed"
+            if action.type == "message":
+                action.summary = action.summary.replace(
+                    f"给{action.target}的消息草稿：",
+                    f"已模拟发送给{action.target}：",
+                    1,
+                )
     for order in state.service_orders:
         if order.status == "awaiting_confirmation":
             order.order_id = order.order_id or f"order_{order.preview_id.removeprefix('preview_')}"
             order.status = "submitted"
+            for action in state.actions:
+                if action.type == "service_order" and action.details_ref == order.preview_id:
+                    action.details_ref = order.order_id
+                    action.summary = build_order_summary(state, order, submitted=True)
     state.stage = Stage.ACTION_COMPLETED
     state.risk.pressure_level = PressureLevel.RECOVERY
     state.wearable = WearableState(
@@ -271,7 +389,7 @@ def consume_confirmation(state: WorldState, request: ConfirmationRequest) -> Non
         suppressed_surfaces=["mobile", "wearable"] if state.primary_surface == Surface.VEHICLE_HMI else ["vehicle_hmi", "wearable"],
         expires_at=output_expiry(1),
         requires_confirmation=False,
-        conclusion="消息和订单已在 Demo 中模拟处理完成，按当前速度驾驶即可。",
+        conclusion=build_execution_receipt(state, include_order_id=False),
     )
 
 
