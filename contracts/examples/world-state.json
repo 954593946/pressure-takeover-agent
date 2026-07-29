@@ -104,5 +104,11 @@
     "conclusion": "预计晚到18分钟，消息和采购方案已准备。"
   },
   "action_ledger": ["event:evt_traffic_001", "plan:confirm_all_001"],
-  "service_mock_mode": "success"
+  "service_mock_mode": "success",
+  "vehicle_state": {
+    "ac_on": false,
+    "ac_target_temp": 24,
+    "ac_mode": "auto",
+    "fan_speed": "medium"
+  }
 }

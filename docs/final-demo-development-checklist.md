@@ -41,11 +41,10 @@
 
 - **Owner**：Agent / 后端；项目负责人做最终选择。
 - **优先级**：P0，第一顺位。
-- **当前情况**：仓库同时保留 auri-agent-api 和 auri-langchain-agent-api 两个 Render 配置；README 推荐地址、手机默认地址、车机公开地址并不一致。两个进程内存中的 World State 不会共享。
+- **当前情况**：已将手机、车机、控制台和 README 的 canonical URL 统一为 `https://auri-agent-api.onrender.com`；`auri-langchain-agent-api` 仅作为负责人控制的备用实例。仍需补充服务构建标识并完成三端同 Session 验收。
 - **要做**：
-  - 选择一个正式 Demo 后端作为唯一 canonical URL。
-  - 手机、车机、控制台、README、脚本和 Render 配置全部使用该地址。
-  - 另一个实例标记为“备份，不参与同场联调”，不能让成员自由选择。
+  - 保持手机、车机、控制台、README、脚本和 Render 配置继续使用 canonical URL。
+  - 备用实例不参与同场联调，切换必须由负责人统一通知。
   - health 增加构建 SHA、服务名和启动时间，现场能确认连接的是同一版本。
 - **验收**：手机创建任务后，控制台和车机在 1 秒内显示相同 session_id、更高 revision 和同一任务；三个端显示的服务版本一致。
 - **禁止**：复制状态、手工刷新 JSON，或让两个服务各演各的。

@@ -84,6 +84,17 @@
         "signal_confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1}
       }
     },
+    "VehicleState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ac_on", "ac_target_temp", "ac_mode", "fan_speed"],
+      "properties": {
+        "ac_on": {"type": "boolean", "default": false},
+        "ac_target_temp": {"type": "number", "minimum": 16, "maximum": 30, "default": 24},
+        "ac_mode": {"enum": ["auto", "cool", "heat", "fan"], "default": "auto"},
+        "fan_speed": {"enum": ["low", "medium", "high"], "default": "medium"}
+      }
+    },
     "ServiceItem": {
       "type": "object",
       "additionalProperties": false,
@@ -141,7 +152,7 @@
     "WorldState": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema_version", "session_id", "revision", "updated_at", "stage", "scene", "primary_surface", "risk", "tasks", "actions", "profile", "wearable", "service_orders", "action_ledger"],
+      "required": ["schema_version", "session_id", "revision", "updated_at", "stage", "scene", "primary_surface", "risk", "tasks", "actions", "profile", "wearable", "service_orders", "action_ledger", "vehicle_state"],
       "properties": {
         "schema_version": {"const": "0.2.0"},
         "session_id": {"type": "string"},
@@ -160,7 +171,8 @@
         "service_orders": {"type": "array", "items": {"$ref": "#/$defs/ServiceOrder"}},
         "output": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/InteractionOutput"}]},
         "action_ledger": {"type": "array", "items": {"type": "string"}},
-        "service_mock_mode": {"enum": ["success", "out_of_stock", "over_budget"]}
+        "service_mock_mode": {"enum": ["success", "out_of_stock", "over_budget"]},
+        "vehicle_state": {"$ref": "#/$defs/VehicleState"}
       }
     }
   }
