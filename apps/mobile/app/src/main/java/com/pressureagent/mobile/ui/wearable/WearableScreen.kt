@@ -63,6 +63,22 @@ fun WearableScreen(viewModel: WearableViewModel = hiltViewModel()) {
 
         Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
             Column(modifier = Modifier.padding(20.dp)) {
+                Text("Agent 联动状态", fontWeight = FontWeight.SemiBold, color = AuriNavy)
+                Spacer(Modifier.height(12.dp))
+                DetailRow("WorldState", state.stage?.let { stageLabel(it) } ?: "等待同步")
+                DetailRow("Revision", state.revision.toString())
+                DetailRow("主交互端", state.primarySurface?.let { primarySurfaceLabel(it) } ?: "—")
+                DetailRow("联动命令", state.gateway.lastAgentCommandId.ifEmpty { "—" })
+                DetailRow("联动模式", state.gateway.lastAgentCommandMode.ifEmpty { "—" })
+                DetailRow("联动文案", state.gateway.lastAgentCommandText.ifEmpty { "—" })
+                DetailRow("联动触觉", state.gateway.lastAgentCommandHaptic.ifEmpty { "—" })
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Column(modifier = Modifier.padding(20.dp)) {
                 Text("手动调试", fontWeight = FontWeight.SemiBold, color = AuriNavy)
                 Spacer(Modifier.height(12.dp))
                 Text("状态切换", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
@@ -112,6 +128,7 @@ fun WearableScreen(viewModel: WearableViewModel = hiltViewModel()) {
 
                 DetailRow("地址", state.gateway.baseUrl)
                 DetailRow("最近命令", state.gateway.lastOutboxCommandId.ifEmpty { "—" })
+                DetailRow("命令来源", state.gateway.lastOutboxSource.ifEmpty { "—" })
                 DetailRow("最近 ACK", summarizeAck(state.gateway.lastAck))
                 DetailRow("最近 SENSOR", summarizeSensor(state.gateway.lastSensor))
                 DetailRow("最近 PONG", summarizePong(state.gateway.lastPong))
@@ -203,6 +220,30 @@ private fun hapticLabel(h: HapticPattern): String = when (h) {
     HapticPattern.THREE_BEAT -> "三拍"
     HapticPattern.SOFT_SHORT -> "柔和短震"
     HapticPattern.ERROR_ONCE -> "错误震"
+}
+
+private fun stageLabel(stage: Stage): String = when (stage) {
+    Stage.OFF_VEHICLE_IDLE -> "off_vehicle_idle"
+    Stage.PRE_DEPARTURE_WARNING -> "pre_departure_warning"
+    Stage.HANDOVER_TO_VEHICLE -> "handover_to_vehicle"
+    Stage.VEHICLE_OBSERVATION -> "vehicle_observation"
+    Stage.TAKEOVER_L2 -> "takeover_L2"
+    Stage.TAKEOVER_L3 -> "takeover_L3"
+    Stage.PLANNING -> "planning"
+    Stage.SERVICE_PREPARED -> "service_prepared"
+    Stage.WAITING_CONFIRMATION -> "waiting_confirmation"
+    Stage.EXECUTING -> "executing"
+    Stage.SERVICE_EXECUTED -> "service_executed"
+    Stage.ACTION_COMPLETED -> "action_completed"
+    Stage.COOLDOWN -> "cooldown"
+    Stage.PARKED_REVIEW -> "parked_review"
+    Stage.ERROR -> "error"
+}
+
+private fun primarySurfaceLabel(surface: PrimarySurface): String = when (surface) {
+    PrimarySurface.MOBILE -> "mobile"
+    PrimarySurface.VEHICLE_HMI -> "vehicle_hmi"
+    PrimarySurface.NONE -> "none"
 }
 
 private fun com.pressureagent.mobile.data.wearablegateway.WearableGatewaySnapshot.isWatchRecentlySeen(): Boolean {

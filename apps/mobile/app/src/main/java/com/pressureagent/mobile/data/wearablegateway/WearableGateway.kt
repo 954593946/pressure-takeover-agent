@@ -140,7 +140,13 @@ class WearableGateway @Inject constructor(
 
     private fun queueDebugCommand(command: WatchSetStateCommand) {
         latestSetState = command
-        setState { it.copy(lastOutboxCommandId = command.commandId, lastError = "") }
+        setState {
+            it.copy(
+                lastOutboxCommandId = command.commandId,
+                lastOutboxSource = command.source,
+                lastError = "",
+            )
+        }
         AppLogger.i("WearableGateway", "调试命令已入队: ${command.commandId}")
     }
 
@@ -151,7 +157,16 @@ class WearableGateway @Inject constructor(
                 val command = WearableCommandMapper.toWatchCommand(worldState)
                 latestSetState = command
                 if (command != null) {
-                    setState { it.copy(lastOutboxCommandId = command.commandId) }
+                    setState {
+                        it.copy(
+                            lastOutboxCommandId = command.commandId,
+                            lastOutboxSource = command.source,
+                            lastAgentCommandId = command.commandId,
+                            lastAgentCommandMode = command.mode,
+                            lastAgentCommandText = command.text,
+                            lastAgentCommandHaptic = command.haptic,
+                        )
+                    }
                 }
             }
         }

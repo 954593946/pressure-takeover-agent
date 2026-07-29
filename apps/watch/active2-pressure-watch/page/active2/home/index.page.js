@@ -1,7 +1,9 @@
 import * as hmUI from "@zos/ui";
 import { log as Logger } from "@zos/utils";
+import { BasePage } from "@zeppos/zml/base-page";
 import { playHaptic, stopHaptics } from "../../../utils/haptics";
 import { collectHealthSnapshot } from "../../../utils/health-sensors";
+import { createHello } from "../../../utils/protocol";
 import { normalizeWearableCommand } from "../../../utils/state-map";
 import {
   BACKGROUND_STYLE,
@@ -128,9 +130,9 @@ function updateSubtitle(text) {
 
 function sendToSide(method, params) {
   try {
-    const app = getApp()._options;
-    if (app && typeof app.notifySide === "function") {
-      app.notifySide(method, params);
+    const globalData = getGlobalData();
+    if (globalData && typeof globalData.notifySide === "function") {
+      globalData.notifySide(method, params);
     }
   } catch (error) {
     logger.debug(`side send failed: ${method}`);
@@ -323,7 +325,9 @@ function checkOffline() {
   updateDebug("offline: no heartbeat");
 }
 
-Page({
+Page(BasePage({
+  name: "auri-watch-home",
+
   onInit() {
     logger.debug("home onInit");
   },
@@ -336,11 +340,28 @@ Page({
     globalData.handleBridgeMessage = handleBridgeMessage;
     globalData.renderWearableState = renderWearableState;
     globalData.sendSensor = collectLocalHealth;
+    globalData.notifySide = (method, params = {}) => {
+      const message = { method, params, timestamp: Date.now() };
+      globalData.pendingSideMessage = message;
+      this.call(message);
+    };
     globalData.lastMessageAt = Date.now();
 
     renderWearableState(LOCAL_STATES[0]);
     updateDebug("短按状态 / 长按健康");
+    sendToSide("watch.hello", createHello());
     offlineTimer = setInterval(checkOffline, 15000);
+  },
+
+  onCall(message) {
+    return handleBridgeMessage(message);
+  },
+
+  onRequest(message, response) {
+    const result = handleBridgeMessage(message);
+    if (response) {
+      response(null, result || { result: "ok", timestamp: Date.now() });
+    }
   },
 
   createStaticLayout() {
@@ -372,4 +393,4 @@ Page({
     }
     stopHaptics();
   }
-});
+}));

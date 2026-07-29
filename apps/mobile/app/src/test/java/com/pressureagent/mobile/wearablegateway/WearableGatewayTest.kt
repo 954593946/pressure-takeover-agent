@@ -7,6 +7,9 @@ import com.pressureagent.mobile.domain.model.EventResponse
 import com.pressureagent.mobile.domain.model.EventSource
 import com.pressureagent.mobile.domain.model.EventType
 import com.pressureagent.mobile.domain.model.HapticPattern
+import com.pressureagent.mobile.domain.model.PressureLevel
+import com.pressureagent.mobile.domain.model.Risk
+import com.pressureagent.mobile.domain.model.Stage
 import com.pressureagent.mobile.domain.model.Wearable
 import com.pressureagent.mobile.domain.model.WearableColor
 import com.pressureagent.mobile.domain.model.WearableMode
@@ -15,12 +18,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.double
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.parseToJsonElement
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
@@ -36,6 +39,8 @@ class WearableGatewayTest {
             WorldState(
                 sessionId = "session-gateway",
                 revision = 3,
+                stage = Stage.PRE_DEPARTURE_WARNING,
+                risk = Risk(pressureLevel = PressureLevel.L1),
                 wearable = Wearable(
                     connected = true,
                     mode = WearableMode.WARNING,
@@ -55,7 +60,7 @@ class WearableGatewayTest {
             assertEquals("ok", health["result"]?.jsonPrimitive?.content)
 
             val outbox = eventuallyJsonObject {
-                json.parseToJsonElement(
+                json.decodeFromString<JsonElement>(
                     httpGet("/v1/watch/outbox?last_command_id=&last_sensor_request_id="),
                 ).jsonObject.also { response ->
                     check(response["set_state"] is JsonObject) { "outbox set_state is not ready" }
@@ -67,6 +72,8 @@ class WearableGatewayTest {
             assertEquals("cmd-warning-3", params["command_id"]?.jsonPrimitive?.content)
             assertEquals("warning", params["mode"]?.jsonPrimitive?.content)
             assertEquals("double_short", params["haptic"]?.jsonPrimitive?.content)
+            eventuallyTrue { gateway.state.value.lastAgentCommandId == "cmd-warning-3" }
+            eventuallyTrue { gateway.state.value.lastOutboxSource == "agent-world-state" }
 
             httpPost(
                 "/v1/watch/inbox",
@@ -124,7 +131,7 @@ class WearableGatewayTest {
         }
 
     private fun eventuallyJson(block: () -> String) =
-        json.parseToJsonElement(eventually(block)).jsonObject
+        json.decodeFromString<JsonElement>(eventually(block)).jsonObject
 
     private fun eventuallyJsonObject(block: () -> JsonObject) =
         eventuallyValue(block)
