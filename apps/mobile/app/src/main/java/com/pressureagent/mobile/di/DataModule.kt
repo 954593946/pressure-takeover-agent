@@ -10,6 +10,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import kotlinx.serialization.json.Json
+import okhttp3.OkHttpClient
 import javax.inject.Named
 import javax.inject.Singleton
 
@@ -22,7 +23,13 @@ object DataModule {
     fun provideSseClient(
         @Named("baseUrl") baseUrl: String,
         json: Json,
-    ): SseClient = SseClient(baseUrl = baseUrl, json = json, token = BuildConfig.AGENT_API_TOKEN)
+        @Named("sse") okHttpClient: OkHttpClient,
+    ): SseClient = SseClient(
+        baseUrl = baseUrl,
+        json = json,
+        token = BuildConfig.AGENT_API_TOKEN,
+        sharedOkHttpClient = okHttpClient,
+    )
 
     @Provides
     @Singleton

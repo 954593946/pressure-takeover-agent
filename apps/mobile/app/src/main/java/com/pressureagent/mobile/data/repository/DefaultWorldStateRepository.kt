@@ -29,9 +29,15 @@ import java.io.Closeable
  * 1. Fetch initial snapshot via GET /v1/state to seed the UI immediately.
  * 2. Connect SSE streaming via [SseClient]. On first successful frame, switch to SSE mode.
  * 3. If SSE is unavailable (501, network error), fall back to polling at [pollingIntervalMs].
- * 4. If SSE drops mid-stream, polling restarts; SSE reconnects in background.
+ * 4. If SSE drops mid-stream, polling covers the gap; SSE reconnects in background.
  * 5. Only accept monotonically increasing revisions; discard stale or duplicate frames.
  * 6. Session changes clear local cache and force a fresh snapshot.
+ *
+ * Connection status debouncing:
+ * - A single polling failure does NOT immediately flip to DISCONNECTED.
+ * - We require [disconnectDebounceCount] consecutive failures before reporting DISCONNECTED.
+ * - Similarly, the stale threshold is generous (120s) to avoid false positives
+ *   when the backend simply has no state updates to send.
  */
 class DefaultWorldStateRepository(
     private val api: AgentApiService,
@@ -53,17 +59,55 @@ class DefaultWorldStateRepository(
     private var lastRevision = -1
     private var currentSessionId: String? = null
 
-    // Stale threshold: 45s gives Render cold-start enough room
-    private val staleThresholdMs = 45_000L
+    // ── Debounce / stale settings ──────────────────────────────────────────
+    // Stale threshold: 120s gives plenty of room for backend idle periods.
+    // During normal operation, WorldState only changes on events; there may be
+    // long stretches with no updates (e.g. steady driving).
+    private val staleThresholdMs = 120_000L
+
+    // Number of consecutive polling failures before reporting DISCONNECTED.
+    // A single transient failure (network blip, server restart) should not
+    // alarm the user.
+    private val disconnectDebounceCount = 3
+    private var consecutivePollingFailures = 0
+
+    // Track when we last heard from SSE specifically, for hysteresis.
+    private var lastSseActivity = 0L
 
     private fun updateConnectionStatus() {
         val now = System.currentTimeMillis()
         val stale = lastDataTimestamp > 0 && now - lastDataTimestamp > staleThresholdMs
+
         _connectionStatus.value = when {
-            sseActive -> ConnectionStatus.CONNECTED
-            pollingActive && stale -> ConnectionStatus.DISCONNECTED
-            pollingActive -> ConnectionStatus.POLLING
+            // Auth failure is sticky — don't override it
+            _connectionStatus.value == ConnectionStatus.UNAUTHORIZED ->
+                ConnectionStatus.UNAUTHORIZED
+
+            sseActive -> {
+                // SSE is connected. Even if data is stale, SSE is still the transport.
+                // Reset polling failure counter since SSE is healthy.
+                consecutivePollingFailures = 0
+                ConnectionStatus.CONNECTED
+            }
+
+            pollingActive && !stale -> {
+                // Polling is working and data is fresh enough
+                ConnectionStatus.POLLING
+            }
+
+            pollingActive && stale && consecutivePollingFailures >= disconnectDebounceCount -> {
+                // Multiple polling failures + data is stale → truly disconnected
+                ConnectionStatus.DISCONNECTED
+            }
+
+            pollingActive && stale -> {
+                // Data is stale but we haven't failed enough times yet — stay in POLLING
+                // to avoid a brief flip to DISCONNECTED
+                ConnectionStatus.POLLING
+            }
+
             !sseActive && !pollingActive -> ConnectionStatus.INITIALIZING
+
             else -> ConnectionStatus.DISCONNECTED
         }
     }
@@ -156,41 +200,75 @@ class DefaultWorldStateRepository(
         return state
     }
 
+    /**
+     * Connect to SSE stream.
+     *
+     * The SSE client handles its own reconnection internally (exponential backoff
+     * + jitter). This coroutine simply collects the flow; if the flow ever
+     * terminates (which shouldn't happen in normal operation), we restart it
+     * after a short delay.
+     */
     private fun connectSse() {
         scope.launch {
-            // Wrap SSE observation to auto-restart polling on drop
             while (isActive) {
                 try {
                     sseClient.observe().collect { state ->
+                        if (!sseActive) {
+                            AppLogger.i("Repo", "SSE stream active — switching to real-time mode")
+                        }
                         sseActive = true
+                        lastSseActivity = System.currentTimeMillis()
+                        consecutivePollingFailures = 0
                         applyState(state)
                     }
                 } catch (_: Exception) {
-                    AppLogger.w("Repo", "SSE stream dropped, polling will cover")
+                    AppLogger.w("Repo", "SSE stream dropped, polling will cover the gap")
                 }
+                // SSE flow terminated — mark inactive and wait before reconnecting
                 sseActive = false
                 updateConnectionStatus()
-                // Wait before SSE reconnect attempt (polling handles the gap)
-                delay(5_000L)
+                if (isActive) {
+                    AppLogger.d("Repo", "SSE reconnecting in 5s...")
+                    delay(5_000L)
+                }
             }
         }
     }
 
+    /**
+     * Polling fallback — runs continuously.
+     *
+     * When SSE is active, polling skips the HTTP call (saves battery/data) but
+     * still ticks to monitor the situation. When SSE drops, polling becomes the
+     * primary data source and reports its own health via the debounced status.
+     */
     private fun startPollingAsFallback() {
         pollingJob = scope.launch {
-            delay(3_000L)
+            // Initial delay gives SSE time to connect first
+            delay(2_000L)
             while (isActive) {
                 if (!sseActive) {
                     pollingActive = true
                     try {
                         val state = api.getWorldState()
                         applyState(state)
+                        // Successful poll → reset failure counter
+                        consecutivePollingFailures = 0
                     } catch (e: Exception) {
+                        consecutivePollingFailures++
                         handleApiError(e)
+                        if (consecutivePollingFailures >= disconnectDebounceCount) {
+                            AppLogger.w("Repo", "Polling failed $consecutivePollingFailures times consecutively — marking DISCONNECTED")
+                        }
                     }
                     updateConnectionStatus()
                 } else {
+                    // SSE is active — polling is idle
+                    if (pollingActive) {
+                        AppLogger.d("Repo", "SSE recovered — polling paused")
+                    }
                     pollingActive = false
+                    consecutivePollingFailures = 0
                 }
                 delay(pollingIntervalMs)
             }
