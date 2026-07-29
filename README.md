@@ -16,6 +16,8 @@ AURI 是一个面向车机、手机与腕上设备的多端 Agent。它在驾驶
 
 > **最终 Demo 故事入口（2026-07-28）**：[六格故事板、4 分 20 秒导演表与镜头说明](docs/final-demo-storyboard.md)。汇报、PPT、录屏和现场彩排统一使用这条人物与情绪主线。
 
+> **Web 联调入口（GitHub Pages）**：[AURI Web 协作入口](https://954593946.github.io/pressure-takeover-agent/)。进入后可选择车机 HMI 或 Demo 控制台；两端必须填写同一个 Agent API 和 Team Token，静态页面本身不保存任何后端密钥。
+
 > 最后更新：2026-07-27。[完整 LangChain 工具编排 PR #15](https://github.com/954593946/pressure-takeover-agent/pull/15)、[手机 Chat SSE 接入 PR #16](https://github.com/954593946/pressure-takeover-agent/pull/16) 与 [SSE/崩溃/日志修复 PR #17](https://github.com/954593946/pressure-takeover-agent/pull/17) 已合并。`contracts v0.2` 仍是共享候选基线；Chat 接口和跨端字段必须共同评审后冻结，禁止在端内复制后自行修改。
 
 | 模块 | 当前可用状态 | 其他成员现在可以做什么 |
