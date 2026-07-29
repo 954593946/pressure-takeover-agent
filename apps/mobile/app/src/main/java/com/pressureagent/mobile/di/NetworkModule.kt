@@ -70,6 +70,46 @@ object NetworkModule {
             }
             .build()
 
+    /**
+     * SSE-specific OkHttpClient — same auth interceptor as the main client,
+     * but WITHOUT [HttpLoggingInterceptor] at BODY level.
+     *
+     * BODY-level logging buffers the entire response body, which is infinite
+     * for an SSE stream — the data would never reach the caller.
+     */
+    @Provides
+    @Singleton
+    @Named("sse")
+    fun provideSseOkHttpClient(mockAgent: MockAgent?): OkHttpClient =
+        OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(300, TimeUnit.SECONDS)
+            .apply {
+                // In debug mode, only log HEADERS for SSE (not BODY — it would buffer the infinite stream)
+                if (BuildConfig.DEBUG) {
+                    addInterceptor(HttpLoggingInterceptor().apply {
+                        level = HttpLoggingInterceptor.Level.HEADERS
+                    })
+                }
+                if (mockAgent != null) {
+                    addInterceptor(mockAgent)
+                } else {
+                    addInterceptor { chain ->
+                        val token = BuildConfig.AGENT_API_TOKEN
+                        if (token.isNotBlank()) {
+                            chain.proceed(
+                                chain.request().newBuilder()
+                                    .addHeader("X-Agent-Token", token)
+                                    .build()
+                            )
+                        } else {
+                            chain.proceed(chain.request())
+                        }
+                    }
+                }
+            }
+            .build()
+
     @Provides
     @Singleton
     fun provideRetrofit(
