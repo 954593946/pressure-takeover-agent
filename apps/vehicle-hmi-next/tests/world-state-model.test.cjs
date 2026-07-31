@@ -102,6 +102,15 @@ const expired = model.buildVehicleHmiViewModel({
 assert.equal(expired.interaction.canConfirm, false);
 assert.equal(expired.interaction.disabledReason, "expired");
 
+const wrongSurface = model.buildVehicleHmiViewModel({
+  ...fixture,
+  revision: 12,
+  primary_surface: "mobile",
+  confirmation: { ...fixture.confirmation, owner_surface: "mobile" }
+}, { now });
+assert.equal(wrongSurface.interaction.canConfirm, false);
+assert.equal(wrongSurface.interaction.disabledReason, "wrong_surface");
+
 assert.deepEqual(
   model.acceptWorldState({ sessionId: "s1", revision: 2, retiredSessionIds: [] }, { ...fixture, session_id: "s1", revision: 3 }),
   { accepted: true, resetRequired: false, reason: "new_revision" }

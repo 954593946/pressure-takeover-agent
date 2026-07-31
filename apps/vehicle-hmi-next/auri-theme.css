@@ -33,6 +33,19 @@ body {
   background: #00030a;
 }
 
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden !important;
+  overscroll-behavior: none;
+}
+
+body {
+  position: fixed;
+  inset: 0;
+}
+
 .hmi {
   background: var(--bg);
 }
@@ -166,6 +179,306 @@ body {
   color: var(--auri-ivory) !important;
   filter: drop-shadow(0 0 8px rgba(47, 107, 255, 0.7)) !important;
 }
+
+.vd-half-bot.is-auri-takeover #vd-nav-card {
+  display: none !important;
+}
+
+.auri-takeover-card {
+  height: 352px;
+  min-height: 352px;
+  margin: 10px 24px 12px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid rgba(126, 183, 255, 0.24);
+  border-radius: 16px;
+  color: var(--auri-ivory);
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(47, 107, 255, 0.22), transparent 56%),
+    linear-gradient(180deg, rgba(11, 27, 51, 0.985), rgba(4, 13, 29, 0.99));
+  box-shadow: 0 13px 34px rgba(0, 0, 0, 0.32), inset 0 1px rgba(245, 242, 236, 0.04);
+  box-sizing: border-box;
+  overflow: hidden;
+  animation: auriTakeoverIn 320ms cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.auri-takeover-card[hidden] { display: none !important; }
+
+.auri-takeover-card[data-tone="warning"] { border-color: rgba(230, 167, 0, 0.4); }
+.auri-takeover-card[data-tone="critical"] { border-color: rgba(209, 73, 91, 0.46); }
+.auri-takeover-card[data-tone="success"] { border-color: rgba(46, 157, 111, 0.42); }
+
+.auri-takeover-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 34px;
+  flex-shrink: 0;
+}
+
+.auri-takeover-head > span:last-child { min-width: 0; }
+
+.auri-takeover-head b,
+.auri-takeover-head small { display: block; }
+
+.auri-takeover-head b {
+  font-size: 18px;
+  font-weight: 680;
+}
+
+.auri-takeover-head small {
+  margin-top: 2px;
+  max-width: 350px;
+  overflow: hidden;
+  color: rgba(245, 242, 236, 0.5);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auri-takeover-orbit {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(212, 175, 122, 0.4);
+  border-radius: 50%;
+  background: rgba(212, 175, 122, 0.08);
+  box-shadow: 0 0 0 6px rgba(212, 175, 122, 0.035);
+}
+
+.auri-takeover-orbit i {
+  color: var(--auri-gold);
+  font: 730 18px/1 Inter, sans-serif;
+}
+
+.auri-takeover-conclusion {
+  margin: 0;
+  min-height: 44px;
+  flex-shrink: 0;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--auri-ivory);
+  font-size: 21px;
+  line-height: 1.22;
+  font-weight: 610;
+}
+
+.auri-takeover-actions {
+  display: grid;
+  gap: 4px;
+  min-height: 30px;
+  max-height: 102px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.auri-takeover-action {
+  min-height: 30px;
+  padding: 0 9px;
+  display: grid;
+  grid-template-columns: 25px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(126, 183, 255, 0.11);
+  border-radius: 10px;
+  background: rgba(245, 242, 236, 0.035);
+}
+
+.auri-takeover-action > span {
+  width: 23px;
+  height: 23px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: #a9c7ff;
+  background: rgba(47, 107, 255, 0.13);
+  font-size: 11px;
+}
+
+.auri-takeover-action b {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(245, 242, 236, 0.86);
+  font-size: 13px;
+  font-weight: 540;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auri-takeover-action small {
+  color: rgba(245, 242, 236, 0.44);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.auri-takeover-action.is-completed > span {
+  color: #73d7ae;
+  background: rgba(46, 157, 111, 0.13);
+}
+
+.auri-takeover-devices {
+  min-height: 34px;
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.auri-takeover-devices > span {
+  min-width: 0;
+  padding: 6px 7px;
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  align-content: center;
+  column-gap: 6px;
+  border-radius: 10px;
+  background: rgba(245, 242, 236, 0.028);
+}
+
+.auri-takeover-devices i {
+  width: 7px;
+  height: 7px;
+  align-self: center;
+  border-radius: 50%;
+  background: rgba(245, 242, 236, 0.28);
+}
+
+.auri-takeover-devices .is-active i {
+  background: var(--state-success);
+  box-shadow: 0 0 8px rgba(46, 157, 111, 0.72);
+}
+
+.auri-takeover-devices b,
+.auri-takeover-devices small {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auri-takeover-devices b { font-size: 11px; font-weight: 650; }
+.auri-takeover-devices small { margin-top: 1px; color: rgba(245, 242, 236, 0.4); font-size: 9px; }
+
+.auri-takeover-confirm {
+  min-height: 54px;
+  flex-shrink: 0;
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border: 1px solid rgba(212, 175, 122, 0.48);
+  border-radius: 13px;
+  color: var(--auri-navy);
+  background: linear-gradient(135deg, #f5f2ec, #d4af7a);
+  box-shadow: 0 9px 22px rgba(0, 0, 0, 0.24), inset 0 1px rgba(255, 255, 255, 0.64);
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+  cursor: pointer;
+  transition: transform 140ms ease, filter 140ms ease;
+}
+
+.auri-takeover-confirm[hidden] { display: none !important; }
+.auri-takeover-confirm:not(:disabled):active { transform: scale(0.98); }
+.auri-takeover-confirm:not(:disabled):hover { filter: brightness(1.04); }
+.auri-takeover-confirm:disabled { cursor: default; opacity: 0.78; }
+.auri-takeover-confirm > span { font-size: 17px; font-weight: 730; }
+.auri-takeover-confirm > small { color: rgba(11, 27, 51, 0.58); font-size: 11px; }
+
+.auri-takeover-confirm.is-loading::before {
+  content: "";
+  width: 17px;
+  height: 17px;
+  border: 2px solid rgba(11, 27, 51, 0.2);
+  border-top-color: var(--auri-navy);
+  border-radius: 50%;
+  animation: auriSpin 800ms linear infinite;
+}
+
+.auri-confirm-error {
+  margin: 0;
+  color: #ff9aa6;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.auri-device-notice {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  z-index: 32;
+  width: min(470px, calc(100% - 260px));
+  min-height: 72px;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 11px;
+  border: 1px solid rgba(11, 27, 51, 0.12);
+  border-radius: 18px;
+  color: var(--auri-navy);
+  background: rgba(245, 242, 236, 0.94);
+  box-shadow: 0 16px 36px rgba(11, 27, 51, 0.18);
+  backdrop-filter: blur(20px) saturate(1.12);
+  opacity: 0;
+  transform: translate(-50%, -14px) scale(0.98);
+  transition: opacity 210ms ease, transform 260ms cubic-bezier(.2, .8, .2, 1);
+}
+
+.auri-device-notice[hidden] { display: none !important; }
+.auri-device-notice.is-visible { opacity: 1; transform: translate(-50%, 0) scale(1); }
+
+.auri-notice-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  color: var(--state-processing);
+  background: rgba(47, 107, 255, 0.1);
+  font-size: 16px;
+  font-weight: 720;
+}
+
+.auri-device-notice[data-tone="warning"] .auri-notice-icon {
+  color: #745500;
+  background: rgba(230, 167, 0, 0.15);
+}
+
+.auri-device-notice[data-tone="completed"] .auri-notice-icon {
+  color: #176544;
+  background: rgba(46, 157, 111, 0.13);
+}
+
+.auri-notice-copy { min-width: 0; }
+.auri-notice-copy b,
+.auri-notice-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.auri-notice-copy b { font-size: 16px; font-weight: 690; }
+.auri-notice-copy small { margin-top: 4px; color: rgba(11, 27, 51, 0.58); font-size: 13px; }
+
+.auri-device-notice button {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  color: rgba(11, 27, 51, 0.52);
+  background: rgba(11, 27, 51, 0.055);
+  font: 300 21px/1 Inter, sans-serif;
+  cursor: pointer;
+}
+
+@keyframes auriTakeoverIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes auriSpin { to { transform: rotate(360deg); } }
 
 .right-panel {
   background:

@@ -62,6 +62,24 @@
     map_ready: ["地图已连接", "loading"],
     online: ["高德实时导航", "online"]
   };
+  const TAKEOVER_STAGES = new Set([
+    "takeover_L2", "takeover_L3", "planning", "service_prepared",
+    "waiting_confirmation", "executing", "service_executed", "action_completed"
+  ]);
+  const TAKEOVER_STAGE_VIEW = {
+    takeover_L2: ["AURI 接管", "我正在核对时间和可调整任务。", "processing"],
+    takeover_L3: ["安全优先", "先保持当前车速，我会压缩非必要操作。", "critical"],
+    planning: ["正在处理", "我正在重新安排任务并准备必要联系。", "processing"],
+    service_prepared: ["方案已准备", "处理方案已经就绪，等待确认入口开放。", "warning"],
+    waiting_confirmation: ["等待确认", "方案已准备，只需确认一次。", "warning"],
+    executing: ["正在执行", "正在同步消息、任务与服务状态。", "processing"],
+    service_executed: ["执行完成", "处理结果正在同步到各端。", "success"],
+    action_completed: ["问题已处理", "已完成本次接管，按当前路线继续即可。", "success"]
+  };
+  const HAPTIC_LABEL = {
+    none: "无振动", double_short: "双短震", single_pulse: "一次短震",
+    three_beat: "三拍提示", soft_short: "柔和短震", error_once: "一次明确提醒"
+  };
 
   let viewModel = model.buildVehicleHmiViewModel(null);
   let activeSection = null;
@@ -72,6 +90,11 @@
   let mapStatus = { mode: "offline", message: "离线导航" };
   let mapConfigReady = false;
   let mapInitPromise = null;
+  let confirmInFlight = false;
+  let confirmError = null;
+  let lastConfirmationId = null;
+  const notifiedDeviceCommands = new Set();
+  let noticeTimer = null;
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -94,6 +117,168 @@
 
   function emptyRow(icon, title, detail) {
     return row(icon, title, detail, "等待");
+  }
+
+  function ensureTakeoverUi() {
+    const host = document.querySelector(".vd-half-bot");
+    const nav = document.getElementById("vd-nav-card");
+    if (!host || !nav || document.getElementById("auri-takeover-card")) return;
+    const card = document.createElement("section");
+    card.id = "auri-takeover-card";
+    card.className = "auri-takeover-card";
+    card.hidden = true;
+    card.setAttribute("aria-live", "polite");
+    card.innerHTML = `
+      <div class="auri-takeover-head">
+        <span class="auri-takeover-orbit" aria-hidden="true"><i>A</i></span>
+        <span><b id="auri-takeover-stage">AURI 接管</b><small id="auri-takeover-risk">状态平稳</small></span>
+      </div>
+      <p class="auri-takeover-conclusion" id="auri-takeover-conclusion"></p>
+      <div class="auri-takeover-actions" id="auri-takeover-actions"></div>
+      <div class="auri-takeover-devices" id="auri-takeover-devices"></div>
+      <button class="auri-takeover-confirm" id="auri-takeover-confirm" type="button" hidden>
+        <span id="auri-confirm-label">确认处理</span><small>方向盘 OK / 点击</small>
+      </button>
+      <p class="auri-confirm-error" id="auri-confirm-error" role="status" hidden></p>
+    `;
+    nav.insertAdjacentElement("afterend", card);
+    card.querySelector("#auri-takeover-confirm")?.addEventListener("click", () => void confirmCurrentActions("button"));
+
+    const notice = document.createElement("aside");
+    notice.id = "auri-device-notice";
+    notice.className = "auri-device-notice";
+    notice.hidden = true;
+    notice.innerHTML = `
+      <span class="auri-notice-icon" aria-hidden="true">腕</span>
+      <span class="auri-notice-copy"><b id="auri-notice-title">腕上提醒</b><small id="auri-notice-text"></small></span>
+      <button type="button" aria-label="关闭提醒">×</button>
+    `;
+    document.querySelector(".right-panel")?.appendChild(notice);
+    notice.querySelector("button")?.addEventListener("click", hideDeviceNotice);
+  }
+
+  function takeoverActions() {
+    const actions = viewModel.actions.items.slice(0, 3).map((action) => ({
+      icon: action.status === "completed" ? "✓" : action.type === "message" ? "信" : action.type === "service_order" ? "单" : "调",
+      text: action.preview,
+      state: action.statusLabel,
+      completed: action.status === "completed"
+    }));
+    if (actions.length) return actions;
+    if (["takeover_L2", "takeover_L3", "planning"].includes(viewModel.lifecycle.stage)) {
+      return [
+        { icon: "1", text: "核对 ETA 与刚性任务", state: "进行中" },
+        { icon: "2", text: "寻找可后置或可代办事项", state: "等待" }
+      ];
+    }
+    return [];
+  }
+
+  function renderTakeover() {
+    const host = document.querySelector(".vd-half-bot");
+    const card = document.getElementById("auri-takeover-card");
+    if (!host || !card) return;
+    const stage = viewModel.lifecycle.stage;
+    const visible = TAKEOVER_STAGES.has(stage);
+    host.classList.toggle("is-auri-takeover", visible);
+    card.hidden = !visible;
+    if (!visible) return;
+
+    const [label, fallback, tone] = TAKEOVER_STAGE_VIEW[stage] || [viewModel.lifecycle.stageLabel, "保持当前路线。", "processing"];
+    card.dataset.tone = tone;
+    document.getElementById("auri-takeover-stage").textContent = label;
+    const riskLine = document.getElementById("auri-takeover-risk");
+    const utteranceLine = viewModel.utterance.available ? ` · 手机：“${viewModel.utterance.preview}”` : "";
+    riskLine.textContent = `${viewModel.risk.label}${utteranceLine}`;
+    riskLine.title = viewModel.utterance.available ? viewModel.utterance.text : viewModel.risk.label;
+    document.getElementById("auri-takeover-conclusion").textContent = viewModel.agentOutput.available ? viewModel.agentOutput.preview : fallback;
+
+    const actions = takeoverActions();
+    document.getElementById("auri-takeover-actions").innerHTML = actions.map((action) => `
+      <div class="auri-takeover-action${action.completed ? " is-completed" : ""}">
+        <span>${escapeHtml(action.icon)}</span><b>${escapeHtml(action.text)}</b><small>${escapeHtml(action.state)}</small>
+      </div>
+    `).join("");
+
+    const devices = [
+      ["手机", viewModel.utterance.available ? "语音已同步" : "保持连接", viewModel.utterance.available],
+      ["腕表", viewModel.wearable.connected ? viewModel.wearable.modeLabel : "未连接", viewModel.wearable.connected],
+      ["车机", viewModel.lifecycle.primarySurface === "vehicle_hmi" ? "当前主端" : "只读接续", true]
+    ];
+    document.getElementById("auri-takeover-devices").innerHTML = devices.map(([name, status, active]) => `
+      <span class="${active ? "is-active" : ""}"><i></i><b>${escapeHtml(name)}</b><small>${escapeHtml(status)}</small></span>
+    `).join("");
+
+    const button = document.getElementById("auri-takeover-confirm");
+    const showConfirm = stage === "waiting_confirmation" && viewModel.interaction.canConfirm;
+    const showExecuting = stage === "executing" || confirmInFlight;
+    button.hidden = !(showConfirm || showExecuting);
+    button.disabled = !showConfirm || confirmInFlight;
+    button.classList.toggle("is-loading", showExecuting);
+    document.getElementById("auri-confirm-label").textContent = showExecuting ? "正在执行" : "确认处理";
+    const error = document.getElementById("auri-confirm-error");
+    error.hidden = !confirmError;
+    error.textContent = confirmError || "";
+  }
+
+  function hideDeviceNotice() {
+    clearTimeout(noticeTimer);
+    const notice = document.getElementById("auri-device-notice");
+    notice?.classList.remove("is-visible");
+    if (notice) setTimeout(() => { notice.hidden = true; }, 220);
+  }
+
+  function renderDeviceNotice() {
+    const wearable = viewModel.wearable;
+    if (!wearable.connected || !wearable.commandId) return;
+    const commandKey = `${viewModel.meta.sessionId || "session"}:${wearable.commandId}`;
+    if (notifiedDeviceCommands.has(commandKey)) return;
+    notifiedDeviceCommands.add(commandKey);
+    const notice = document.getElementById("auri-device-notice");
+    if (!notice) return;
+    const title = ["warning", "error"].includes(wearable.mode) ? "腕上提醒已送达" : wearable.mode === "completed" ? "三端状态已同步" : "腕上设备已接续";
+    document.getElementById("auri-notice-title").textContent = title;
+    document.getElementById("auri-notice-text").textContent = `${wearable.text} · ${HAPTIC_LABEL[wearable.haptic] || "状态提示"}`;
+    notice.dataset.tone = wearable.mode;
+    notice.hidden = false;
+    requestAnimationFrame(() => notice.classList.add("is-visible"));
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(hideDeviceNotice, 4600);
+  }
+
+  function confirmationErrorMessage(error) {
+    if (error?.status === 401) return "连接凭证失效，请重新连接 Agent。";
+    if (error?.code === "WRONG_SURFACE") return "确认入口已切换到其他设备。";
+    if (error?.code === "EXPIRED") return "本次确认已过期，等待 Agent 更新方案。";
+    if (error?.code === "NOT_FOUND") return "方案已变化，正在同步最新状态。";
+    return "暂时无法确认，导航保持可用。";
+  }
+
+  async function confirmCurrentActions(inputMode = "button") {
+    const confirmationId = viewModel.interaction.confirmationId;
+    if (!viewModel.interaction.canConfirm || !confirmationId || confirmInFlight) return;
+    confirmInFlight = true;
+    confirmError = null;
+    renderTakeover();
+    try {
+      const state = await client.requestJson("/v1/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          confirmation_id: confirmationId,
+          decision: "accept",
+          confirmed_by: "vehicle_hmi",
+          input_mode: inputMode
+        })
+      });
+      client.injectSnapshot(state, "confirm");
+    } catch (error) {
+      confirmError = confirmationErrorMessage(error);
+      void client.refresh("confirm_reconcile").catch(() => null);
+    } finally {
+      confirmInFlight = false;
+      renderTakeover();
+    }
   }
 
   function panelFor(section) {
@@ -389,6 +574,13 @@
     document.addEventListener("keydown", (event) => {
       if (["Space", "ArrowLeft", "ArrowRight"].includes(event.code)) event.stopImmediatePropagation();
       if (event.key === "Escape") closePanel();
+      if (event.key === "Enter" && !["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(event.target?.tagName)) {
+        const button = document.getElementById("auri-takeover-confirm");
+        if (button && !button.hidden && !button.disabled) {
+          event.preventDefault();
+          void confirmCurrentActions("button");
+        }
+      }
     }, true);
   }
 
@@ -592,6 +784,10 @@
 
   function renderWorldState(state) {
     viewModel = model.buildVehicleHmiViewModel(state);
+    if (lastConfirmationId !== viewModel.interaction.confirmationId) {
+      confirmError = null;
+      lastConfirmationId = viewModel.interaction.confirmationId;
+    }
     const hmi = document.getElementById("hmi");
     if (hmi) {
       hmi.dataset.auriStage = viewModel.lifecycle.stage;
@@ -600,6 +796,8 @@
     }
     renderNavigation();
     renderClimate();
+    renderTakeover();
+    renderDeviceNotice();
     updateRoutePOIs();
     animateStage();
     if (mapAdapter.getStatus() === "online") mapAdapter.update(navigationSnapshot());
@@ -625,6 +823,7 @@
     prepareClimateControls();
     replaceCarBranding();
     replaceRoutePOIs();
+    ensureTakeoverUi();
     bindDock();
     disableLegacyDemoShortcuts();
     closePanel();

@@ -2,7 +2,7 @@
 
 这是基于 Bosch-Agent 真实运行底座重建的 AURI 车机 HMI 候选版本。
 
-当前完成到 Phase 3：AURI 品牌外壳、只读 World State 和高德真实导航。页面保留 Bosch-Agent 的 1920x1080 固定画布、整屏缩放、高清车辆、地图舞台、路线控制器、右侧玻璃浮层和底部 Dock；任务、ETA、风险、手机语音、腕上设备、动作和空调状态来自 Agent 完整快照。
+当前完成到 Phase 4：AURI 品牌外壳、只读 World State、高德真实导航和驾驶员侧接管确认。页面保留 Bosch-Agent 的 1920x1080 固定画布、整屏缩放、高清车辆、地图舞台、路线控制器、右侧玻璃浮层和底部 Dock；任务、ETA、风险、手机语音、腕上设备、动作和空调状态来自 Agent 完整快照。
 
 ## 运行
 
@@ -26,7 +26,7 @@ http://127.0.0.1:5174/apps/vehicle-hmi/
 
 完成视觉和功能验收前，不替换正式目录。
 
-## Phase 1-3 已完成
+## Phase 1-4 已完成
 
 - AURI Logo、名称、口号和品牌 Token。
 - 无任务首屏与“等待手机同步路线”状态。
@@ -49,14 +49,21 @@ http://127.0.0.1:5174/apps/vehicle-hmi/
 - 目的地优先来自动态任务；契约提供坐标时直接使用，核心演示地点缺少坐标时使用冻结映射，未知地址不额外调用地理编码。
 - Agent `eta` 和 `risk.late_minutes` 仍是业务真相；高德距离、道路和转向只用于导航表现。
 - 浏览器按月软限制默认 200 次地图初始化和 200 次路线规划，避免演示误触持续消耗免费额度。
+- 风险接管阶段在驾驶员侧原导航卡位置切换为 AURI 判断卡，不增加第二列网页卡片。
+- 判断卡保持一句结论、最多三条动态动作、三端状态和一个主要确认入口。
+- 手机语音转写在接管卡状态行和 AURI 二级页同步显示，车机不提供语音输入。
+- 腕上状态以一次性通知横幅出现，按 `session_id + command_id` 去重，可自动消失或手动关闭。
+- 只有 `primary_surface=vehicle_hmi`、owner 为车机且 confirmation pending/未过期时才显示确认按钮。
+- 点击和方向盘 Enter 共用后端 `confirmation_id`；重复点击不会产生第二次执行请求。
+- `/v1/confirm` 成功后消费 Agent 返回快照；完成态来自更高 revision，不由 HMI 提前推演。
+- 401、WRONG_SURFACE、EXPIRED、NOT_FOUND 和网络失败显示低干扰错误，保留导航和原方案，不显示假成功。
 
 ## 当前没有实现
 
-- 车机确认写操作和幂等闭环。
-- 腕上通知弹窗、接管卡和完整 Demo 阶段动效。
+- 全部 Demo 阶段的连续自动播放与性能长稳测试。
 - WebSocket 可选兼容路径和四端完整联调。
 
-这些能力按 `myProj/Bosch-Agent底座_AURI重构/todolist.md` 的 Phase 2-5 逐步接入。禁止从旧 `apps/vehicle-hmi/` 复制 DOM、CSS 或卡片布局；只允许迁移经过测试的数据和接口逻辑。
+剩余能力按 `myProj/Bosch-Agent底座_AURI重构/todolist.md` 的 Phase 5 完成联调和正式切换。禁止从旧 `apps/vehicle-hmi/` 复制 DOM、CSS 或卡片布局；只允许迁移经过测试的数据和接口逻辑。
 
 ## 开发约束
 
