@@ -38,6 +38,14 @@ class FakeMap {
     calls.push(["zoom-center", zoom, center]);
   }
 
+  setPitch(pitch) {
+    calls.push(["pitch", pitch]);
+  }
+
+  setRotation(rotation) {
+    calls.push(["rotation", rotation]);
+  }
+
   zoomIn() {
     calls.push(["zoom-in"]);
   }
@@ -158,7 +166,7 @@ require("./amap-adapter.js");
 
 async function main() {
   const container = { hidden: true };
-  const mapWrap = { classList: new FakeClassList() };
+  const mapWrap = { classList: new FakeClassList(), dataset: {} };
   let route = null;
   const adapter = window.AuriAmapAdapter.create({
     container,
@@ -176,10 +184,15 @@ async function main() {
   assert.equal(initialized.mode, "online");
   assert.equal(container.hidden, false);
   assert.equal(mapWrap.classList.contains("is-amap-online"), true);
-  assert.equal(adapter.map.options.viewMode, "2D");
-  assert.equal(adapter.map.options.mapStyle, "amap://styles/normal");
+  assert.equal(adapter.map.options.viewMode, "3D");
+  assert.equal(adapter.map.options.pitch, 52);
+  assert.equal(adapter.map.options.mapStyle, "amap://styles/whitesmoke");
+  assert.equal(adapter.map.options.rotateEnable, true);
+  assert.equal(adapter.map.options.pitchEnable, true);
   assert.equal(adapter.overlays.originMarker.options.anchor, "bottom-left");
   assert.equal(route.instruction, "左转进入学院路");
+  assert.equal(route.maneuver, "left");
+  assert.equal(route.roadName, "学院路");
   assert.deepEqual(route.nextDistance, { value: "3.9", unit: "公里" });
 
   adapter.update({
@@ -192,13 +205,16 @@ async function main() {
     lateMinutes: 18
   });
   assert.equal(route.instruction, "沿学院路靠右进入阳光大道");
+  assert.equal(route.maneuver, "right");
   assert.deepEqual(route.nextDistance, { value: "3.7", unit: "公里" });
-  assert.equal(adapter.overlays.routeRemaining.options.showDir, true);
+  assert.equal(adapter.overlays.routeRemaining.options.showDir, false);
   assert.deepEqual(
     adapter.overlays.vehicleMarker.position,
     adapter.overlays.routePassed.path[adapter.overlays.routePassed.path.length - 1]
   );
   assert.equal(adapter.overlays.originMarker.visible, false);
+  assert.equal(adapter.overlays.routeChevrons.every((marker) => marker.visible), true);
+  assert.equal(adapter.getCameraMode(), "follow");
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   assert.deepEqual(adapter.getUsage(), {
@@ -208,14 +224,20 @@ async function main() {
   });
   assert.equal(adapter.getStatus(), "online");
   assert.equal(adapter.control("zoom-in"), true);
+  assert.equal(adapter.control("overview"), true);
+  assert.equal(adapter.getCameraMode(), "overview");
+  assert.equal(adapter.control("follow"), true);
+  assert.equal(adapter.getCameraMode(), "follow");
   assert.ok(calls.some(([name]) => name === "traffic-opacity"));
   assert.ok(calls.some(([name]) => name === "polyline-path"));
   assert.ok(calls.some(([name]) => name === "zoom-in"));
+  assert.ok(calls.some(([name, pitch]) => name === "pitch" && pitch >= 50));
+  assert.ok(calls.some(([name]) => name === "rotation"));
 
   const guardedContainer = { hidden: false };
   const guarded = window.AuriAmapAdapter.create({
     container: guardedContainer,
-    mapWrap: { classList: new FakeClassList() }
+    mapWrap: { classList: new FakeClassList(), dataset: {} }
   });
   const guardedResult = await guarded.init({
     mapProvider: "amap",

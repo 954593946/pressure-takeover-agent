@@ -13,7 +13,7 @@ const DEFAULT_CONFIG = {
   amapKey: "",
   amapSecurityJsCode: "",
   amapServiceHost: "",
-  amapStyle: "amap://styles/normal"
+  amapStyle: "amap://styles/whitesmoke"
 };
 
 const storedConfigRaw = JSON.parse(localStorage.getItem("auri-hmi-config") || "{}");
@@ -109,11 +109,14 @@ const ui = {
   syncWatch: $("#syncWatch"), syncWatchDot: $("#syncWatchDot"), syncCar: $("#syncCar"), voiceHint: $("#voiceHint"),
   confirmBtn: $("#confirmBtn"), confirmLabel: $("#confirmLabel"), confirmSub: $("#confirmSub"), timeline: $("#timeline"),
   speedLimit: $("#speedLimit"), lightCountdown: $("#lightCountdown"), turnDistance: $("#turnDistance"), turnUnit: $("#turnUnit"),
-  routeProgress: $("#routeProgress"), turnInstruction: $("#turnInstruction"), laneGuidance: $("#laneGuidance"),
+  routeProgress: $("#routeProgress"), turnInstruction: $("#turnInstruction"), turnSymbol: $("#turnSymbol"), laneGuidance: $("#laneGuidance"),
   mapStageLabel: $("#mapStageLabel"), mapStageIcon: $("#mapStageIcon"), mapWrap: $(".map-wrap"),
   routePath: $("#routePathGeometry"), routePassed: $("#routePassed"), carPin: $("#carPin"),
   signalToast: $("#signalToast"), signalToastIcon: $("#signalToastIcon"), signalToastSource: $("#signalToastSource"),
   signalToastTitle: $("#signalToastTitle"), signalToastDetail: $("#signalToastDetail"), dismissSignalToast: $("#dismissSignalToast"),
+  mapSourceLabel: $("#mapSourceLabel"), mapCameraLabel: $("#mapCameraLabel"), mapOverviewBtn: $("#mapOverviewBtn"), mapFollowBtn: $("#mapFollowBtn"),
+  mapAgentHud: $("#mapAgentHud"), mapAgentKicker: $("#mapAgentKicker"), mapAgentTitle: $("#mapAgentTitle"),
+  mapAgentDetail: $("#mapAgentDetail"), mapAgentFlow: $("#mapAgentFlow"),
   amapRemain: $("#amapRemain"), amapDuration: $("#amapDuration"), amapArrival: $("#amapArrival"), configBtn: $("#configBtn"),
   configPanel: $("#configPanel"), configForm: $("#configForm"), closeConfig: $("#closeConfig"), configApiBase: $("#configApiBase"),
   configToken: $("#configToken"), usePublicAgent: $("#usePublicAgent"), useLegacyAgent: $("#useLegacyAgent"), useLocalAgent: $("#useLocalAgent"),
@@ -161,6 +164,13 @@ const mapAdapter = window.AuriAmapAdapter?.create({
   onStatus(status) {
     mapRuntimeStatus = status;
     if (ui.mapConfigStatus) ui.mapConfigStatus.textContent = mapStatusText(status);
+    if (ui.mapSourceLabel) {
+      ui.mapSourceLabel.textContent = status.mode === "online"
+        ? "高德实时导航"
+        : status.mode === "loading"
+          ? "正在连接高德"
+          : "离线演示地图";
+    }
     log("map", status.message);
   },
   onRouteMeta(meta) {
@@ -208,7 +218,9 @@ async function hydrateMapConfig() {
         amapKey: data.key,
         amapSecurityJsCode: "",
         amapServiceHost: data.service_host,
-        amapStyle: data.style || "amap://styles/normal"
+        amapStyle: data.style === "amap://styles/normal"
+          ? "amap://styles/whitesmoke"
+          : data.style || "amap://styles/whitesmoke"
       });
       log("map-config", apiBase === CONFIG.apiBase ? "已从 Agent 获取高德在线地图配置" : "已从备用地图服务获取高德配置");
       return;
@@ -702,6 +714,85 @@ function renderSignalToast(stage) {
   window.clearTimeout(signalToastTimer);
 }
 
+function maneuverIcon(maneuver) {
+  return {
+    left: "↰",
+    right: "↱",
+    straight: "↑",
+    uturn: "↶",
+    arrive: "◆"
+  }[maneuver] || "↑";
+}
+
+function laneView(maneuver, mapStage) {
+  if (mapStage === "overview") return { text: "等待车辆导航信号", active: [], arrows: ["↑", "↑", "↑", "↑"] };
+  if (mapStage === "preview") return { text: "路线与车辆状态已同步", active: [1, 2], arrows: ["↖", "↑", "↑", "↗"] };
+  if (["alert", "takeover"].includes(mapStage)) {
+    return { text: "保持当前车道，不要抢行", active: [1, 2], arrows: ["↖", "↑", "↑", "↗"] };
+  }
+  if (maneuver === "left" || maneuver === "uturn") {
+    return { text: "提前进入左侧车道", active: [0, 1], arrows: ["↖", "↑", "↑", "↗"] };
+  }
+  if (maneuver === "right") {
+    return { text: "提前进入右侧车道", active: [2, 3], arrows: ["↖", "↑", "↑", "↗"] };
+  }
+  return { text: "保持当前车道", active: [1, 2], arrows: ["↖", "↑", "↑", "↗"] };
+}
+
+function renderLaneGuidance(maneuver, mapStage) {
+  const view = laneView(maneuver, mapStage);
+  ui.laneGuidance.textContent = view.text;
+  document.querySelectorAll(".lane-choice").forEach((choice, index) => {
+    choice.textContent = view.arrows[index];
+    choice.classList.toggle("active", view.active.includes(index));
+  });
+}
+
+function renderMapAgentHud(stage, actionProgress, utterance) {
+  const navigation = stateView.navigationTask(worldState);
+  const taskCounts = stateView.taskCounts(worldState);
+  const actionTargets = stateView.actions(worldState)
+    .map((action) => action.target)
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("、");
+  let view = null;
+  if (stage === "handover_to_vehicle") {
+    view = ["设备接续", `${navigation?.location || navigation?.title || "当前路线"}已同步到车机`, "手机转为只读，腕上设备保持低干扰反馈", "handover"];
+  } else if (stage === "vehicle_observation") {
+    view = ["导航已接续", `正在前往 ${navigation?.location || navigation?.title || "目的地"}`, "ETA 与任务状态将实时同步", "guidance"];
+  } else if (["takeover_L2", "takeover_L3"].includes(stage)) {
+    view = utterance?.available
+      ? ["手机语音已同步", `“${utterance.text}”`, "AURI 已接收，正在评估现实影响", "warning"]
+      : ["行程风险出现", "关键任务受到当前路况影响", "保持驾驶，AURI 等待手机端求助", "warning"];
+  } else if (stage === "planning") {
+    view = ["AURI 正在处理", `正在分析 ${taskCounts.total} 项任务`, "重排弹性任务，并准备必要消息", "processing"];
+  } else if (["service_prepared", "waiting_confirmation"].includes(stage)) {
+    view = ["方案已准备", `${actionProgress.total || 0} 项动作等待确认`, actionTargets ? `将处理：${actionTargets}` : "请确认后统一执行", "confirm"];
+  } else if (stage === "executing") {
+    view = ["正在执行", actionProgress.total ? `${actionProgress.completed}/${actionProgress.total} 项动作已完成` : "正在执行已确认动作", "手机、车机与腕上设备同步更新", "processing"];
+  } else if (["action_completed", "cooldown"].includes(stage)) {
+    view = ["问题已处理", actionProgress.total ? `${actionProgress.completed}/${actionProgress.total} 项动作已完成` : "本次处理已经完成", "按当前速度驾驶即可，AURI 已降低打扰", "success"];
+  }
+  if (!view) {
+    ui.mapAgentHud.hidden = true;
+    return;
+  }
+  const [kicker, title, detail, tone] = view;
+  ui.mapAgentHud.dataset.tone = tone;
+  ui.mapAgentKicker.textContent = kicker;
+  ui.mapAgentTitle.textContent = title;
+  ui.mapAgentDetail.textContent = detail;
+  ui.mapAgentHud.hidden = false;
+}
+
+function updateMapModeUi(mode = "overview") {
+  const following = mode === "follow";
+  ui.mapFollowBtn?.classList.toggle("active", following);
+  ui.mapOverviewBtn?.classList.toggle("active", !following);
+  if (ui.mapCameraLabel) ui.mapCameraLabel.textContent = following ? "3D 跟车" : "路线全览";
+}
+
 function riskLabel(stage, risk) {
   if (stage === "error") return "⚠ 连接异常";
   if (["action_completed", "cooldown", "parked_review"].includes(stage)) return "✓ 已处理";
@@ -875,10 +966,11 @@ function renderTaskBoard() {
     `;
     return;
   }
+  const visibleTasks = tasks.length > 2 ? tasks.slice(0, 1) : tasks;
   const columns = Math.min(tasks.length, 2);
-  ui.taskBoard.className = `task-board count-${Math.min(tasks.length, 4)}${tasks.length > 2 ? " many" : ""}`;
+  ui.taskBoard.className = `task-board count-${columns}${tasks.length > 2 ? " summarized" : ""}`;
   ui.taskBoard.style.setProperty("--task-columns", String(columns));
-  ui.taskBoard.innerHTML = tasks.map((task) => {
+  const cards = visibleTasks.map((task) => {
     const item = stateView.taskView(task, worldState?.risk);
     return `
       <button class="task-card ${item.tone} active" type="button" data-task-id="${escapeHtml(item.id)}">
@@ -889,7 +981,22 @@ function renderTaskBoard() {
         <span class="task-status">${escapeHtml(item.status)}</span>
       </button>
     `;
-  }).join("");
+  });
+  if (tasks.length > 2) {
+    const remaining = tasks.slice(1);
+    const adjustable = remaining.filter((task) => task.adjustable).length;
+    cards.push(`
+      <button class="task-card task-more active" type="button" data-task-id="${escapeHtml(remaining[0].task_id)}">
+        <span class="task-more-count">+${remaining.length}</span>
+        <span class="task-copy">
+          <em>其余任务 · ${adjustable} 项可调整</em>
+          <strong>${escapeHtml(remaining.map((task) => task.title).slice(0, 2).join("、"))}</strong>
+        </span>
+        <span class="task-status">查看全部</span>
+      </button>
+    `);
+  }
+  ui.taskBoard.innerHTML = cards.join("");
 }
 
 function taskFlowCard({
@@ -1212,6 +1319,7 @@ function render() {
   ui.quickAskLabel.textContent = hasMobileUtterance
     ? `“${utterance.text}”`
     : "等待用户在手机端求助";
+  renderMapAgentHud(stage, actionProgress, utterance);
   ui.voiceHint.textContent = voice;
   ui.confirmBtn.disabled = !canConfirm || confirmInFlight;
   ui.confirmBtn.classList.toggle("enabled", canConfirm);
@@ -1233,15 +1341,8 @@ function render() {
   ui.turnDistance.textContent = useAmapInstruction ? amapRouteMeta.nextDistance.value : mapDistance;
   ui.turnUnit.textContent = useAmapInstruction ? amapRouteMeta.nextDistance.unit : mapUnit;
   ui.turnInstruction.textContent = useAmapInstruction ? amapRouteMeta.instruction : mapInstruction;
-  ui.laneGuidance.textContent = mapStage === "overview"
-    ? "等待车辆导航信号"
-    : mapStage === "preview"
-      ? "路线与车辆状态同步"
-      : mapStage === "alert"
-        ? "保持当前车道"
-        : mapStage === "takeover"
-          ? "无需额外操作"
-          : "保持左侧 2 车道";
+  ui.turnSymbol.textContent = maneuverIcon(useAmapInstruction ? amapRouteMeta.maneuver : "straight");
+  renderLaneGuidance(useAmapInstruction ? amapRouteMeta.maneuver : "straight", mapStage);
   ui.mapStageLabel.textContent = mapLabel;
   ui.mapStageIcon.textContent = mapIcon;
   renderSignalToast(worldState?.stage);
@@ -1256,6 +1357,7 @@ function render() {
     riskLevel: risk.pressure_level,
     lateMinutes: risk.late_minutes
   });
+  updateMapModeUi(mapAdapter?.getCameraMode?.() || (showVehicleMarker ? "follow" : "overview"));
   ui.carPin.classList.toggle("is-hidden", !showVehicleMarker);
   if (showVehicleMarker) {
     animateVehicleTo(routeProgress);
@@ -1396,14 +1498,18 @@ ui.configMapProvider.addEventListener("change", () => {
     ui.mapConfigStatus.textContent = "将使用 Security JS Code 明文 Demo 方式加载高德地图。";
   }
 });
-document.querySelector(".map-tools")?.addEventListener("click", (event) => {
-  const button = event.target.closest("button[data-map-action]");
-  if (!button) return;
-  if (!mapAdapter?.control(button.dataset.mapAction)) {
-    ui.mapWrap.classList.remove("is-map-tool-active");
-    void ui.mapWrap.offsetWidth;
-    ui.mapWrap.classList.add("is-map-tool-active");
-  }
+document.querySelectorAll(".map-tools, .map-mode-switch").forEach((controls) => {
+  controls.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-map-action]");
+    if (!button) return;
+    if (!mapAdapter?.control(button.dataset.mapAction)) {
+      ui.mapWrap.classList.remove("is-map-tool-active");
+      void ui.mapWrap.offsetWidth;
+      ui.mapWrap.classList.add("is-map-tool-active");
+      return;
+    }
+    updateMapModeUi(mapAdapter.getCameraMode?.());
+  });
 });
 
 window.AURI_HMI = {
@@ -1420,7 +1526,7 @@ window.AURI_HMI = {
     climate: stateView.climate(worldState),
     conclusion: ui.realConclusion.textContent
   }),
-  getMapStatus: () => ({ ...mapRuntimeStatus }),
+  getMapStatus: () => ({ ...mapRuntimeStatus, cameraMode: mapAdapter?.getCameraMode?.() || "overview" }),
   getMapUsage: () => mapAdapter?.getUsage?.() || null
 };
 

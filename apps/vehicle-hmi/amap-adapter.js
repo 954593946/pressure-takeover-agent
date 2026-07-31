@@ -200,15 +200,38 @@
     const step = steps[stepIndex];
     const stepDistance = Number(step?.distance || 0);
     const remainingDistance = Math.max(0, stepDistance - Math.max(0, targetDistance - coveredDistance));
+    const instruction = String(step?.instruction || "")
+      .replace(/行驶\s*\d+(?:\.\d+)?\s*(?:米|千米|公里)/g, "")
+      .trim();
+    const maneuver = /掉头/.test(instruction)
+      ? "uturn"
+      : /左/.test(instruction)
+        ? "left"
+        : /右|出口|匝道/.test(instruction)
+          ? "right"
+          : /到达|目的地/.test(instruction)
+            ? "arrive"
+            : "straight";
+    const roadName = String(step?.road || "").trim()
+      || instruction.match(/(?:进入|沿|驶入)([^，。]+?)(?:后|行驶|靠|左转|右转|$)/)?.[1]
+      || "当前道路";
     return {
-      instruction: String(step?.instruction || "").replace(/行驶\s*\d+(?:\.\d+)?\s*(?:米|千米|公里)/g, "").trim(),
+      instruction,
+      maneuver,
+      roadName,
       nextDistance: remainingDistance >= 1000
         ? { value: (remainingDistance / 1000).toFixed(1), unit: "公里" }
         : { value: String(Math.max(50, Math.round(remainingDistance / 10) * 10)), unit: "米" },
       totalDistanceMeters: totalDistance,
       totalDurationSeconds: Number(route?.time || 0),
-      stepIndex
+      remainingDistanceMeters: Math.max(0, totalDistance - targetDistance),
+      stepIndex,
+      stepCount: steps.length
     };
+  }
+
+  function normalizedRotation(value) {
+    return ((Number(value || 0) % 360) + 360) % 360;
   }
 
   class AuriAmapAdapter {
@@ -225,6 +248,8 @@
       this.lastProgress = null;
       this.lastStage = null;
       this.lastRouteMetaKey = null;
+      this.lastCameraHeading = null;
+      this.cameraMode = "overview";
       this.drivingRoute = null;
       this.overlays = {};
     }
@@ -266,17 +291,21 @@
     createMap(AMap, config, routeConfig) {
       this.map = new AMap.Map(this.container, {
         center: routeConfig.start,
-        zoom: 15,
-        viewMode: "2D",
-        pitch: 0,
-        mapStyle: config.amapStyle || "amap://styles/normal",
+        zoom: 16.8,
+        viewMode: "3D",
+        pitch: 52,
+        rotation: 0,
+        mapStyle: config.amapStyle || "amap://styles/whitesmoke",
         features: ["bg", "road", "building", "point"],
         showLabel: true,
         resizeEnable: true,
-        rotateEnable: false,
-        pitchEnable: false,
+        rotateEnable: true,
+        pitchEnable: true,
+        animateEnable: true,
         dragEnable: true,
-        zoomEnable: true
+        zoomEnable: true,
+        keyboardEnable: false,
+        doubleClickZoom: true
       });
       this.overlays.trafficLayer = new AMap.TileLayer.Traffic({
         autoRefresh: true,
@@ -332,45 +361,44 @@
         ...common,
         strokeColor: "#ffffff",
         strokeOpacity: 0.95,
-        strokeWeight: 18,
+        strokeWeight: 20,
         zIndex: 45
       });
       this.overlays.routeBase = new AMap.Polyline({
         ...common,
-        strokeColor: "#aab8c3",
-        strokeOpacity: 0.9,
-        strokeWeight: 11,
+        strokeColor: "#0b1b33",
+        strokeOpacity: 0.32,
+        strokeWeight: 14,
         zIndex: 46
       });
       this.overlays.routeRemaining = new AMap.Polyline({
         ...common,
-        showDir: true,
-        dirColor: "#ffffff",
+        showDir: false,
         strokeColor: "#2f6bff",
         strokeOpacity: 1,
-        strokeWeight: 11,
+        strokeWeight: 10,
         zIndex: 48
       });
       this.overlays.routePassed = new AMap.Polyline({
         ...common,
-        path: [],
-        strokeColor: "#8799a6",
-        strokeOpacity: 1,
-        strokeWeight: 11,
+        path: this.routePath.slice(0, 2),
+        strokeColor: "#9aa6b2",
+        strokeOpacity: 0,
+        strokeWeight: 10,
         zIndex: 49
       });
       this.overlays.routeIncident = new AMap.Polyline({
         ...common,
-        path: [],
+        path: this.routePath.slice(0, 2),
         strokeColor: "#e6a700",
-        strokeOpacity: 1,
-        strokeWeight: 12,
+        strokeOpacity: 0,
+        strokeWeight: 11,
         zIndex: 51
       });
 
       const vehicle = document.createElement("div");
       vehicle.className = "amap-vehicle-marker";
-      vehicle.innerHTML = "<i></i>";
+      vehicle.innerHTML = "<span></span><i></i><b>AURI</b>";
       this.overlays.vehicleMarker = new AMap.Marker({
         position: this.routePath[0],
         content: vehicle,
@@ -410,6 +438,20 @@
       });
       this.overlays.incidentMarker.hide();
 
+      this.overlays.routeChevrons = [0, 1, 2].map((index) => {
+        const chevron = document.createElement("div");
+        chevron.className = `amap-route-chevron chevron-${index + 1}`;
+        chevron.textContent = "↑";
+        const marker = new AMap.Marker({
+          position: this.routePath[0],
+          content: chevron,
+          anchor: "center",
+          zIndex: 80 - index
+        });
+        marker.hide();
+        return marker;
+      });
+
       this.map.add([
         this.overlays.routeShadow,
         this.overlays.routeBase,
@@ -419,7 +461,8 @@
         this.overlays.vehicleMarker,
         this.overlays.originMarker,
         this.overlays.destinationMarker,
-        this.overlays.incidentMarker
+        this.overlays.incidentMarker,
+        ...this.overlays.routeChevrons
       ]);
       this.map.setFitView(
         [this.overlays.originMarker, this.overlays.routeShadow, this.overlays.destinationMarker],
@@ -427,6 +470,61 @@
         [90, 120, 150, 90],
         16
       );
+      this.applyOverviewCamera();
+    }
+
+    applyOverviewCamera() {
+      if (!this.map) return;
+      this.cameraMode = "overview";
+      this.mapWrap.dataset.cameraMode = "overview";
+      this.map.setPitch?.(0, false, 450);
+      this.map.setRotation?.(0, false, 450);
+      this.map.setFitView(
+        [this.overlays.originMarker, this.overlays.routeShadow, this.overlays.destinationMarker],
+        false,
+        [90, 120, 150, 90],
+        16
+      );
+    }
+
+    applyFollowCamera(snapshot, location, force = false) {
+      if (!this.map || !location) return;
+      const heading = Number(location.heading || 0);
+      const headingDelta = this.lastCameraHeading === null
+        ? 360
+        : Math.abs(heading - this.lastCameraHeading);
+      const highAttention = ["alert", "takeover"].includes(snapshot.mapStage);
+      const recovery = snapshot.mapStage === "recovery";
+      const lookAhead = locationAtProgress(
+        this.routeGeometry,
+        Math.min(1, Number(snapshot.progress || 0) + 0.002)
+      );
+      const pitch = highAttention ? 58 : recovery ? 50 : 54;
+      const zoom = highAttention ? 17 : recovery ? 17.1 : 17.25;
+      this.cameraMode = "follow";
+      this.mapWrap.dataset.cameraMode = "follow";
+      this.map.setPitch?.(pitch, false, 650);
+      if (force || headingDelta >= 8) {
+        this.map.setRotation?.(normalizedRotation(360 - heading), false, 650);
+        this.lastCameraHeading = heading;
+      }
+      this.map.setZoomAndCenter(zoom, lookAhead.point, false, 650);
+    }
+
+    updateRouteChevrons(snapshot) {
+      if (!this.overlays.routeChevrons?.length || !this.routeGeometry) return;
+      const progress = Number(snapshot.progress || 0);
+      const visible = snapshot.showVehicle && !["overview", "preview"].includes(snapshot.mapStage);
+      this.overlays.routeChevrons.forEach((marker, index) => {
+        if (!visible) {
+          marker.hide();
+          return;
+        }
+        const location = locationAtProgress(this.routeGeometry, Math.min(0.99, progress + 0.004 + index * 0.005));
+        marker.setPosition(location.point);
+        marker.setAngle?.(location.heading);
+        marker.show();
+      });
     }
 
     update(snapshot) {
@@ -441,21 +539,26 @@
         this.onRouteMeta(meta);
       }
       const location = locationAtProgress(this.routeGeometry, progress);
-      this.overlays.routePassed.setPath(location.passed.length > 1 ? location.passed : []);
-      this.overlays.routeRemaining.setPath(location.remaining.length > 1 ? location.remaining : []);
+      const fallbackSegment = location.remaining.length > 1
+        ? location.remaining.slice(0, 2)
+        : location.passed.slice(-2);
+      this.overlays.routePassed.setOptions({ strokeOpacity: location.passed.length > 1 ? 1 : 0 });
+      this.overlays.routePassed.setPath(location.passed.length > 1 ? location.passed : fallbackSegment);
+      this.overlays.routeRemaining.setOptions({ strokeOpacity: location.remaining.length > 1 ? 1 : 0 });
+      this.overlays.routeRemaining.setPath(location.remaining.length > 1 ? location.remaining : fallbackSegment);
 
       const riskActive = snapshot.riskLevel === "L2"
         || snapshot.riskLevel === "L3"
         || ["alert", "takeover"].includes(snapshot.mapStage);
       const completed = ["action_completed", "cooldown", "parked_review"].includes(snapshot.stage);
-      const incidentEndProgress = Math.min(1, progress + 0.18);
+      const incidentEndProgress = Math.min(1, progress + 0.07);
       const incidentEnd = locationAtProgress(this.routeGeometry, incidentEndProgress);
       const incidentPath = pathBetweenProgress(this.routeGeometry, progress, incidentEndProgress);
       this.overlays.routeIncident.setOptions({
         strokeColor: completed ? "#2e9d6f" : "#e6a700",
         strokeOpacity: riskActive || completed ? 1 : 0
       });
-      this.overlays.routeIncident.setPath(riskActive || completed ? incidentPath : []);
+      this.overlays.routeIncident.setPath(riskActive || completed ? incidentPath : fallbackSegment);
 
       if (riskActive) {
         this.overlays.incidentContent.textContent = `拥堵 · 晚到 ${snapshot.lateMinutes || 18} 分钟`;
@@ -486,20 +589,15 @@
       if (["overview", "preview"].includes(snapshot.mapStage)) this.overlays.originMarker.show();
       else this.overlays.originMarker.hide();
 
-      if (snapshot.mapStage !== this.lastStage || Math.abs(progress - (this.lastProgress ?? progress)) > 0.08) {
+      const stageChanged = snapshot.mapStage !== this.lastStage;
+      if (stageChanged || Math.abs(progress - (this.lastProgress ?? progress)) > 0.035) {
         if (["overview", "preview"].includes(snapshot.mapStage)) {
-          this.map.setFitView(
-            [this.overlays.originMarker, this.overlays.routeShadow, this.overlays.destinationMarker],
-            false,
-            [90, 120, 150, 90],
-            16
-          );
+          this.applyOverviewCamera();
         } else {
-          const zoom = ["alert", "takeover"].includes(snapshot.mapStage) ? 15.8 : 15.5;
-          const center = locationAtProgress(this.routeGeometry, Math.min(1, progress + 0.055)).point;
-          this.map.setZoomAndCenter(zoom, center, false, 650);
+          this.applyFollowCamera(snapshot, location, stageChanged);
         }
       }
+      this.updateRouteChevrons(snapshot);
 
       this.lastProgress = progress;
       this.lastStage = snapshot.mapStage;
@@ -509,13 +607,13 @@
       if (this.status !== "online" || !this.map) return false;
       if (action === "zoom-in") this.map.zoomIn();
       else if (action === "zoom-out") this.map.zoomOut();
-      else if (action === "reset") {
-        this.map.setFitView(
-          [this.overlays.originMarker, this.overlays.routeShadow, this.overlays.destinationMarker],
-          false,
-          [90, 120, 150, 90],
-          16
-        );
+      else if (action === "overview" || action === "reset") {
+        this.applyOverviewCamera();
+        this.updateRouteChevrons(this.lastSnapshot || {});
+      } else if (action === "follow" && this.lastSnapshot && this.routeGeometry) {
+        const location = locationAtProgress(this.routeGeometry, Number(this.lastSnapshot.progress || 0));
+        this.applyFollowCamera(this.lastSnapshot, location, true);
+        this.updateRouteChevrons(this.lastSnapshot);
       } else return false;
       return true;
     }
@@ -533,6 +631,10 @@
 
     getUsage() {
       return readUsage();
+    }
+
+    getCameraMode() {
+      return this.cameraMode;
     }
   }
 

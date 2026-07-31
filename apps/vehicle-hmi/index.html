@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>AURI 车机 HMI | 随行压力接管 Agent</title>
-  <link rel="stylesheet" href="./styles.css?v=auri-cockpit-20260729c" />
+  <link rel="stylesheet" href="./styles.css?v=auri-cockpit-20260731a" />
 </head>
 <body>
   <main class="screen" aria-label="AURI 车机 HMI">
@@ -357,7 +357,7 @@
           </g>
         </svg>
         <div class="amap-turn-card">
-          <div class="turn-symbol" aria-hidden="true">↰</div>
+          <div id="turnSymbol" class="turn-symbol" aria-hidden="true">↰</div>
           <div class="turn-copy">
             <strong><span id="turnDistance">1.5</span><small id="turnUnit">公里</small></strong>
             <em id="turnInstruction">左转进入 学院路高架</em>
@@ -371,6 +371,12 @@
             </div>
             <span id="laneGuidance">保持左侧 2 车道</span>
           </div>
+        </div>
+
+        <div class="map-live-source" aria-label="导航数据来源">
+          <i aria-hidden="true"></i>
+          <span id="mapSourceLabel">高德实时导航</span>
+          <strong id="mapCameraLabel">路线全览</strong>
         </div>
 
         <div class="map-stage-chip" aria-live="polite">
@@ -388,6 +394,18 @@
           <button id="dismissSignalToast" type="button" aria-label="关闭提醒">×</button>
         </aside>
 
+        <aside id="mapAgentHud" class="map-agent-hud" aria-live="polite" hidden>
+          <div class="map-agent-mark" aria-hidden="true">A</div>
+          <div class="map-agent-copy">
+            <span id="mapAgentKicker">AURI 正在接续</span>
+            <strong id="mapAgentTitle">路线已从手机同步到车机</strong>
+            <small id="mapAgentDetail">腕上设备保持低干扰反馈</small>
+          </div>
+          <div id="mapAgentFlow" class="map-agent-flow" aria-label="设备同步状态">
+            <span>手机</span><i></i><span>车机</span><i></i><span>腕上</span>
+          </div>
+        </aside>
+
         <div class="map-status-cluster">
           <div class="speed-card">
             <span>当前</span><strong id="speed">42</strong><em>km/h</em>
@@ -403,7 +421,11 @@
         <div class="map-tools" aria-label="地图快捷工具">
           <button type="button" data-map-action="zoom-in" aria-label="放大地图">+</button>
           <button type="button" data-map-action="zoom-out" aria-label="缩小地图">−</button>
-          <button type="button" data-map-action="reset" aria-label="回到路线总览">北</button>
+        </div>
+
+        <div class="map-mode-switch" role="group" aria-label="地图视角">
+          <button id="mapOverviewBtn" type="button" data-map-action="overview">全览</button>
+          <button id="mapFollowBtn" class="active" type="button" data-map-action="follow">跟车</button>
         </div>
 
         <div class="right-progress" aria-label="路线进度">
@@ -540,8 +562,8 @@
     <span>推荐 16:9 大屏或平板横屏。</span>
   </div>
 
-  <script src="./world-state-view.js?v=auri-cockpit-20260729c"></script>
-  <script src="./amap-adapter.js?v=auri-cockpit-20260729a"></script>
-  <script src="./app.js?v=auri-cockpit-20260729c"></script>
+  <script src="./world-state-view.js?v=auri-cockpit-20260731a"></script>
+  <script src="./amap-adapter.js?v=auri-cockpit-20260731a"></script>
+  <script src="./app.js?v=auri-cockpit-20260731a"></script>
 </body>
 </html>
