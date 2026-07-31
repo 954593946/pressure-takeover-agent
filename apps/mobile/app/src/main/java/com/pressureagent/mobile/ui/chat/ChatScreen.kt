@@ -240,15 +240,6 @@ fun ChatScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // Loading
-            if (state.isLoading) {
-                item(key = "loading") {
-                    Box(Modifier.fillMaxWidth().height(60.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = AuriNavy)
-                    }
-                }
-            }
-
             // Error banner with retry
             if (state.error != null) {
                 item(key = "error") {
@@ -335,14 +326,18 @@ fun ChatScreen(
                 }
             }
 
-            // Welcome message when idle
-            if (state.stage == Stage.OFF_VEHICLE_IDLE && state.chatMessages.isEmpty()) {
-                item(key = "welcome") {
-                    Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                        Column(modifier = Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("你只管开，我来处理", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = AuriNavy, textAlign = TextAlign.Center)
-                            Spacer(Modifier.height(12.dp))
-                            Text("AURI 随行压力接管 Agent\n下方语音说出你的任务，我来帮你安排", style = MaterialTheme.typography.bodyMedium, color = Color.Gray, textAlign = TextAlign.Center, lineHeight = 22.sp)
+            // Welcome / Thinking state when idle with no messages
+            if (state.chatMessages.isEmpty()) {
+                if (state.isLoading) {
+                    item(key = "thinking") { ThinkingBubble() }
+                } else if (state.stage == Stage.OFF_VEHICLE_IDLE) {
+                    item(key = "welcome") {
+                        Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                            Column(modifier = Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("你只管开，我来处理", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = AuriNavy, textAlign = TextAlign.Center)
+                                Spacer(Modifier.height(12.dp))
+                                Text("AURI 随行压力接管 Agent\n下方语音说出你的任务，我来帮你安排", style = MaterialTheme.typography.bodyMedium, color = Color.Gray, textAlign = TextAlign.Center, lineHeight = 22.sp)
+                            }
                         }
                     }
                 }
@@ -350,13 +345,18 @@ fun ChatScreen(
 
             // Chat messages with embedded rich cards
             items(state.chatMessages, key = { it.id }) { chat ->
-                ChatBubble(
-                    chat = chat,
-                    isConfirmationBlocked = state.isConfirmationBlocked,
-                    blockedReason = state.blockedReason,
-                    onConfirm = viewModel::confirm,
-                    onReject = viewModel::reject,
-                )
+                // Show thinking bubble for empty AI placeholder while loading
+                if (!chat.isUser && chat.text.isBlank() && state.isLoading) {
+                    ThinkingBubble()
+                } else {
+                    ChatBubble(
+                        chat = chat,
+                        isConfirmationBlocked = state.isConfirmationBlocked,
+                        blockedReason = state.blockedReason,
+                        onConfirm = viewModel::confirm,
+                        onReject = viewModel::reject,
+                    )
+                }
             }
 
             item(key = "spacer") { Spacer(Modifier.height(8.dp)) }
@@ -426,6 +426,72 @@ private fun ChatBubble(
             Spacer(Modifier.width(8.dp))
             Surface(shape = CircleShape, color = AuriGold.copy(alpha = 0.3f), modifier = Modifier.size(28.dp).align(Alignment.Top)) {
                 Box(contentAlignment = Alignment.Center) { Text("我", color = AuriNavy, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+            }
+        }
+    }
+}
+
+// ─── Thinking Bubble (DeepSeek-style animated dots) ──────────────────────────
+
+@Composable
+private fun ThinkingBubble() {
+    val infiniteTransition = rememberInfiniteTransition(label = "thinking")
+    // Single phase cycle 0→1 drives all dots with staggered offsets
+    val phase by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "thinking_phase",
+    )
+
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.Start,
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = AuriNavy,
+            modifier = Modifier.size(28.dp).align(Alignment.Top),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text("A", color = AuriGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        Surface(
+            shape = RoundedCornerShape(
+                topStart = 16.dp, topEnd = 16.dp,
+                bottomStart = 4.dp, bottomEnd = 16.dp,
+            ),
+            color = Color.White,
+            shadowElevation = 1.dp,
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "正在思考",
+                    color = AuriNavy.copy(alpha = 0.6f),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                // 3 staggered animated dots — wave pattern
+                repeat(3) { i ->
+                    val dotPhase = (phase + i * 0.33f) % 1f
+                    val alpha = if (dotPhase < 0.5f) {
+                        0.15f + (dotPhase / 0.5f) * 0.85f
+                    } else {
+                        1f - ((dotPhase - 0.5f) / 0.5f) * 0.85f
+                    }
+                    Text(
+                        "●",
+                        color = AuriNavy.copy(alpha = alpha),
+                        fontSize = 8.sp,
+                    )
+                }
             }
         }
     }
