@@ -1,0 +1,1 @@
+window.SAFEDRIVER_CONFIG = window.SAFEDRIVER_CONFIG || {};
