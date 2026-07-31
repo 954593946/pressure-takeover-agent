@@ -3611,6 +3611,7 @@ body{background:#000814;}
 
     <!-- ══ RIGHT PANEL (CENTER MAP) ══ -->
     <div class="right-panel">
+      <div id="auri-amap-canvas" class="auri-amap-canvas" aria-label="高德在线导航地图" hidden></div>
       <div id="rmap"></div>
       <div class="map-design" aria-hidden="true">
         <svg class="map-art" viewBox="0 0 1200 760" preserveAspectRatio="xMidYMid slice">
@@ -3829,6 +3830,13 @@ body{background:#000814;}
       <div class="wm">
         <img class="wm-auri-icon" src="icons/auri-icon.png" alt="" />
         <span class="wm-text">AURI</span>
+      </div>
+      <div class="auri-map-source" id="auri-map-source" data-mode="offline">离线导航</div>
+      <div class="auri-map-controls" id="auri-map-controls" aria-label="地图控制" hidden>
+        <button type="button" data-map-control="zoom-in" title="放大地图" aria-label="放大地图">＋</button>
+        <button type="button" data-map-control="zoom-out" title="缩小地图" aria-label="缩小地图">−</button>
+        <button type="button" data-map-control="follow" title="跟随车辆" aria-label="跟随车辆">⌖</button>
+        <button type="button" data-map-control="overview" title="路线总览" aria-label="路线总览">◇</button>
       </div>
     </div>
 
@@ -11108,6 +11116,8 @@ function initMap(){
   hydrateMapTexture();
   initMapDrag();
   _mapEnsureRoutes(); // 提前 hydrate POIs · 页面加载完即可见沿路 icon
+  // vehicle-hmi-next 使用 Bosch SVG 作为离线地图、高德作为在线地图，停止旧 Leaflet 瓦片请求。
+  if(document.documentElement.dataset.auriLegacyTiles!=='enabled') return;
   if(_map) return;
   _map=L.map('rmap',{
     zoomControl:false,attributionControl:false,
@@ -14512,6 +14522,7 @@ window.addEventListener('load',()=>{
 </script>
 <script src="src/world-state-model.js"></script>
 <script src="src/agent-client.js"></script>
+<script src="src/amap-adapter.js"></script>
 <script src="auri-shell.js"></script>
 </body>
 </html>

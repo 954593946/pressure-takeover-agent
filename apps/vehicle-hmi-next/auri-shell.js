@@ -3,10 +3,18 @@
 
   const model = window.AuriWorldStateModel;
   const agentModule = window.AuriAgentClient;
-  if (!model || !agentModule) {
+  const amapModule = window.AuriAmapAdapter;
+  if (!model || !agentModule || !amapModule) {
     console.error("[AURI] World State modules are unavailable");
     return;
   }
+
+  const ROUTE_ORIGIN = { name: "博世苏州 · 星龙街455号", coordinates: [120.791879, 31.334680] };
+  const DEMO_DESTINATIONS = [
+    { pattern: /(阳光小学|学校|接孩子|接送)/, name: "阳光小学", coordinates: [120.7359, 31.3048] },
+    { pattern: /(苏州中心|东方之门)/, name: "苏州中心", coordinates: [120.6677, 31.3181] },
+    { pattern: /(超市|采购|商超)/, name: "邻里生鲜超市", coordinates: [120.7506, 31.3147] }
+  ];
 
   const POIS = [
     ["●", "当前位置", "home"],
@@ -48,12 +56,22 @@
     schema_incompatible: ["版本不兼容", "critical"],
     stopped: ["已断开", "idle"]
   };
+  const MAP_STATUS_VIEW = {
+    offline: ["离线导航", "offline"],
+    loading: ["路线载入中", "loading"],
+    map_ready: ["地图已连接", "loading"],
+    online: ["高德实时导航", "online"]
+  };
 
   let viewModel = model.buildVehicleHmiViewModel(null);
   let activeSection = null;
   let connectionStatus = { type: "idle" };
   let lastAnimatedStage = null;
   let lastError = null;
+  let routeMeta = null;
+  let mapStatus = { mode: "offline", message: "离线导航" };
+  let mapConfigReady = false;
+  let mapInitPromise = null;
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -183,6 +201,17 @@
             <button type="button" data-api="https://auri-langchain-agent-api.onrender.com">LangChain 服务</button>
             <button type="button" data-api="http://127.0.0.1:8000">本地服务</button>
           </div>
+          <details class="auri-map-config">
+            <summary>地图连接设置 <span>${escapeHtml(MAP_STATUS_VIEW[mapStatus.mode]?.[0] || "离线导航")}</span></summary>
+            <label><span>地图模式</span><select id="auri-config-map-provider">
+              <option value="auto"${config.mapProvider === "auto" ? " selected" : ""}>自动读取 Agent 配置</option>
+              <option value="amap"${config.mapProvider === "amap" ? " selected" : ""}>高德 Web JS API</option>
+              <option value="offline"${config.mapProvider === "offline" ? " selected" : ""}>Bosch 离线地图</option>
+            </select></label>
+            <label><span>高德 Web Key</span><input id="auri-config-amap-key" type="password" autocomplete="off" value="${escapeHtml(config.amapKey)}" placeholder="仅保存在当前浏览器"></label>
+            <label><span>高德安全码（本机诊断）</span><input id="auri-config-amap-security" type="password" autocomplete="off" value="${escapeHtml(config.amapSecurityJsCode)}" placeholder="生产环境请使用 Agent 安全代理"></label>
+            <label><span>安全代理地址</span><input id="auri-config-amap-host" type="url" spellcheck="false" value="${escapeHtml(config.amapServiceHost)}" placeholder="由 /v1/map-config 自动提供"></label>
+          </details>
           <button class="auri-config-submit" type="submit">保存并连接</button>
         </form>
       `
@@ -209,15 +238,16 @@
     });
     form.addEventListener("submit", (event) => {
       event.preventDefault();
-      const next = agentModule.saveConfig({
+      agentModule.saveConfig({
         ...client.getConfig(),
         apiBase: document.getElementById("auri-config-api")?.value,
-        token: document.getElementById("auri-config-token")?.value
+        token: document.getElementById("auri-config-token")?.value,
+        mapProvider: document.getElementById("auri-config-map-provider")?.value,
+        amapKey: document.getElementById("auri-config-amap-key")?.value,
+        amapSecurityJsCode: document.getElementById("auri-config-amap-security")?.value,
+        amapServiceHost: document.getElementById("auri-config-amap-host")?.value
       });
-      lastError = null;
-      client.reconfigure(next);
-      renderConnectionStatus({ type: "preflighting" });
-      openPanel("connection");
+      window.location.reload();
     });
   }
 
@@ -390,20 +420,40 @@
       card.classList.toggle("is-default", !vm.navigation.hasDestination);
     }
     if (headline) {
-      headline.innerHTML = vm.risk.lateMinutes
+      headline.innerHTML = routeMeta?.nextDistance
+        ? `${escapeHtml(routeMeta.nextDistance.value)}<span>${escapeHtml(routeMeta.nextDistance.unit)}</span>`
+        : vm.risk.lateMinutes
         ? `${vm.risk.lateMinutes}<span>分钟</span>`
         : vm.navigation.hasDestination
           ? `按时<span>行驶</span>`
           : `--<span>路线</span>`;
     }
-    if (instruction) instruction.textContent = vm.navigation.hasDestination ? vm.navigation.destination : "等待手机同步路线";
+    if (instruction) instruction.textContent = routeMeta?.instruction || (vm.navigation.hasDestination ? vm.navigation.destination : "等待手机同步路线");
     if (destination) destination.textContent = vm.navigation.taskTitle || "暂无导航任务";
     if (eta) eta.textContent = vm.navigation.etaLabel;
-    if (minutes) minutes.textContent = vm.tasks.total ? `${vm.tasks.total} 项` : "--";
-    if (kilometers) kilometers.textContent = vm.risk.level;
-    if (minutes?.nextElementSibling) minutes.nextElementSibling.textContent = "任务";
-    if (kilometers?.nextElementSibling) kilometers.nextElementSibling.textContent = "压力";
+    const remainingKm = routeMeta ? Math.max(0, routeMeta.remainingDistanceMeters / 1000) : null;
+    if (minutes) minutes.textContent = vm.tasks.total ? String(vm.tasks.total) : "--";
+    if (kilometers) kilometers.textContent = remainingKm === null ? "--" : remainingKm >= 10 ? String(Math.round(remainingKm)) : remainingKm.toFixed(1);
+    if (minutes?.nextElementSibling) minutes.nextElementSibling.textContent = "今日任务";
+    if (kilometers?.nextElementSibling) kilometers.nextElementSibling.textContent = "剩余公里";
     if (progress) progress.style.width = `${Math.round(stageProgress * 100)}%`;
+    renderTurnArrow(routeMeta?.maneuver || "straight");
+  }
+
+  function renderTurnArrow(maneuver) {
+    const path = document.querySelector("#vd-nav-card .vd-nav-arrow path:first-child");
+    const tail = document.querySelector("#vd-nav-card .vd-nav-arrow path:last-child");
+    if (!path || !tail) return;
+    const routes = {
+      left: ["M34 35V24c0-6.6-5.4-12-12-12H10", "M18 5l-8 7 8 7"],
+      right: ["M14 35V24c0-6.6 5.4-12 12-12h12", "M30 5l8 7-8 7"],
+      uturn: ["M34 36V22c0-8-5.6-13-12-13s-12 5-12 13v4", "M4 20l6 6 6-6"],
+      arrive: ["M24 39V11", "M16 19l8-8 8 8"],
+      straight: ["M24 39V9", "M16 17l8-8 8 8"]
+    };
+    const selected = routes[maneuver] || routes.straight;
+    path.setAttribute("d", selected[0]);
+    tail.setAttribute("d", selected[1]);
   }
 
   function renderClimate() {
@@ -423,9 +473,121 @@
     if (stage === lastAnimatedStage) return;
     lastAnimatedStage = stage;
     const progress = STAGE_PROGRESS[stage];
-    if (Number.isFinite(progress) && typeof window.mapCarTo === "function") {
+    if (mapAdapter.getStatus() !== "online" && Number.isFinite(progress) && typeof window.mapCarTo === "function") {
       try { window.mapCarTo(progress, 1150); } catch (_error) { /* visual controller stays optional */ }
     }
+  }
+
+  function coordinatesFromTask(task) {
+    const raw = task?.raw || {};
+    const pair = raw.coordinates || raw.location_coordinates || raw.destination_coordinates;
+    if (Array.isArray(pair) && pair.length >= 2 && pair.every((value) => Number.isFinite(Number(value)))) {
+      return [Number(pair[0]), Number(pair[1])];
+    }
+    const lng = Number(raw.longitude ?? raw.lng);
+    const lat = Number(raw.latitude ?? raw.lat);
+    if (Number.isFinite(lng) && Number.isFinite(lat)) return [lng, lat];
+    const text = `${task?.location || ""} ${task?.title || ""}`;
+    return DEMO_DESTINATIONS.find((item) => item.pattern.test(text))?.coordinates || null;
+  }
+
+  function routeDefinition() {
+    const task = viewModel.tasks.navigation;
+    const end = coordinatesFromTask(task);
+    if (!task || !end) return null;
+    const known = DEMO_DESTINATIONS.find((item) => item.coordinates[0] === end[0] && item.coordinates[1] === end[1]);
+    return {
+      start: ROUTE_ORIGIN.coordinates,
+      end,
+      originName: ROUTE_ORIGIN.name,
+      destinationName: task.location || known?.name || task.title || "目的地"
+    };
+  }
+
+  function navigationSnapshot() {
+    const stage = viewModel.lifecycle.stage;
+    const progress = STAGE_PROGRESS[stage] ?? 0.03;
+    const driving = viewModel.lifecycle.scene === "driving" || ["handover_to_vehicle", "vehicle_observation", "takeover_L2", "takeover_L3", "planning", "service_prepared", "waiting_confirmation", "executing", "service_executed", "action_completed", "cooldown"].includes(stage);
+    return {
+      stage,
+      progress,
+      driving,
+      showVehicle: driving,
+      overview: !driving || ["handover_to_vehicle", "parked_review"].includes(stage),
+      riskLevel: viewModel.risk.level,
+      lateMinutes: viewModel.risk.lateMinutes
+    };
+  }
+
+  async function ensureMapRoute() {
+    if (!mapConfigReady) return;
+    const route = routeDefinition();
+    if (!route) {
+      routeMeta = null;
+      if (["online", "map_ready"].includes(mapAdapter.getStatus())) mapAdapter.clearNavigation("等待手机同步路线");
+      renderNavigation();
+      return;
+    }
+    const routeKey = `${viewModel.meta.sessionId || "no-session"}:${viewModel.tasks.navigation?.id || viewModel.navigation.destination}:${route.end.join(",")}`;
+    await mapAdapter.setRoute(route, routeKey);
+    mapAdapter.update(navigationSnapshot());
+  }
+
+  function renderMapStatus(next) {
+    const previousMode = mapStatus.mode;
+    mapStatus = next;
+    const source = document.getElementById("auri-map-source");
+    const controls = document.getElementById("auri-map-controls");
+    const [label, tone] = MAP_STATUS_VIEW[next.mode] || [next.message || "离线导航", "offline"];
+    if (source) {
+      source.textContent = next.message || label;
+      source.dataset.mode = tone;
+    }
+    if (controls) controls.hidden = next.mode !== "online";
+    if (next.mode === "online") {
+      try { window.mapCarStop?.(); } catch (_error) { /* offline controller is optional */ }
+    } else if (previousMode === "online") {
+      lastAnimatedStage = null;
+      animateStage();
+    }
+    if (activeSection === "connection") openPanel("connection");
+  }
+
+  const mapAdapter = amapModule.create({
+    container: document.getElementById("auri-amap-canvas"),
+    mapWrap: document.querySelector(".right-panel"),
+    onStatus: renderMapStatus,
+    onRouteMeta(next) {
+      routeMeta = next;
+      renderNavigation();
+    }
+  });
+
+  async function initializeMap() {
+    if (mapInitPromise) return mapInitPromise;
+    mapInitPromise = (async () => {
+      let config = client.getConfig();
+      if (config.mapProvider === "auto" && !config.amapKey) {
+        try {
+          const remote = await client.requestJson("/v1/map-config");
+          if (remote?.enabled && remote?.provider === "amap" && remote?.key) {
+            config = {
+              ...config,
+              mapProvider: "amap",
+              amapKey: remote.key,
+              amapServiceHost: remote.service_host || "",
+              amapStyle: remote.style || config.amapStyle
+            };
+          } else config = { ...config, mapProvider: "offline" };
+        } catch (_error) {
+          config = { ...config, mapProvider: "offline" };
+        }
+      }
+      await mapAdapter.init(config);
+      mapConfigReady = true;
+      await ensureMapRoute();
+    })();
+    return mapInitPromise;
   }
 
   function renderWorldState(state) {
@@ -440,6 +602,8 @@
     renderClimate();
     updateRoutePOIs();
     animateStage();
+    if (mapAdapter.getStatus() === "online") mapAdapter.update(navigationSnapshot());
+    void ensureMapRoute();
     if (activeSection && activeSection !== "connection") openPanel(activeSection);
   }
 
@@ -465,9 +629,15 @@
     disableLegacyDemoShortcuts();
     closePanel();
     renderWorldState(null);
-    document.documentElement.dataset.auriShell = "phase-2";
+    document.querySelectorAll("[data-map-control]").forEach((button) => {
+      button.addEventListener("click", () => mapAdapter.control(button.dataset.mapControl));
+    });
+    document.documentElement.dataset.auriShell = "phase-3";
     const offline = new URLSearchParams(window.location.search).get("offline") === "1";
-    if (!offline) client.start();
+    if (!offline) {
+      client.start();
+      void initializeMap();
+    } else renderMapStatus({ mode: "offline", message: "离线导航" });
   }
 
   window.AURI_HMI_NEXT = {
@@ -475,12 +645,19 @@
     connect() { return client.start(); },
     disconnect() { return client.stop(); },
     getState() {
+      const publicConfig = client.getConfig();
       return {
         syncMode: client.getSyncMode(),
-        config: { ...client.getConfig(), token: client.getConfig().token ? "***" : "" },
+        config: {
+          ...publicConfig,
+          token: publicConfig.token ? "***" : "",
+          amapKey: publicConfig.amapKey ? "***" : "",
+          amapSecurityJsCode: publicConfig.amapSecurityJsCode ? "***" : ""
+        },
         worldState: client.getSnapshot(),
         viewModel,
-        activeSection
+        activeSection,
+        map: { status: mapAdapter.getStatus(), cameraMode: mapAdapter.getCameraMode(), usage: mapAdapter.getUsage(), routeMeta }
       };
     },
     openPanel,

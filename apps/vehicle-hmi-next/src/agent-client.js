@@ -12,7 +12,14 @@
     stream: true,
     pollIntervalMs: 3000,
     streamPollIntervalMs: 15000,
-    requestTimeoutMs: 30000
+    requestTimeoutMs: 30000,
+    mapProvider: "auto",
+    amapKey: "",
+    amapSecurityJsCode: "",
+    amapServiceHost: "",
+    amapStyle: "amap://styles/normal",
+    amapMonthlyMapLimit: 200,
+    amapMonthlyRouteLimit: 200
   };
 
   function safeStorageGet(storage, key) {
@@ -49,6 +56,17 @@
     return Number.isFinite(number) ? Math.max(min, Math.min(max, Math.round(number))) : fallback;
   }
 
+  function normalizeOptionalUrl(value) {
+    const raw = String(value || "").trim().replace(/\/$/, "");
+    if (!raw) return "";
+    try {
+      const url = new URL(raw);
+      return ["http:", "https:"].includes(url.protocol) ? url.toString().replace(/\/$/, "") : "";
+    } catch (_error) {
+      return "";
+    }
+  }
+
   function normalizeConfig(raw = {}) {
     const apiBase = normalizeUrl(raw.apiBase, DEFAULT_CONFIG.apiBase);
     return {
@@ -58,7 +76,14 @@
       stream: raw.stream !== false,
       pollIntervalMs: clampInteger(raw.pollIntervalMs, DEFAULT_CONFIG.pollIntervalMs, 2000, 30000),
       streamPollIntervalMs: clampInteger(raw.streamPollIntervalMs, DEFAULT_CONFIG.streamPollIntervalMs, 5000, 60000),
-      requestTimeoutMs: clampInteger(raw.requestTimeoutMs, DEFAULT_CONFIG.requestTimeoutMs, 3000, 30000)
+      requestTimeoutMs: clampInteger(raw.requestTimeoutMs, DEFAULT_CONFIG.requestTimeoutMs, 3000, 30000),
+      mapProvider: ["auto", "amap", "offline"].includes(raw.mapProvider) ? raw.mapProvider : DEFAULT_CONFIG.mapProvider,
+      amapKey: String(raw.amapKey || "").trim(),
+      amapSecurityJsCode: String(raw.amapSecurityJsCode || "").trim(),
+      amapServiceHost: normalizeOptionalUrl(raw.amapServiceHost),
+      amapStyle: String(raw.amapStyle || DEFAULT_CONFIG.amapStyle),
+      amapMonthlyMapLimit: clampInteger(raw.amapMonthlyMapLimit, DEFAULT_CONFIG.amapMonthlyMapLimit, 1, 10000),
+      amapMonthlyRouteLimit: clampInteger(raw.amapMonthlyRouteLimit, DEFAULT_CONFIG.amapMonthlyRouteLimit, 1, 10000)
     };
   }
 
@@ -345,6 +370,7 @@
       start,
       stop,
       refresh,
+      requestJson,
       reconfigure,
       getConfig: () => ({ ...config, token: config.token }),
       getSnapshot: store.getSnapshot,
