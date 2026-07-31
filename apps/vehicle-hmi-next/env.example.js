@@ -16,6 +16,13 @@
 //
 // HTML loads this via:  <script src="env.js" onerror="...offline..."></script>
 // ─────────────────────────────────────────────────────────────
+window.AURI_HMI_CONFIG = {
+  apiBase: "https://auri-agent-api.onrender.com",
+  token: "",
+  stream: true,
+  pollIntervalMs: 3000
+};
+
 window.SAFEDRIVER_CONFIG = {
   asrKey: 'YOUR_BOSCH_DASHSCOPE_KEY',
   ttsKey: 'YOUR_BOSCH_DASHSCOPE_KEY',

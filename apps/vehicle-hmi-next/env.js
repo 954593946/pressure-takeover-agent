@@ -1,1 +1,2 @@
 window.SAFEDRIVER_CONFIG = window.SAFEDRIVER_CONFIG || {};
+window.AURI_HMI_CONFIG = window.AURI_HMI_CONFIG || {};
