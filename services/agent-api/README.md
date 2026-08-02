@@ -145,6 +145,6 @@ AGENT_STREAM_URL=https://auri-langchain-agent-api.onrender.com/v1/stream
 
 - 当前状态存储为进程内存，适合六周单实例 Demo；生产化前需换成持久存储并增加事务锁。
 - 消息、商品、库存、价格和订单均为显著标注的模拟数据。
-- SSE 是 P0 主实时通道，同时提供 `/v1/ws` 供需要 WebSocket 的客户端联调。
+- SSE 是 P0 主实时通道：订阅后立即返回当前 World State，并每 15 秒发送注释心跳，避免公网代理关闭空闲连接；同时提供 `/v1/ws` 供需要 WebSocket 的客户端联调。
 - LangChain Checkpointer 和 World State 当前都在单进程内存中；Render 重启或扩成多实例前必须迁移到共享持久存储。
 - 工具是受控业务入口；新增工具必须同时定义权限、幂等键、确认边界、失败结果和测试，不能把任意 Python/HTTP 能力直接交给模型。

@@ -7,6 +7,13 @@ plugins {
     alias(libs.plugins.kotlin.ksp)
 }
 
+fun buildConfigString(value: String): String =
+    "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+
+val agentApiToken = providers.gradleProperty("AURI_AGENT_API_TOKEN")
+    .orElse(providers.environmentVariable("AURI_AGENT_API_TOKEN"))
+    .orElse("")
+
 android {
     namespace = "com.pressureagent.mobile"
     compileSdk = 35
@@ -42,12 +49,12 @@ android {
         debug {
             buildConfigField("boolean", "USE_MOCK_AGENT", "false")
             buildConfigField("String", "AGENT_API_BASE_URL", "\"https://auri-agent-api.onrender.com\"")
-            buildConfigField("String", "AGENT_API_TOKEN", "\"auri-team-7f3e2a91c8b64d40a5e96f17\"")
+            buildConfigField("String", "AGENT_API_TOKEN", buildConfigString(agentApiToken.get()))
         }
         release {
             buildConfigField("boolean", "USE_MOCK_AGENT", "false")
             buildConfigField("String", "AGENT_API_BASE_URL", "\"https://auri-agent-api.onrender.com\"")
-            buildConfigField("String", "AGENT_API_TOKEN", "\"auri-team-7f3e2a91c8b64d40a5e96f17\"")
+            buildConfigField("String", "AGENT_API_TOKEN", buildConfigString(agentApiToken.get()))
         }
     }
 

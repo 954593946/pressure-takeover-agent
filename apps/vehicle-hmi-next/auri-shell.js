@@ -729,9 +729,11 @@
     });
     form.addEventListener("submit", (event) => {
       event.preventDefault();
+      const apiBase = document.getElementById("auri-config-api")?.value;
       agentModule.saveConfig({
         ...client.getConfig(),
-        apiBase: document.getElementById("auri-config-api")?.value,
+        apiBase,
+        streamUrl: `${String(apiBase || "").trim().replace(/\/$/, "")}/v1/stream`,
         token: document.getElementById("auri-config-token")?.value,
         mapProvider: document.getElementById("auri-config-map-provider")?.value,
         amapKey: document.getElementById("auri-config-amap-key")?.value,
@@ -1215,6 +1217,25 @@
   };
 
   window.addEventListener("beforeunload", () => client.stop(), { once: true });
+  window.addEventListener("storage", (event) => {
+    if (event.key !== agentModule.SHARED_STORAGE_KEY || !event.newValue) return;
+    try {
+      const shared = JSON.parse(event.newValue);
+      if (!shared.apiBase) return;
+      const apiBase = String(shared.apiBase).trim().replace(/\/$/, "");
+      const current = client.getConfig();
+      if (apiBase === current.apiBase && String(shared.token || "") === current.token) return;
+      client.reconfigure({
+        ...current,
+        apiBase,
+        streamUrl: `${apiBase}/v1/stream`,
+        token: String(shared.token || "")
+      });
+    } catch (_error) {
+      lastError = "共享连接配置无效";
+      renderConnectionStatus({ type: "polling_fallback" });
+    }
+  });
   if (document.readyState === "complete") applyShell();
   else window.addEventListener("load", () => requestAnimationFrame(applyShell), { once: true });
 })();

@@ -57,12 +57,48 @@ const state = {
     source: "mobile",
     input_mode: "voice",
     received_at: "2026-07-29T18:28:00+08:00"
+  },
+  navigation: {
+    route_id: "route_airport",
+    task_id: "task_airport",
+    origin: { name: "博世苏州", longitude: 120.791879, latitude: 31.33468 },
+    destination: { name: "苏南硕放机场", longitude: 120.348, latitude: 31.492 },
+    current_location: null,
+    progress: 1.25,
+    source: "agent",
+    is_simulated: false,
+    updated_at: "2026-07-29T18:28:00+08:00"
   }
 };
 
 assert.equal(view.sortedTasks(state).length, 3);
 assert.equal(view.primaryTask(state).task_id, "task_airport");
 assert.equal(view.navigationTask(state).location, "苏南硕放机场");
+assert.deepEqual(view.navigationView(state), {
+  routeId: "route_airport",
+  taskId: "task_airport",
+  origin: {
+    name: "博世苏州",
+    address: "",
+    longitude: 120.791879,
+    latitude: 31.33468,
+    coordinates: [120.791879, 31.33468]
+  },
+  destination: {
+    name: "苏南硕放机场",
+    address: "",
+    longitude: 120.348,
+    latitude: 31.492,
+    coordinates: [120.348, 31.492]
+  },
+  currentLocation: null,
+  progress: 1,
+  source: "agent",
+  isSimulated: false,
+  updatedAt: "2026-07-29T18:28:00+08:00"
+});
+assert.equal(view.navigationView({ ...state, navigation: { ...state.navigation, task_id: "missing" } }), null);
+assert.equal(view.navigationView({ ...state, navigation: { ...state.navigation, destination: { name: "bad", longitude: 999, latitude: 31 } } }), null);
 assert.deepEqual(view.taskCounts(state), {
   total: 3,
   rigid: 1,

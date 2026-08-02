@@ -30,6 +30,10 @@ class FakeMap {
     calls.push(["add", value]);
   }
 
+  remove(value) {
+    calls.push(["remove", value]);
+  }
+
   setFitView() {
     calls.push(["fit"]);
   }
@@ -107,7 +111,8 @@ class FakeMarker {
 }
 
 class FakeDriving {
-  search(_start, _end, callback) {
+  search(start, end, callback) {
+    calls.push(["route-search", start, end]);
     callback("complete", {
       routes: [{
         distance: 7800,
@@ -136,7 +141,7 @@ class FakeDriving {
 
 global.document = {
   createElement() {
-    return { className: "", innerHTML: "", textContent: "" };
+    return { className: "", innerHTML: "", textContent: "", dataset: {}, append() {} };
   },
   head: {
     appendChild() {}
@@ -234,6 +239,18 @@ async function main() {
   assert.ok(calls.some(([name, pitch]) => name === "pitch" && pitch >= 50));
   assert.ok(calls.some(([name]) => name === "rotation"));
 
+  const alternateRoute = {
+    start: [120.8, 31.3],
+    end: [120.4, 31.5],
+    originName: "新起点",
+    destinationName: "新目的地"
+  };
+  const replanned = await adapter.setRoute(alternateRoute, "route-new");
+  assert.equal(replanned.planned, true);
+  assert.ok(calls.some(([name, start, end]) => name === "route-search"
+    && start === alternateRoute.start && end === alternateRoute.end));
+  assert.ok(calls.some(([name]) => name === "remove"));
+
   const guardedContainer = { hidden: false };
   const guarded = window.AuriAmapAdapter.create({
     container: guardedContainer,
@@ -258,6 +275,35 @@ async function main() {
   const result = await fallback.init({ mapProvider: "auto", amapKey: "" });
   assert.equal(result.mode, "offline");
   assert.equal(fallbackContainer.hidden, true);
+
+  class NeverDriving {
+    search() {}
+  }
+  window.AMap.Driving = NeverDriving;
+  const routeTimeout = window.AuriAmapAdapter.create({
+    container: { hidden: false },
+    mapWrap: { classList: new FakeClassList(), dataset: {} }
+  });
+  const routeTimeoutResult = await routeTimeout.init({
+    mapProvider: "amap",
+    amapKey: "test-key",
+    amapOperationTimeoutMs: 100
+  });
+  assert.equal(routeTimeoutResult.mode, "offline");
+  assert.match(routeTimeoutResult.reason, /路线规划超时/);
+
+  window.AMap = null;
+  const sdkTimeout = window.AuriAmapAdapter.create({
+    container: { hidden: false },
+    mapWrap: { classList: new FakeClassList(), dataset: {} }
+  });
+  const sdkTimeoutResult = await sdkTimeout.init({
+    mapProvider: "amap",
+    amapKey: "test-key",
+    amapOperationTimeoutMs: 100
+  });
+  assert.equal(sdkTimeoutResult.mode, "offline");
+  assert.match(sdkTimeoutResult.reason, /JS API 加载超时/);
 }
 
 main().catch((error) => {

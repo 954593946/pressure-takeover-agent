@@ -10,12 +10,28 @@ const DEMO_PRESET_TASK_TEXT = "今天18:10接孩子，之后去超市";
 const DEMO_TRAFFIC_DELAY_MINUTES = 18;
 const API_TIMEOUT_MS = 45_000;
 const GET_RETRY_DELAYS_MS = [0, 900, 2200];
+const APP_CONFIG_KEY = "auri-demo-console-config";
+const SHARED_CONFIG_KEY = "auri-shared-agent-config-v1";
 
-const storedConfigRaw = JSON.parse(localStorage.getItem("auri-demo-console-config") || "{}");
+function readStoredConfig(key) {
+  try {
+    return JSON.parse(localStorage.getItem(key) || "{}");
+  } catch (_error) {
+    return {};
+  }
+}
+
+const storedConfigRaw = readStoredConfig(APP_CONFIG_KEY);
 const storedConfig = storedConfigRaw.apiBase === LEGACY_AGENT_API && storedConfigRaw.configVersion !== 2
   ? { ...storedConfigRaw, apiBase: PUBLIC_AGENT_API }
   : storedConfigRaw;
-const CONFIG = { ...DEFAULT_CONFIG, ...storedConfig, ...(window.AURI_CONFIG || {}) };
+const sharedConfig = readStoredConfig(SHARED_CONFIG_KEY);
+const CONFIG = {
+  ...DEFAULT_CONFIG,
+  ...storedConfig,
+  ...(sharedConfig.apiBase ? { apiBase: sharedConfig.apiBase, token: sharedConfig.token || "" } : {}),
+  ...(window.AURI_CONFIG || {})
+};
 
 const ACTIONS = {
   presetTask: ["task.created", "mobile", null],
@@ -175,7 +191,13 @@ function log(kind, message, detail = "") {
   const row = document.createElement("div");
   row.className = `log-row ${kind === "error" ? "error" : ""}`;
   row.dataset.raw = `${kind} ${message} ${detail}`;
-  row.innerHTML = `<span>${new Date().toLocaleTimeString("zh-CN", { hour12: false })}</span><strong>${kind}</strong><code>${message}${detail ? ` · ${detail}` : ""}</code>`;
+  const time = document.createElement("span");
+  const label = document.createElement("strong");
+  const content = document.createElement("code");
+  time.textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+  label.textContent = kind;
+  content.textContent = `${message}${detail ? ` · ${detail}` : ""}`;
+  row.append(time, label, content);
   ui.eventLog.prepend(row);
   while (ui.eventLog.children.length > 80) ui.eventLog.lastElementChild.remove();
 }
@@ -440,34 +462,52 @@ function pressureLabel(level) {
 
 function renderTasks() {
   const tasks = worldState?.tasks || [];
-  ui.tasks.innerHTML = tasks.length
-    ? tasks.map((task) => `<li><strong>${task.title}</strong><br>${task.task_type} · ${task.adjustable ? "可调整" : "不可后置"} · ${task.status}</li>`).join("")
-    : "<li>等待手机端创建任务</li>";
+  renderStateList(ui.tasks, tasks.map((task) => ({
+    title: task.title,
+    detail: `${task.task_type} · ${task.adjustable ? "可调整" : "不可后置"} · ${task.status}`
+  })), "等待手机端创建任务");
 }
 
 function renderActions() {
   const actions = worldState?.actions || [];
-  ui.actions.innerHTML = actions.length
-    ? actions.map((action) => `<li><strong>${action.target}</strong><br>${action.type} · ${action.status} · ${action.summary}</li>`).join("")
-    : "<li>等待 Agent 生成动作组</li>";
+  renderStateList(ui.actions, actions.map((action) => ({
+    title: action.target,
+    detail: `${action.type} · ${action.status} · ${action.summary}`
+  })), "等待 Agent 生成动作组");
 }
 
 function renderVehicleState() {
   const vehicle = worldState?.vehicle_state;
   if (!vehicle) {
-    ui.vehicleState.innerHTML = "<li>等待 Agent 写入 vehicle_state</li>";
+    renderStateList(ui.vehicleState, [], "等待 Agent 写入 vehicle_state");
     return;
   }
   const mode = { auto: "自动", cool: "制冷", heat: "制热", fan: "送风" }[vehicle.ac_mode] || vehicle.ac_mode;
   const fan = { low: "低", medium: "中", high: "高" }[vehicle.fan_speed] || vehicle.fan_speed;
-  ui.vehicleState.innerHTML = `<li><strong>${vehicle.ac_on ? "AC 已开启" : "AC 已关闭"}</strong><br>${vehicle.ac_target_temp ?? 24}°C · ${mode} · 风量${fan}</li>`;
+  renderStateList(ui.vehicleState, [{
+    title: vehicle.ac_on ? "AC 已开启" : "AC 已关闭",
+    detail: `${vehicle.ac_target_temp ?? 24}°C · ${mode} · 风量${fan}`
+  }], "");
 }
 
 function renderLedger() {
   const ledger = worldState?.action_ledger || [];
-  ui.ledger.innerHTML = ledger.length
-    ? ledger.slice(-4).reverse().map((item) => `<li>${item}</li>`).join("")
-    : "<li>等待动作写入 Ledger</li>";
+  renderStateList(ui.ledger, ledger.slice(-4).reverse().map((item) => ({ detail: item })), "等待动作写入 Ledger");
+}
+
+function renderStateList(container, items, emptyText) {
+  container.replaceChildren();
+  const rows = items.length ? items : [{ detail: emptyText }];
+  rows.forEach((item) => {
+    const row = document.createElement("li");
+    if (item.title) {
+      const title = document.createElement("strong");
+      title.textContent = item.title;
+      row.append(title, document.createElement("br"));
+    }
+    row.append(document.createTextNode(item.detail || ""));
+    container.appendChild(row);
+  });
 }
 
 function nextStepIndex() {
@@ -614,10 +654,18 @@ function parseStreamChunk(chunk) {
 function saveConfig() {
   CONFIG.apiBase = ui.apiBase.value.trim().replace(/\/$/, "");
   CONFIG.token = ui.token.value.trim();
-  localStorage.setItem("auri-demo-console-config", JSON.stringify({
+  const savedAt = Date.now();
+  localStorage.setItem(APP_CONFIG_KEY, JSON.stringify({
     configVersion: 2,
     apiBase: CONFIG.apiBase,
-    token: CONFIG.token
+    token: CONFIG.token,
+    updatedAt: savedAt
+  }));
+  localStorage.setItem(SHARED_CONFIG_KEY, JSON.stringify({
+    configVersion: 1,
+    apiBase: CONFIG.apiBase,
+    token: CONFIG.token,
+    updatedAt: savedAt
   }));
   syncMode = "disconnected";
   renderSyncMode("配置已更新，等待连接");
@@ -627,10 +675,10 @@ function saveConfig() {
 document.addEventListener("click", async (event) => {
   const actionButton = event.target.closest("button[data-action]");
   if (!actionButton) return;
+  const action = actionButton.dataset.action;
   const originalLabel = actionButton.textContent;
   actionButton.disabled = true;
   try {
-    const action = actionButton.dataset.action;
     if (action === "confirm") await confirm("button");
     else if (action === "voiceConfirm") await confirm("voice");
     else if (action === "presetTask") {
@@ -655,7 +703,7 @@ document.addEventListener("click", async (event) => {
   } catch (error) {
     log("error", actionButton.dataset.action, friendlyError(error));
   } finally {
-    actionButton.textContent = originalLabel;
+    if (action === "presetTask") actionButton.textContent = originalLabel;
     actionButton.disabled = false;
     updateButtonStates();
   }
@@ -716,7 +764,24 @@ ui.copyLog.addEventListener("click", async () => {
   }
 });
 ui.clearLog.addEventListener("click", () => {
-  ui.eventLog.innerHTML = "";
+  ui.eventLog.replaceChildren();
+});
+
+window.addEventListener("storage", (event) => {
+  if (event.key !== SHARED_CONFIG_KEY || !event.newValue) return;
+  try {
+    const next = JSON.parse(event.newValue);
+    if (!next.apiBase || (next.apiBase === CONFIG.apiBase && (next.token || "") === CONFIG.token)) return;
+    CONFIG.apiBase = String(next.apiBase).replace(/\/$/, "");
+    CONFIG.token = String(next.token || "");
+    ui.apiBase.value = CONFIG.apiBase;
+    ui.token.value = CONFIG.token;
+    streamAbort?.abort();
+    stopPolling();
+    loadState("shared-config").then(connectStream).catch((error) => log("error", "shared config", friendlyError(error)));
+  } catch (_error) {
+    log("error", "shared config", "配置格式无效");
+  }
 });
 
 function sanitizeLog(text) {

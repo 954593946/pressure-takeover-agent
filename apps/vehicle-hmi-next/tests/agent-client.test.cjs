@@ -20,7 +20,7 @@ async function main() {
   assert.equal(normalized.apiBase, "http://127.0.0.1:8000");
   assert.equal(normalized.streamUrl, "http://127.0.0.1:8000/v1/stream");
   assert.equal(normalized.pollIntervalMs, 2000);
-  assert.equal(normalized.requestTimeoutMs, 30000);
+  assert.equal(normalized.requestTimeoutMs, 45000);
   assert.equal(normalized.mapProvider, "amap");
   assert.equal(normalized.amapKey, "web-key");
   assert.equal(normalized.amapSecurityJsCode, "security-code");
@@ -69,9 +69,9 @@ async function main() {
   assert.deepEqual(store.getMeta().retiredSessionIds, ["session-a"]);
 
   const storage = {
-    value: "{not json",
-    getItem() { return this.value; },
-    setItem(_key, value) { this.value = value; }
+    values: { [agent.STORAGE_KEY]: "{not json" },
+    getItem(key) { return this.values[key] || null; },
+    setItem(key, value) { this.values[key] = value; }
   };
   const config = agent.loadConfig({
     storage,
@@ -91,10 +91,52 @@ async function main() {
     mapProvider: "amap",
     amapKey: "saved-key"
   }, storage);
-  const saved = JSON.parse(storage.value);
+  const saved = JSON.parse(storage.values[agent.STORAGE_KEY]);
   assert.equal(saved.token, "secret");
   assert.equal(saved.mapProvider, "amap");
   assert.equal(saved.amapKey, "saved-key");
+  const sharedSaved = JSON.parse(storage.values[agent.SHARED_STORAGE_KEY]);
+  assert.equal(sharedSaved.apiBase, "http://localhost:8000");
+  assert.equal(sharedSaved.token, "secret");
+
+  storage.values[agent.STORAGE_KEY] = JSON.stringify({
+    apiBase: "https://stale.example.test",
+    token: "stale-token",
+    mapProvider: "offline"
+  });
+  storage.values[agent.SHARED_STORAGE_KEY] = JSON.stringify({
+    apiBase: "https://shared.example.test",
+    token: "shared-token"
+  });
+  const sharedLoaded = agent.loadConfig({ storage, search: "", globalConfig: {} });
+  assert.equal(sharedLoaded.apiBase, "https://shared.example.test");
+  assert.equal(sharedLoaded.streamUrl, "https://shared.example.test/v1/stream");
+  assert.equal(sharedLoaded.token, "shared-token");
+  assert.equal(sharedLoaded.mapProvider, "offline");
+  const globallyOverridden = agent.loadConfig({
+    storage,
+    search: "",
+    globalConfig: { apiBase: "https://override.example.test" }
+  });
+  assert.equal(globallyOverridden.apiBase, "https://override.example.test");
+  assert.equal(globallyOverridden.streamUrl, "https://override.example.test/v1/stream");
+  assert.equal(globallyOverridden.token, "", "a connection override must not inherit a token for another API");
+
+  const hostileStreamOverride = agent.loadConfig({
+    storage,
+    search: "?streamUrl=https%3A%2F%2Fevil.example.test%2Fcollect",
+    globalConfig: {}
+  });
+  assert.equal(hostileStreamOverride.apiBase, "https://shared.example.test");
+  assert.equal(hostileStreamOverride.streamUrl, "https://shared.example.test/v1/stream");
+  assert.equal(hostileStreamOverride.token, "shared-token");
+
+  const normalizedCrossOriginStream = agent.normalizeConfig({
+    apiBase: "https://agent.example.test",
+    streamUrl: "https://evil.example.test/collect",
+    token: "team-token"
+  });
+  assert.equal(normalizedCrossOriginStream.streamUrl, "https://agent.example.test/v1/stream");
 
   const requests = [];
   const client = agent.createClient({
@@ -123,6 +165,24 @@ async function main() {
 
   await client.requestJson("/health", { withToken: false });
   assert.equal(requests[1].options.headers["X-Agent-Token"], undefined);
+
+  let retryCalls = 0;
+  const retryClient = agent.createClient({
+    config: { apiBase: "https://agent.example.test" },
+    fetchImpl: async () => {
+      retryCalls += 1;
+      const available = retryCalls > 1;
+      return {
+        ok: available,
+        status: available ? 200 : 503,
+        statusText: available ? "OK" : "Service Unavailable",
+        headers: { get: () => "application/json" },
+        text: async () => JSON.stringify(available ? { status: "ok" } : { detail: { code: "COLD_START" } })
+      };
+    }
+  });
+  assert.deepEqual(await retryClient.requestJson("/health"), { status: "ok" });
+  assert.equal(retryCalls, 2, "GET must recover from one transient 503");
 
   const invalidJsonClient = agent.createClient({
     config: { apiBase: "https://agent.example.test" },

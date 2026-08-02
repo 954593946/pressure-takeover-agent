@@ -3,6 +3,11 @@ const LEGACY_AGENT_API = "https://auri-langchain-agent-api.onrender.com";
 const LOCAL_AGENT_API = "http://127.0.0.1:8000";
 const DEMO_PRESET_TASK_TEXT = "今天18:10接孩子，之后去超市";
 const DEMO_TRAFFIC_DELAY_MINUTES = 18;
+const API_TIMEOUT_MS = 45_000;
+const GET_RETRY_DELAYS_MS = [0, 900, 2200];
+const MAP_CONFIG_TIMEOUT_MS = 1800;
+const APP_CONFIG_KEY = "auri-hmi-config";
+const SHARED_CONFIG_KEY = "auri-shared-agent-config-v1";
 
 const DEFAULT_CONFIG = {
   apiBase: PUBLIC_AGENT_API,
@@ -16,10 +21,19 @@ const DEFAULT_CONFIG = {
   amapStyle: "amap://styles/whitesmoke"
 };
 
-const storedConfigRaw = JSON.parse(localStorage.getItem("auri-hmi-config") || "{}");
+function readStoredConfig(key) {
+  try {
+    return JSON.parse(localStorage.getItem(key) || "{}");
+  } catch (_error) {
+    return {};
+  }
+}
+
+const storedConfigRaw = readStoredConfig(APP_CONFIG_KEY);
 const storedConfig = storedConfigRaw.apiBase === LEGACY_AGENT_API && storedConfigRaw.configVersion !== 2
   ? { ...storedConfigRaw, apiBase: PUBLIC_AGENT_API }
   : storedConfigRaw;
+const sharedConfig = readStoredConfig(SHARED_CONFIG_KEY);
 const queryParams = new URLSearchParams(window.location.search);
 const queryConfig = {
   ...(queryParams.get("apiBase") ? { apiBase: queryParams.get("apiBase") } : {}),
@@ -27,7 +41,17 @@ const queryConfig = {
 };
 const windowConfig = window.AURI_CONFIG || {};
 const hasExplicitStreamUrl = Boolean(windowConfig.streamUrl || queryConfig.streamUrl);
-let CONFIG = normalizeConfig({ ...DEFAULT_CONFIG, ...storedConfig, ...windowConfig, ...queryConfig }, hasExplicitStreamUrl);
+const inheritedApiBase = String(sharedConfig.apiBase || storedConfig.apiBase || DEFAULT_CONFIG.apiBase).replace(/\/$/, "");
+const explicitApiBase = String(queryConfig.apiBase || windowConfig.apiBase || inheritedApiBase).replace(/\/$/, "");
+const canInheritToken = explicitApiBase === inheritedApiBase || Object.prototype.hasOwnProperty.call(windowConfig, "token");
+let CONFIG = normalizeConfig({
+  ...DEFAULT_CONFIG,
+  ...storedConfig,
+  ...(sharedConfig.apiBase ? { apiBase: sharedConfig.apiBase, token: sharedConfig.token || "" } : {}),
+  ...windowConfig,
+  ...queryConfig,
+  ...(!canInheritToken ? { token: "" } : {})
+}, hasExplicitStreamUrl);
 const stateView = window.AuriWorldStateView;
 
 const STAGE_VIEW = {
@@ -140,6 +164,7 @@ let activeTaskDetail = null;
 let lastRevision = -1;
 let eventSeq = 0;
 let pollTimer = null;
+let streamConnecting = false;
 let healthState = null;
 let activeDetail = null;
 let lastMapStage = null;
@@ -184,10 +209,21 @@ function normalizeConfig(config, useProvidedStreamUrl = false) {
   const mapProvider = ["auto", "amap", "offline"].includes(config.mapProvider)
     ? config.mapProvider
     : DEFAULT_CONFIG.mapProvider;
+  let streamUrl = `${apiBase}/v1/stream`;
+  if (useProvidedStreamUrl && config.streamUrl) {
+    try {
+      const candidate = new URL(config.streamUrl, apiBase);
+      if (["http:", "https:"].includes(candidate.protocol) && candidate.origin === new URL(apiBase).origin) {
+        streamUrl = candidate.toString();
+      }
+    } catch (_error) {
+      // Keep the Agent-owned stream endpoint when an override is invalid or cross-origin.
+    }
+  }
   return {
     ...config,
     apiBase,
-    streamUrl: useProvidedStreamUrl && config.streamUrl ? config.streamUrl : `${apiBase}/v1/stream`,
+    streamUrl,
     token: config.token || "",
     pollIntervalMs: Number(config.pollIntervalMs || DEFAULT_CONFIG.pollIntervalMs),
     mapProvider,
@@ -198,8 +234,15 @@ function normalizeConfig(config, useProvidedStreamUrl = false) {
   };
 }
 
-function authHeaders(extra = {}) {
-  return CONFIG.token ? { ...extra, "X-Agent-Token": CONFIG.token } : extra;
+function authHeaders(extra = {}, targetUrl = CONFIG.apiBase) {
+  try {
+    if (CONFIG.token && new URL(targetUrl, CONFIG.apiBase).origin === new URL(CONFIG.apiBase).origin) {
+      return { ...extra, "X-Agent-Token": CONFIG.token };
+    }
+  } catch (_error) {
+    // Invalid or cross-origin targets never receive the Agent credential.
+  }
+  return extra;
 }
 
 async function hydrateMapConfig() {
@@ -207,9 +250,9 @@ async function hydrateMapConfig() {
   const candidates = [...new Set([CONFIG.apiBase, LEGACY_AGENT_API])];
   for (const apiBase of candidates) {
     try {
-      const response = await fetch(`${apiBase}/v1/map-config`, {
-        headers: authHeaders({ Accept: "application/json" })
-      });
+      const response = await fetchWithTimeout(`${apiBase}/v1/map-config`, {
+        headers: authHeaders({ Accept: "application/json" }, apiBase)
+      }, MAP_CONFIG_TIMEOUT_MS);
       const data = await response.json().catch(() => null);
       if (!response.ok || !data?.enabled || !data.key || !data.service_host) continue;
       CONFIG = normalizeConfig({
@@ -277,7 +320,8 @@ function saveConfig() {
     amapSecurityJsCode: ui.configAmapSecurityCode.value,
     amapServiceHost: ui.configAmapServiceHost.value
   });
-  localStorage.setItem("auri-hmi-config", JSON.stringify({
+  const savedAt = Date.now();
+  localStorage.setItem(APP_CONFIG_KEY, JSON.stringify({
     configVersion: 2,
     apiBase: next.apiBase,
     token: next.token,
@@ -287,7 +331,14 @@ function saveConfig() {
     amapKey: next.amapKey,
     amapSecurityJsCode: next.amapSecurityJsCode,
     amapServiceHost: next.amapServiceHost,
-    amapStyle: next.amapStyle
+    amapStyle: next.amapStyle,
+    updatedAt: savedAt
+  }));
+  localStorage.setItem(SHARED_CONFIG_KEY, JSON.stringify({
+    configVersion: 1,
+    apiBase: next.apiBase,
+    token: next.token,
+    updatedAt: savedAt
   }));
   CONFIG = next;
   log("config", `saved ${CONFIG.apiBase}`);
@@ -308,15 +359,52 @@ function friendlyError(error) {
   return message;
 }
 
+function wait(milliseconds) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = API_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error?.name === "AbortError") throw new Error(`请求超时（${Math.round(timeoutMs / 1000)} 秒）`);
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+async function fetchWithGetRetry(url, options = {}) {
+  let lastError = null;
+  for (let attempt = 0; attempt < GET_RETRY_DELAYS_MS.length; attempt += 1) {
+    if (GET_RETRY_DELAYS_MS[attempt]) await wait(GET_RETRY_DELAYS_MS[attempt]);
+    try {
+      const response = await fetchWithTimeout(url, options);
+      if ([502, 503, 504].includes(response.status) && attempt < GET_RETRY_DELAYS_MS.length - 1) continue;
+      return response;
+    } catch (error) {
+      lastError = error;
+      if (attempt === GET_RETRY_DELAYS_MS.length - 1) throw error;
+    }
+  }
+  throw lastError;
+}
+
 async function apiFetch(path, options = {}) {
-  const response = await fetch(`${CONFIG.apiBase}${path}`, {
+  const requestOptions = {
     ...options,
     headers: authHeaders({
       Accept: "application/json",
       ...(options.body ? { "Content-Type": "application/json" } : {}),
       ...(options.headers || {})
     })
-  });
+  };
+  const method = String(options.method || "GET").toUpperCase();
+  const response = method === "GET"
+    ? await fetchWithGetRetry(`${CONFIG.apiBase}${path}`, requestOptions)
+    : await fetchWithTimeout(`${CONFIG.apiBase}${path}`, requestOptions);
   const text = await response.text();
   const data = text ? JSON.parse(text) : null;
   if (!response.ok) {
@@ -327,7 +415,7 @@ async function apiFetch(path, options = {}) {
 }
 
 async function loadHealth(reason = "health") {
-  const response = await fetch(`${CONFIG.apiBase}/health`, {
+  const response = await fetchWithGetRetry(`${CONFIG.apiBase}/health`, {
     headers: { Accept: "application/json" }
   });
   const text = await response.text();
@@ -418,10 +506,11 @@ async function resetSession() {
 }
 
 async function connectStream() {
-  if (!CONFIG.stream) return;
+  if (!CONFIG.stream || streamConnecting) return;
+  streamConnecting = true;
   try {
     const response = await fetch(CONFIG.streamUrl, {
-      headers: authHeaders({ Accept: "text/event-stream" })
+      headers: authHeaders({ Accept: "text/event-stream" }, CONFIG.streamUrl)
     });
     if (!response.ok || !response.body) throw new Error(`stream ${response.status}`);
     setConnection("已连接");
@@ -430,7 +519,7 @@ async function connectStream() {
     let buffer = "";
     while (true) {
       const { value, done } = await reader.read();
-      if (done) break;
+      if (done) throw new Error("State stream closed");
       buffer += decoder.decode(value, { stream: true });
       const chunks = buffer.split("\n\n");
       buffer = chunks.pop() || "";
@@ -440,6 +529,8 @@ async function connectStream() {
     setConnection("连接异常");
     log("stream-error", friendlyError(error));
     setTimeout(connectStream, 2500);
+  } finally {
+    streamConnecting = false;
   }
 }
 
@@ -529,6 +620,28 @@ function mapStageView() {
   return view;
 }
 
+function currentNavigation() {
+  return stateView.navigationView(worldState);
+}
+
+function destinationLabel() {
+  const contract = currentNavigation();
+  const task = stateView.navigationTask(worldState);
+  return contract?.destination.name || task?.location || task?.title || "目的地待定";
+}
+
+function routeConfigFromWorldState() {
+  const contract = currentNavigation();
+  if (!contract) return null;
+  return {
+    key: contract.routeId,
+    start: contract.origin.coordinates,
+    end: contract.destination.coordinates,
+    originName: contract.origin.name,
+    destinationName: contract.destination.name
+  };
+}
+
 function animateMapStage(nextStage) {
   if (!ui.mapWrap || nextStage === lastMapStage) return;
   lastMapStage = nextStage;
@@ -540,6 +653,8 @@ function animateMapStage(nextStage) {
 }
 
 function routeProgressForStage(stage) {
+  const contractProgress = currentNavigation()?.progress;
+  if (contractProgress !== null && contractProgress !== undefined) return contractProgress;
   return {
     connecting: 0.02,
     off_vehicle_idle: 0.03,
@@ -750,6 +865,7 @@ function renderLaneGuidance(maneuver, mapStage) {
 
 function renderMapAgentHud(stage, actionProgress, utterance) {
   const navigation = stateView.navigationTask(worldState);
+  const routeDestination = currentNavigation()?.destination.name || navigation?.location || navigation?.title || "目的地";
   const taskCounts = stateView.taskCounts(worldState);
   const actionTargets = stateView.actions(worldState)
     .map((action) => action.target)
@@ -758,9 +874,9 @@ function renderMapAgentHud(stage, actionProgress, utterance) {
     .join("、");
   let view = null;
   if (stage === "handover_to_vehicle") {
-    view = ["设备接续", `${navigation?.location || navigation?.title || "当前路线"}已同步到车机`, "手机转为只读，腕上设备保持低干扰反馈", "handover"];
+    view = ["设备接续", `${routeDestination}已同步到车机`, "手机转为只读，腕上设备保持低干扰反馈", "handover"];
   } else if (stage === "vehicle_observation") {
-    view = ["导航已接续", `正在前往 ${navigation?.location || navigation?.title || "目的地"}`, "ETA 与任务状态将实时同步", "guidance"];
+    view = ["导航已接续", `正在前往 ${routeDestination}`, "ETA 与任务状态将实时同步", "guidance"];
   } else if (["takeover_L2", "takeover_L3"].includes(stage)) {
     view = utterance?.available
       ? ["手机语音已同步", `“${utterance.text}”`, "AURI 已接收，正在评估现实影响", "warning"]
@@ -1174,7 +1290,7 @@ function openDetail(kind) {
     ui.detailTitle.textContent = "行程详情";
     ui.detailBody.innerHTML = `
       <div class="detail-list">
-        ${detailItem("目的地", navigation?.location || navigation?.title || "等待路线")}
+        ${detailItem("目的地", navigationContract?.destination.name || navigation?.location || navigation?.title || "等待路线")}
         ${detailItem("ETA", eta === "--:--" ? "等待路线" : eta, risk.late_minutes > 0 ? "warning" : "")}
         ${detailItem("预计晚到", risk.late_minutes > 0 ? `${risk.late_minutes} 分钟` : "暂无晚到风险", risk.late_minutes > 0 ? "warning" : "done")}
         ${detailItem("剩余距离", ui.amapRemain.textContent)}
@@ -1232,6 +1348,7 @@ function render() {
   const eta = formatTime(worldState?.eta);
   const primary = stateView.primaryTask(worldState);
   const navigation = stateView.navigationTask(worldState);
+  const navigationContract = currentNavigation();
   const actionProgress = stateView.actionProgress(worldState);
   const canConfirm = worldState?.primary_surface === "vehicle_hmi"
     && worldState?.confirmation?.owner_surface === "vehicle_hmi"
@@ -1245,10 +1362,9 @@ function render() {
   ui.root.className = `screen state-${className} stage-${stage} map-stage-${mapStage}${showDebugDemo ? " debug-demo" : ""}`;
   animateMapStage(mapStage);
   ui.speed.textContent = driving ? "42" : "--";
-  ui.headline.textContent = navigation
-    ? `博世苏州 · 星龙街455号 → ${navigation.location || navigation.title}`
-    : "博世苏州 · 星龙街455号 → 目的地待定";
-  const destinationName = navigation?.location || navigation?.title || "目的地待定";
+  const originName = navigationContract?.origin.name || "博世苏州 · 星龙街455号";
+  const destinationName = destinationLabel();
+  ui.headline.textContent = `${originName} → ${destinationName}`;
   ui.destination.textContent = destinationName;
   ui.mapDestinationLabel.textContent = destinationName.length > 8 ? `${destinationName.slice(0, 8)}…` : destinationName;
   ui.eta.textContent = eta;
@@ -1347,6 +1463,12 @@ function render() {
   ui.mapStageIcon.textContent = mapIcon;
   renderSignalToast(worldState?.stage);
   const routeProgress = routeProgressForStage(worldState?.stage || "connecting");
+  const contractRoute = routeConfigFromWorldState();
+  if (contractRoute) {
+    mapAdapter?.setRoute?.(contractRoute, contractRoute.key).catch((error) => {
+      log("route-error", friendlyError(error));
+    });
+  }
   const showVehicleMarker = driving || ["planning", "service_prepared", "waiting_confirmation", "executing", "action_completed", "cooldown"].includes(worldState?.stage);
   mapAdapter?.update({
     stage: worldState?.stage || "connecting",
@@ -1368,7 +1490,7 @@ function render() {
   }
   const routeDistanceKm = mapRuntimeStatus.mode === "online" && amapRouteMeta?.totalDistanceMeters
     ? amapRouteMeta.totalDistanceMeters / 1000
-    : navigation
+    : (navigationContract || navigation)
       ? 7.8
       : 0;
   const remainingKm = Math.max(0, routeDistanceKm * (1 - routeProgress));
@@ -1524,6 +1646,7 @@ window.AURI_HMI = {
     taskCounts: stateView.taskCounts(worldState),
     actionProgress: stateView.actionProgress(worldState),
     climate: stateView.climate(worldState),
+    navigation: stateView.navigationView(worldState),
     conclusion: ui.realConclusion.textContent
   }),
   getMapStatus: () => ({ ...mapRuntimeStatus, cameraMode: mapAdapter?.getCameraMode?.() || "overview" }),
@@ -1532,12 +1655,10 @@ window.AURI_HMI = {
 
 async function bootstrap() {
   render();
-  await hydrateMapConfig();
-  await mapAdapter?.init(CONFIG);
   const initialDetail = queryParams.get("detail");
   if (["plan", "drafts", "route", "sync", "vehicle"].includes(initialDetail)) openDetail(initialDetail);
   loadHealth("health").catch((error) => log("health-error", friendlyError(error)));
-  loadState("load").then(() => {
+  const initialStatePromise = loadState("load").then(() => {
     connectStream();
     startPolling();
   }).catch((error) => {
@@ -1545,6 +1666,32 @@ async function bootstrap() {
     startPolling();
     render();
   });
+  void (async () => {
+    try {
+      await hydrateMapConfig();
+      await Promise.race([initialStatePromise, wait(MAP_CONFIG_TIMEOUT_MS)]);
+      const contractRoute = routeConfigFromWorldState();
+      await mapAdapter?.init({
+        ...CONFIG,
+        ...(contractRoute ? { amapRoute: contractRoute, amapRouteKey: contractRoute.key } : {})
+      });
+      render();
+    } catch (error) {
+      log("map-init-error", friendlyError(error));
+    }
+  })();
 }
+
+window.addEventListener("storage", (event) => {
+  if (event.key !== SHARED_CONFIG_KEY || !event.newValue) return;
+  try {
+    const shared = JSON.parse(event.newValue);
+    const apiBase = String(shared.apiBase || "").replace(/\/$/, "");
+    if (!apiBase || (apiBase === CONFIG.apiBase && String(shared.token || "") === CONFIG.token)) return;
+    window.location.reload();
+  } catch (_error) {
+    log("config-error", "共享连接配置无效");
+  }
+});
 
 void bootstrap();

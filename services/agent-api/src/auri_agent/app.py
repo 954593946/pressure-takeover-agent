@@ -19,6 +19,27 @@ from .chat import ChatAgent
 
 
 shared_token_header = APIKeyHeader(name="X-Agent-Token", auto_error=False)
+SSE_HEARTBEAT_SECONDS = 15.0
+
+
+async def world_state_event_stream(
+    request: Request,
+    current_runtime: AgentRuntime,
+    heartbeat_seconds: float = SSE_HEARTBEAT_SECONDS,
+):
+    queue = await current_runtime.subscribe()
+    try:
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                state = await asyncio.wait_for(queue.get(), timeout=heartbeat_seconds)
+            except TimeoutError:
+                yield ": heartbeat\n\n"
+                continue
+            yield f"event: state.updated\ndata: {state.model_dump_json()}\n\n"
+    finally:
+        current_runtime.unsubscribe(queue)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -146,19 +167,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/v1/stream", dependencies=[Depends(require_shared_access)])
     async def stream(request: Request) -> StreamingResponse:
         current_runtime = runtime(request)
-
-        async def event_stream():
-            queue = await current_runtime.subscribe()
-            try:
-                while True:
-                    if await request.is_disconnected():
-                        break
-                    state = await queue.get()
-                    yield f"event: state.updated\ndata: {state.model_dump_json()}\n\n"
-            finally:
-                current_runtime.unsubscribe(queue)
-
-        return StreamingResponse(event_stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+        return StreamingResponse(
+            world_state_event_stream(request, current_runtime),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     @app.websocket("/v1/ws")
     async def websocket_stream(websocket: WebSocket) -> None:

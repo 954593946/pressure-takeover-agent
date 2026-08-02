@@ -8,7 +8,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from jsonschema import Draft202012Validator
 
-from auri_agent.app import create_app
+from auri_agent.app import create_app, world_state_event_stream
 from auri_agent.config import Settings
 from auri_agent.llm import ExtractedTask, TaskExtraction, TaskParser
 from auri_agent.models import ConfirmationRequest, Event, GeoPoint, initial_state, now
@@ -238,6 +238,25 @@ async def test_shared_backend_requires_team_token() -> None:
     assert missing.status_code == 401
     assert wrong.status_code == 401
     assert allowed.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_world_state_stream_starts_with_snapshot_and_keeps_connection_alive() -> None:
+    runtime = AgentRuntime(Settings(llm_enabled=False, openai_api_key="", agent_shared_token=""))
+
+    class ConnectedRequest:
+        async def is_disconnected(self) -> bool:
+            return False
+
+    stream = world_state_event_stream(ConnectedRequest(), runtime, heartbeat_seconds=0.01)
+    initial = await asyncio.wait_for(anext(stream), timeout=0.2)
+    heartbeat = await asyncio.wait_for(anext(stream), timeout=0.2)
+    await stream.aclose()
+
+    assert initial.startswith("event: state.updated\ndata: ")
+    assert '"schema_version":"0.2.0"' in initial
+    assert heartbeat == ": heartbeat\n\n"
+    assert not runtime._subscribers
 
 
 @pytest.mark.asyncio

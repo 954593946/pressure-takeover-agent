@@ -59,7 +59,7 @@ http://127.0.0.1:5174/apps/vehicle-hmi/
 - `/v1/confirm` 成功后消费 Agent 返回快照；完成态来自更高 revision，不由 HMI 提前推演。
 - 401、WRONG_SURFACE、EXPIRED、NOT_FOUND 和网络失败显示低干扰错误，保留导航和原方案，不显示假成功。
 - 停车后原导航卡切换为“手机继续处理”，完整消息、订单和处理记录转回手机端，车机不继续显示过期 ETA。
-- 本地真实 Agent 主线从空任务推进到停车复盘，连续 10 次通过；公网 Agent 的 State/SSE 只读兼容验证通过。
+- 本地真实 Agent 主线从空任务推进到停车复盘，连续 10 次通过；公网只读检查仅确认 State 可读取且 SSE 返回 200，新版心跳和持续实时更新必须在部署后单独验收。
 - 原导航卡加入动态责任摘要：最多显示两项刚性/弹性任务及 `+N`，点击进入完整任务页，不写死任务数量或名称。
 - 导航卡恢复 ETA、剩余分钟和剩余公里；高德路线元数据提供动态剩余时长，离线时仅显示可确认的数据。
 - 增加行程详情、设备状态、任务详情、联系人/动作详情等 Bosch 风格二级页；长消息和订单明细不占据驾驶主屏。
@@ -107,6 +107,8 @@ http://127.0.0.1:5174/apps/vehicle-hmi/
 
 点击左上角连接状态，在 Bosch 风格浮层中选择公网、本地或 LangChain 服务并填写 Team Token。配置只保存在当前浏览器的 `localStorage`，仓库内没有默认 Token。
 
+候选 HMI 与 Demo Console 使用同一个同源共享连接配置。Console 保存 API/Token 后，新打开的候选 HMI 会直接继承；两个页面都已打开时，候选 HMI 会停止旧 State/SSE 并按新 API 自动重连。API 与 `/v1/stream` 始终成对更新，禁止 State 连接新实例而 SSE 残留旧实例。不同域名或端口仍需分别配置。
+
 地图默认选择“自动读取 Agent 配置”，通过鉴权接口 `GET /v1/map-config` 获取公开 Web Key 和服务端安全代理；接口不会返回安全码。当前公网部署若返回 `{"enabled":false,"provider":"offline"}`，页面会继续使用 Bosch 离线地图。仅限本机诊断时，可在折叠的“地图连接设置”中填写 Web Key 和安全码，它们同样只保存在当前浏览器，不得写入仓库或共享截图。
 
 也可在本机 `env.js` 中设置（不得提交真实 Token）：
@@ -128,9 +130,12 @@ window.AURI_HMI_CONFIG = {
 node apps/vehicle-hmi-next/tests/world-state-model.test.cjs
 node apps/vehicle-hmi-next/tests/agent-client.test.cjs
 node apps/vehicle-hmi-next/tests/amap-adapter.test.cjs
+
+/home/fly/miniconda3/envs/bosch-agent-dev/bin/python \
+  apps/demo-console/tests/e2e_connection_layout.py
 ```
 
-浏览器回归覆盖空任务、契约示例、全部二级面板、1920x1080、1600x900、1280x720，以及公网 Agent 的 `/v1/state` 和 `/v1/stream` 实时同步。
+浏览器回归覆盖空任务、契约示例、全部二级面板、1920x1080、1600x900、1280x720，以及本地 Agent 的 `/v1/state`、`/v1/stream` 实时更新和断线追平。公网只读检查验证 State 与 SSE 建连；15 秒心跳必须在对应 Agent 版本部署后再做公网持续连接验收，不能用本地结果替代。
 
 ### 全阶段视觉回归
 

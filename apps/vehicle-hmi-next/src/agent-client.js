@@ -6,13 +6,15 @@
   "use strict";
 
   const STORAGE_KEY = "auri-hmi-next-config";
+  const SHARED_STORAGE_KEY = "auri-shared-agent-config-v1";
+  const GET_RETRY_DELAYS_MS = [0, 900, 2200];
   const DEFAULT_CONFIG = {
     apiBase: "https://auri-agent-api.onrender.com",
     token: "",
     stream: true,
     pollIntervalMs: 3000,
     streamPollIntervalMs: 15000,
-    requestTimeoutMs: 30000,
+    requestTimeoutMs: 45000,
     mapProvider: "auto",
     amapKey: "",
     amapSecurityJsCode: "",
@@ -67,16 +69,26 @@
     }
   }
 
+  function normalizeStreamUrl(value, apiBase) {
+    const fallback = `${apiBase}/v1/stream`;
+    const candidate = normalizeUrl(value || fallback, fallback);
+    try {
+      return new URL(candidate).origin === new URL(apiBase).origin ? candidate : fallback;
+    } catch (_error) {
+      return fallback;
+    }
+  }
+
   function normalizeConfig(raw = {}) {
     const apiBase = normalizeUrl(raw.apiBase, DEFAULT_CONFIG.apiBase);
     return {
       apiBase,
-      streamUrl: normalizeUrl(raw.streamUrl || `${apiBase}/v1/stream`, `${apiBase}/v1/stream`),
+      streamUrl: normalizeStreamUrl(raw.streamUrl, apiBase),
       token: String(raw.token || "").trim(),
       stream: raw.stream !== false,
       pollIntervalMs: clampInteger(raw.pollIntervalMs, DEFAULT_CONFIG.pollIntervalMs, 2000, 30000),
       streamPollIntervalMs: clampInteger(raw.streamPollIntervalMs, DEFAULT_CONFIG.streamPollIntervalMs, 5000, 60000),
-      requestTimeoutMs: clampInteger(raw.requestTimeoutMs, DEFAULT_CONFIG.requestTimeoutMs, 3000, 30000),
+      requestTimeoutMs: clampInteger(raw.requestTimeoutMs, DEFAULT_CONFIG.requestTimeoutMs, 3000, 45000),
       mapProvider: ["auto", "amap", "offline"].includes(raw.mapProvider) ? raw.mapProvider : DEFAULT_CONFIG.mapProvider,
       amapKey: String(raw.amapKey || "").trim(),
       amapSecurityJsCode: String(raw.amapSecurityJsCode || "").trim(),
@@ -90,18 +102,37 @@
   function loadConfig(environment = {}) {
     const storage = environment.storage || (typeof localStorage !== "undefined" ? localStorage : null);
     const stored = safeStorageGet(storage, STORAGE_KEY);
+    const shared = safeStorageGet(storage, SHARED_STORAGE_KEY);
     const globalConfig = environment.globalConfig || (typeof window !== "undefined" ? window.AURI_HMI_CONFIG : {}) || {};
     const search = environment.search ?? (typeof location !== "undefined" ? location.search : "");
     const query = new URLSearchParams(search || "");
     const queryConfig = {};
     if (query.get("apiBase")) queryConfig.apiBase = query.get("apiBase");
     if (query.get("streamUrl")) queryConfig.streamUrl = query.get("streamUrl");
-    return normalizeConfig({ ...DEFAULT_CONFIG, ...stored, ...globalConfig, ...queryConfig });
+    const sharedConnection = shared.apiBase
+      ? { apiBase: shared.apiBase, token: shared.token || "", streamUrl: `${String(shared.apiBase).replace(/\/$/, "")}/v1/stream` }
+      : {};
+    const merged = { ...DEFAULT_CONFIG, ...stored, ...sharedConnection, ...globalConfig, ...queryConfig };
+    const connectionOverride = queryConfig.apiBase || globalConfig.apiBase;
+    if (connectionOverride && !queryConfig.streamUrl && !globalConfig.streamUrl) {
+      merged.streamUrl = `${String(connectionOverride).replace(/\/$/, "")}/v1/stream`;
+    }
+    const inheritedApiBase = normalizeUrl(sharedConnection.apiBase || stored.apiBase, DEFAULT_CONFIG.apiBase);
+    const overrideApiBase = connectionOverride ? normalizeUrl(connectionOverride, DEFAULT_CONFIG.apiBase) : inheritedApiBase;
+    const overrideProvidesToken = Object.prototype.hasOwnProperty.call(globalConfig, "token");
+    if (connectionOverride && overrideApiBase !== inheritedApiBase && !overrideProvidesToken) merged.token = "";
+    return normalizeConfig(merged);
   }
 
   function saveConfig(config, storage = typeof localStorage !== "undefined" ? localStorage : null) {
     const normalized = normalizeConfig(config);
     safeStorageSet(storage, STORAGE_KEY, normalized);
+    safeStorageSet(storage, SHARED_STORAGE_KEY, {
+      configVersion: 1,
+      apiBase: normalized.apiBase,
+      token: normalized.token,
+      updatedAt: Date.now()
+    });
     return normalized;
   }
 
@@ -182,13 +213,21 @@
       onStatus({ type, ...detail });
     }
 
-    function headers(withToken, extra = {}) {
-      return withToken && config.token
+    function canSendToken(targetUrl) {
+      try {
+        return new URL(targetUrl, config.apiBase).origin === new URL(config.apiBase).origin;
+      } catch (_error) {
+        return false;
+      }
+    }
+
+    function headers(withToken, extra = {}, targetUrl = config.apiBase) {
+      return withToken && config.token && canSendToken(targetUrl)
         ? { ...extra, "X-Agent-Token": config.token }
         : { ...extra };
     }
 
-    async function requestJson(path, requestOptions = {}) {
+    async function requestJsonOnce(path, requestOptions = {}) {
       const controller = new AbortController();
       requestControllers.add(controller);
       const timeout = setTimeout(() => controller.abort("timeout"), config.requestTimeoutMs);
@@ -226,6 +265,25 @@
         clearTimeout(timeout);
         requestControllers.delete(controller);
       }
+    }
+
+    async function requestJson(path, requestOptions = {}) {
+      const method = String(requestOptions.method || "GET").toUpperCase();
+      const delays = method === "GET" ? GET_RETRY_DELAYS_MS : [0];
+      let lastError = null;
+      for (let attempt = 0; attempt < delays.length; attempt += 1) {
+        if (delays[attempt]) await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+        try {
+          return await requestJsonOnce(path, requestOptions);
+        } catch (error) {
+          lastError = error;
+          const retryable = [502, 503, 504].includes(error?.status)
+            || error?.code === "TIMEOUT"
+            || (!error?.status && error?.code !== "INVALID_JSON");
+          if (!retryable || attempt === delays.length - 1) throw error;
+        }
+      }
+      throw lastError;
     }
 
     async function refresh(source = "state") {
@@ -288,7 +346,7 @@
       try {
         const response = await fetchImpl(config.streamUrl, {
           signal: controller.signal,
-          headers: headers(true, { Accept: "text/event-stream" }),
+          headers: headers(true, { Accept: "text/event-stream" }, config.streamUrl),
           cache: "no-store"
         });
         if (!response.ok) {
@@ -382,6 +440,7 @@
 
   return {
     DEFAULT_CONFIG,
+    SHARED_STORAGE_KEY,
     STORAGE_KEY,
     createClient,
     createWorldStateStore,

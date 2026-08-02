@@ -50,6 +50,48 @@
     return sortedTasks(state).find((task) => task.location) || primaryTask(state);
   }
 
+  function geoPoint(point) {
+    if (!point || typeof point !== "object") return null;
+    const name = String(point.name || "").trim();
+    const longitude = Number(point.longitude);
+    const latitude = Number(point.latitude);
+    if (!name || !Number.isFinite(longitude) || !Number.isFinite(latitude)) return null;
+    if (longitude < -180 || longitude > 180 || latitude < -90 || latitude > 90) return null;
+    return {
+      name,
+      address: String(point.address || "").trim(),
+      longitude,
+      latitude,
+      coordinates: [longitude, latitude]
+    };
+  }
+
+  function navigationView(state) {
+    const navigation = state?.navigation;
+    if (!navigation || typeof navigation !== "object") return null;
+    const routeId = String(navigation.route_id || "").trim();
+    const taskId = String(navigation.task_id || "").trim();
+    const taskExists = tasks(state).some((task) => task?.task_id === taskId);
+    const origin = geoPoint(navigation.origin);
+    const destination = geoPoint(navigation.destination);
+    if (!routeId || !taskId || !taskExists || !origin || !destination) return null;
+    if (!["agent", "vehicle_api", "demo_fixture"].includes(navigation.source)) return null;
+    if (typeof navigation.is_simulated !== "boolean") return null;
+    const rawProgress = navigation.progress;
+    const numericProgress = rawProgress === null || rawProgress === undefined ? null : Number(rawProgress);
+    return {
+      routeId,
+      taskId,
+      origin,
+      destination,
+      currentLocation: geoPoint(navigation.current_location),
+      progress: Number.isFinite(numericProgress) ? Math.max(0, Math.min(1, numericProgress)) : null,
+      source: navigation.source,
+      isSimulated: navigation.is_simulated,
+      updatedAt: navigation.updated_at || null
+    };
+  }
+
   function formatClock(value) {
     if (!value) return "";
     const date = new Date(value);
@@ -253,6 +295,7 @@
     formatClock,
     isClimateConclusion,
     navigationTask,
+    navigationView,
     planSummary,
     primaryTask,
     sortedTasks,

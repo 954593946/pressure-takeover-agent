@@ -83,6 +83,14 @@ GET /v1/map-config
 
 配置保存在当前浏览器 `localStorage`，不会写入仓库。公网页面不能继续使用 `127.0.0.1` 作为 Agent API，因为那只代表访问者自己的电脑。
 
+当 HMI 与 Demo Console 使用完全相同的协议、域名和端口时，Console 保存的 Agent API 与 Team Token 会自动同步给 HMI；HMI 已打开时会自动刷新连接。不同域名或端口不共享浏览器配置，需要在各自页面单独填写。地图配置失败或超时时不会阻塞 `/v1/state`，HMI 会先显示 Agent World State，再独立降级地图。
+
+`streamUrl` 必须与 Agent API 同源，页面会忽略跨域流地址，且任何跨域地图备用地址都不会收到 Agent Token。高德 SDK 加载和驾车路线规划均有 1.8 秒硬超时，超时后保留 World State 并切换离线地图。
+
+Agent SSE 连接建立后立即发布当前快照，并每 15 秒发送注释心跳，避免公网代理因空闲关闭连接；若流仍正常结束或异常中断，正式 HMI 会在 2.5 秒后重连，轮询继续负责状态对账。
+
+正式 HMI 优先读取 `WorldState.navigation` 的 `route_id`、任务关联、起终点坐标和进度；路线标识或坐标变化时才重新规划。旧 Agent 未提供该字段时，才回退到冻结 Demo 路线和任务地点文案。
+
 HMI 同时兼容本地 Agent 和公网 Agent：
 
 - 本地开发：`http://127.0.0.1:8000`

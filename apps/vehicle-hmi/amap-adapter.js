@@ -12,8 +12,22 @@
     mapLoads: 200,
     routePlans: 200
   };
+  const DEFAULT_OPERATION_TIMEOUT_MS = 1800;
 
   let loaderPromise = null;
+
+  function operationTimeout(config) {
+    const value = Number(config?.amapOperationTimeoutMs);
+    return Number.isFinite(value) ? Math.max(100, Math.min(10000, value)) : DEFAULT_OPERATION_TIMEOUT_MS;
+  }
+
+  function setTimer(callback, delay) {
+    return (window.setTimeout || globalThis.setTimeout)(callback, delay);
+  }
+
+  function clearTimer(timer) {
+    return (window.clearTimeout || globalThis.clearTimeout)(timer);
+  }
 
   function cleanServiceHost(value) {
     return String(value || "").trim().replace(/\/$/, "");
@@ -33,12 +47,26 @@
       script.async = true;
       script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(config.amapKey)}&plugin=AMap.Driving,AMap.MoveAnimation`;
       script.dataset.auriAmap = "true";
-      script.onload = () => {
-        if (window.AMap) resolve(window.AMap);
-        else reject(new Error("高德 JS API 已加载，但 AMap 对象不可用"));
+      let settled = false;
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimer(timer);
+        callback(value);
       };
-      script.onerror = () => reject(new Error("高德 JS API 加载失败"));
+      const timer = setTimer(
+        () => finish(reject, new Error(`高德 JS API 加载超时（${operationTimeout(config)}ms）`)),
+        operationTimeout(config)
+      );
+      script.onload = () => {
+        if (window.AMap) finish(resolve, window.AMap);
+        else finish(reject, new Error("高德 JS API 已加载，但 AMap 对象不可用"));
+      };
+      script.onerror = () => finish(reject, new Error("高德 JS API 加载失败"));
       document.head.appendChild(script);
+    }).catch((error) => {
+      loaderPromise = null;
+      throw error;
     });
 
     return loaderPromise;
@@ -230,6 +258,17 @@
     };
   }
 
+  function markerContent(className, label) {
+    const element = document.createElement("div");
+    element.className = className;
+    const icon = document.createElement("i");
+    const text = document.createElement("span");
+    text.textContent = label;
+    element.append?.(icon, text);
+    if (!element.append) element.textContent = label;
+    return element;
+  }
+
   function normalizedRotation(value) {
     return ((Number(value || 0) % 360) + 360) % 360;
   }
@@ -252,9 +291,17 @@
       this.cameraMode = "overview";
       this.drivingRoute = null;
       this.overlays = {};
+      this.config = null;
+      this.AMap = null;
+      this.routeKey = null;
+      this.pendingRouteKey = null;
+      this.pendingRoutePromise = null;
+      this.failedRouteKey = null;
+      this.failedRouteReason = null;
     }
 
     async init(config) {
+      this.config = config;
       const provider = config.mapProvider || "auto";
       if (provider === "offline" || !config.amapKey) {
         const message = provider === "amap" ? "未填写高德 Web JS API Key" : "离线演示地图";
@@ -272,11 +319,13 @@
       this.onStatus({ mode: "loading", message: "正在加载高德在线地图", usage });
       try {
         const AMap = await loadAmap(config);
+        this.AMap = AMap;
         const routeConfig = config.amapRoute || DEFAULT_ROUTE;
         this.container.hidden = false;
         recordUsage("mapLoads");
         this.createMap(AMap, config, routeConfig);
-        await this.planRoute(AMap, routeConfig, config);
+        this.status = "map_ready";
+        await this.setRoute(routeConfig, config.amapRouteKey || `${routeConfig.start.join(",")}:${routeConfig.end.join(",")}`);
         this.status = "online";
         this.mapWrap.classList.add("is-amap-online");
         this.onStatus({ mode: "online", message: "高德在线地图已连接", usage: readUsage() });
@@ -329,14 +378,27 @@
           hideMarkers: true,
           showTraffic: true
         });
+        let settled = false;
+        const finish = (callback, value) => {
+          if (settled) return;
+          settled = true;
+          clearTimer(timer);
+          callback(value);
+        };
+        const timeoutMs = operationTimeout(config);
+        const timer = setTimer(
+          () => finish(reject, new Error(`高德路线规划超时（${timeoutMs}ms）`)),
+          timeoutMs
+        );
         recordUsage("routePlans");
         driving.search(routeConfig.start, routeConfig.end, (status, result) => {
           const route = result?.routes?.[0];
           const path = flattenDrivingPath(route);
           if (status !== "complete" || path.length < 2) {
-            reject(new Error(result?.info || "高德驾车路线规划失败"));
+            finish(reject, new Error(result?.info || "高德驾车路线规划失败"));
             return;
           }
+          this.clearRoute();
           this.drivingRoute = route;
           this.routePath = path;
           this.routeGeometry = buildRouteGeometry(path);
@@ -344,9 +406,57 @@
           const meta = routeMeta(route);
           this.lastRouteMetaKey = `${meta.stepIndex}:${meta.nextDistance.value}:${meta.nextDistance.unit}`;
           this.onRouteMeta(meta);
-          resolve(route);
+          finish(resolve, route);
         });
       });
+    }
+
+    clearRoute() {
+      const routeOverlays = Object.entries(this.overlays)
+        .filter(([name]) => name !== "trafficLayer")
+        .flatMap(([, value]) => Array.isArray(value) ? value : [value])
+        .filter(Boolean);
+      this.map?.remove?.(routeOverlays);
+      const trafficLayer = this.overlays.trafficLayer;
+      this.overlays = trafficLayer ? { trafficLayer } : {};
+      this.routePath = [];
+      this.routeGeometry = null;
+      this.drivingRoute = null;
+      this.lastProgress = null;
+      this.lastRouteMetaKey = null;
+    }
+
+    async setRoute(routeConfig, routeKey) {
+      if (!this.map || !routeConfig?.start || !routeConfig?.end) return { mode: this.status, planned: false };
+      if (this.routeKey === routeKey && this.routePath.length) return { mode: "online", planned: false };
+      if (this.pendingRouteKey === routeKey && this.pendingRoutePromise) return this.pendingRoutePromise;
+      if (this.failedRouteKey === routeKey) {
+        return { mode: this.status, planned: false, reason: this.failedRouteReason || "route_failed" };
+      }
+      this.pendingRouteKey = routeKey;
+      this.pendingRoutePromise = this.planRoute(this.AMap || window.AMap, routeConfig, this.config || {})
+        .then(() => {
+          this.routeKey = routeKey;
+          this.failedRouteKey = null;
+          this.failedRouteReason = null;
+          this.status = "online";
+          this.mapWrap.classList.add("is-amap-online");
+          this.onStatus({ mode: "online", message: "高德实时导航", usage: readUsage() });
+          if (this.lastSnapshot) this.update(this.lastSnapshot);
+          return { mode: "online", planned: true };
+        })
+        .catch((error) => {
+          this.failedRouteKey = routeKey;
+          this.failedRouteReason = error?.message || String(error);
+          throw error;
+        })
+        .finally(() => {
+          if (this.pendingRouteKey === routeKey) {
+            this.pendingRouteKey = null;
+            this.pendingRoutePromise = null;
+          }
+        });
+      return this.pendingRoutePromise;
     }
 
     drawRoute(AMap, routeConfig) {
@@ -406,9 +516,7 @@
         zIndex: 130
       });
 
-      const destination = document.createElement("div");
-      destination.className = "amap-destination-marker";
-      destination.innerHTML = `<i></i><span>${routeConfig.destinationName || "目的地"}</span>`;
+      const destination = markerContent("amap-destination-marker", routeConfig.destinationName || "目的地");
       this.overlays.destinationMarker = new AMap.Marker({
         position: this.routePath[this.routePath.length - 1],
         content: destination,
@@ -416,9 +524,7 @@
         zIndex: 110
       });
 
-      const origin = document.createElement("div");
-      origin.className = "amap-origin-marker";
-      origin.innerHTML = `<i></i><span>${routeConfig.originName || "出发地"}</span>`;
+      const origin = markerContent("amap-origin-marker", routeConfig.originName || "出发地");
       this.overlays.originMarker = new AMap.Marker({
         position: this.routePath[0],
         content: origin,
