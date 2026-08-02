@@ -138,6 +138,69 @@ async function main() {
     (error) => error.code === "INVALID_JSON"
   );
 
+  let streamRequests = 0;
+  let streamAborts = 0;
+  const lifecycleClient = agent.createClient({
+    config: {
+      apiBase: "https://agent.example.test",
+      stream: true,
+      pollIntervalMs: 2000,
+      streamPollIntervalMs: 5000
+    },
+    fetchImpl: async (url, options = {}) => {
+      if (url.endsWith("/v1/stream")) {
+        streamRequests += 1;
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader() {
+              return {
+                read() {
+                  return new Promise((_resolve, reject) => {
+                    options.signal.addEventListener("abort", () => {
+                      streamAborts += 1;
+                      const abort = new Error("aborted");
+                      abort.name = "AbortError";
+                      reject(abort);
+                    }, { once: true });
+                  });
+                }
+              };
+            }
+          }
+        };
+      }
+      const payload = url.endsWith("/health")
+        ? { status: "ok" }
+        : { ...baseState, session_id: "lifecycle-session", revision: 1 };
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => "application/json" },
+        text: async () => JSON.stringify(payload)
+      };
+    }
+  });
+
+  await lifecycleClient.start();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  await lifecycleClient.start();
+  assert.equal(streamRequests, 1, "idempotent start must not create a second SSE stream");
+  assert.equal(lifecycleClient.getSyncMode(), "streaming");
+
+  lifecycleClient.stop();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(streamAborts, 1, "stop must abort the active SSE stream");
+  assert.equal(lifecycleClient.getSyncMode(), "stopped");
+
+  await lifecycleClient.start();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(streamRequests, 2, "restart must create exactly one replacement stream");
+  lifecycleClient.stop();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(streamAborts, 2);
+
   console.log("vehicle-hmi-next agent-client tests passed");
 }
 

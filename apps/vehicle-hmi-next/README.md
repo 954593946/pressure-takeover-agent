@@ -2,7 +2,7 @@
 
 这是基于 Bosch-Agent 真实运行底座重建的 AURI 车机 HMI 候选版本。
 
-当前完成 Phase 7 多端联调候选验收：AURI 品牌外壳、只读 World State、高德真实导航、驾驶员侧接管确认、本地完整主线和 AURI 体验补全均已实现。页面保留 Bosch-Agent 的 1920x1080 固定画布、整屏缩放、高清车辆、地图舞台、路线控制器、右侧玻璃浮层和底部 Dock；任务、ETA、风险、手机语音、腕上设备、动作和空调状态来自 Agent 完整快照。
+当前完成 Phase 8 视觉、断线恢复与长稳候选验收：AURI 品牌外壳、只读 World State、高德真实导航、驾驶员侧接管确认、本地完整主线和 AURI 体验补全均已实现。页面保留 Bosch-Agent 的 1920x1080 固定画布、整屏缩放、高清车辆、地图舞台、路线控制器、右侧玻璃浮层和底部 Dock；任务、ETA、风险、手机语音、腕上设备、动作和空调状态来自 Agent 完整快照。
 
 ## 运行
 
@@ -26,7 +26,7 @@ http://127.0.0.1:5174/apps/vehicle-hmi/
 
 完成视觉和功能验收前，不替换正式目录。
 
-## Phase 1-7 已完成能力
+## Phase 1-8 已完成能力
 
 - AURI Logo、名称、口号和品牌 Token。
 - 无任务首屏与“等待手机同步路线”状态。
@@ -74,10 +74,15 @@ http://127.0.0.1:5174/apps/vehicle-hmi/
 - 手机空调口令可结构化写入 `vehicle_state` 的开关、温度、模式和风量；Console 与 HMI 通过同一 SSE 快照同步展示，不保留本地业务副本。
 - 候选 HMI 主动断开状态流后，由 Console 推进 Agent；重新连接会先拉取最新 State 再恢复 SSE，验证无状态漂移。
 - 1920x720 宽屏边界截图通过，确认卡、地图、腕上通知和底部 Dock 无重叠或内部溢出。
+- 9 个真实稳定阶段和 6 个只读瞬态/错误阶段完成 1920x1080 截图回归，关键容器无越界、内部溢出、破图或 JavaScript 错误。
+- Bosch 离线路线在 9 个真实阶段产生 9 组不同 transform，验证路线和车辆场景确实随 World State 推进。
+- 车外、接近车辆和停车阶段速度归零；驾驶阶段的 `68` 明确标记为 Demo 车辆信号，不冒充 Agent 契约字段。
+- SSE 真正断开 15 秒期间页面不假更新；恢复网络后先取最新快照并重新进入 streaming。
+- 30 分钟长稳采样通过：Heap、DOM、Document、Timeout、Interval 和 RAF 均无持续增长，未检测到重复计时器。
 
 ## 当前没有实现
 
-- 全部 Demo 阶段的连续自动播放与性能长稳测试。
+- 目标展示设备上的 45 FPS 实机验收；无 GPU headless Chromium 只作为资源稳定性基线。
 - WebSocket 可选兼容路径、真实腕表硬件和完整四端现场联调。
 - 公网共享 Agent 的完整写入主线；当前只允许在团队约定的专用 Session 和时间窗口执行，避免改写他人演示状态。
 - 后端 `/health` 的服务名、构建 SHA 和启动时间字段；当前 HMI 只展示后端实际提供的健康、Schema 和 LLM 状态。
@@ -122,6 +127,37 @@ node apps/vehicle-hmi-next/tests/amap-adapter.test.cjs
 ```
 
 浏览器回归覆盖空任务、契约示例、全部二级面板、1920x1080、1600x900、1280x720，以及公网 Agent 的 `/v1/state` 和 `/v1/stream` 实时同步。
+
+### 全阶段视觉回归
+
+在独立的 `127.0.0.1:8795` Agent 已启动时运行：
+
+```bash
+/home/fly/miniconda3/envs/bosch-agent-dev/bin/python \
+  apps/vehicle-hmi-next/tests/e2e_stage_visual_regression.py
+```
+
+脚本会真实推进 9 个稳定阶段，并从真实 `waiting_confirmation` 快照派生 6 个只读夹具。截图和结构化结果分别写入：
+
+```text
+/tmp/auri-hmi-stage-visual-regression/*.png
+/tmp/auri-hmi-stage-visual-regression/summary.json
+```
+
+### 断线恢复与 30 分钟长稳
+
+```bash
+/home/fly/miniconda3/envs/bosch-agent-dev/bin/python \
+  apps/vehicle-hmi-next/tests/e2e_resilience_soak.py
+```
+
+该脚本自行占用并清理本地 `8795` Agent，检测到公网地址或其他端口会拒绝执行。默认中断 SSE 15 秒，再每 60 秒采集一次资源和 RAF 指标，持续 30 分钟。结果写入：
+
+```text
+/tmp/auri-hmi-resilience-soak.json
+```
+
+2026-08-02 基线：断网 15.06 秒期间 revision 保持 1，恢复后 0.27 秒追到 revision 4；1805.17 秒内 31 次采样，Heap 净增 6,428 bytes，DOM/Document 净增 0，活动 Timeout/Interval/RAF 始终各 1，无重复计时器或页面错误。headless RAF 中位数 43.73 FPS，仅作为自动化基线，目标展示设备 45 FPS 仍需实机验收。
 
 ### 本地完整主线
 

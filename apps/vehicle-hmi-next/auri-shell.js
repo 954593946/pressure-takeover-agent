@@ -979,6 +979,17 @@
     if (fan) fan.title = climate.available ? climate.summary : "等待座舱状态同步";
   }
 
+  function renderDrivingStatus() {
+    const driving = ["driving", "high_load_driving"].includes(viewModel.lifecycle.scene);
+    const speed = document.getElementById("vd-speed");
+    const arrow = document.getElementById("vd-speed-arrow");
+    if (speed) {
+      speed.textContent = driving ? "68" : "0";
+      speed.title = driving ? "Demo 车辆信号" : "车辆未在行驶";
+    }
+    if (arrow) arrow.hidden = !driving;
+  }
+
   function animateStage() {
     const stage = viewModel.lifecycle.stage;
     if (stage === lastAnimatedStage) return;
@@ -1117,6 +1128,7 @@
     }
     renderNavigation();
     renderResponsibilityStrip();
+    renderDrivingStatus();
     renderClimate();
     renderTakeover();
     renderDeviceNotice();
