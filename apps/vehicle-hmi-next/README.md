@@ -2,7 +2,7 @@
 
 这是基于 Bosch-Agent 真实运行底座重建的 AURI 车机 HMI 候选版本。
 
-当前完成到 Phase 4：AURI 品牌外壳、只读 World State、高德真实导航和驾驶员侧接管确认。页面保留 Bosch-Agent 的 1920x1080 固定画布、整屏缩放、高清车辆、地图舞台、路线控制器、右侧玻璃浮层和底部 Dock；任务、ETA、风险、手机语音、腕上设备、动作和空调状态来自 Agent 完整快照。
+当前进入 Phase 5 验收：AURI 品牌外壳、只读 World State、高德真实导航、驾驶员侧接管确认和本地完整主线均已实现。页面保留 Bosch-Agent 的 1920x1080 固定画布、整屏缩放、高清车辆、地图舞台、路线控制器、右侧玻璃浮层和底部 Dock；任务、ETA、风险、手机语音、腕上设备、动作和空调状态来自 Agent 完整快照。
 
 ## 运行
 
@@ -26,7 +26,7 @@ http://127.0.0.1:5174/apps/vehicle-hmi/
 
 完成视觉和功能验收前，不替换正式目录。
 
-## Phase 1-4 已完成
+## Phase 1-4 与 Phase 5 本地联调已完成
 
 - AURI Logo、名称、口号和品牌 Token。
 - 无任务首屏与“等待手机同步路线”状态。
@@ -57,6 +57,8 @@ http://127.0.0.1:5174/apps/vehicle-hmi/
 - 点击和方向盘 Enter 共用后端 `confirmation_id`；重复点击不会产生第二次执行请求。
 - `/v1/confirm` 成功后消费 Agent 返回快照；完成态来自更高 revision，不由 HMI 提前推演。
 - 401、WRONG_SURFACE、EXPIRED、NOT_FOUND 和网络失败显示低干扰错误，保留导航和原方案，不显示假成功。
+- 停车后原导航卡切换为“手机继续处理”，完整消息、订单和处理记录转回手机端，车机不继续显示过期 ETA。
+- 本地真实 Agent 主线从空任务推进到停车复盘，连续 10 次通过；公网 Agent 的 State/SSE 只读兼容验证通过。
 
 ## 当前没有实现
 
@@ -102,3 +104,16 @@ node apps/vehicle-hmi-next/tests/amap-adapter.test.cjs
 ```
 
 浏览器回归覆盖空任务、契约示例、全部二级面板、1920x1080、1600x900、1280x720，以及公网 Agent 的 `/v1/state` 和 `/v1/stream` 实时同步。
+
+### 本地完整主线
+
+先在独立端口启动本地 Agent，并在仓库根目录启动静态服务器。随后运行：
+
+```bash
+AURI_AGENT_URL=http://127.0.0.1:8795 \
+AURI_HMI_URL=http://127.0.0.1:5174/apps/vehicle-hmi-next/ \
+/home/fly/miniconda3/envs/bosch-agent-dev/bin/python \
+  apps/vehicle-hmi-next/tests/e2e_local_happy_path.py
+```
+
+脚本会重置目标 Agent Session，只能指向独立本地 Agent；检测到 `onrender.com` 会直接拒绝执行。它真实提交标准事件、等待 SSE revision、点击车机确认，并验证停车后主端回到手机。脚本不包含任何 API Key 或 Team Token。

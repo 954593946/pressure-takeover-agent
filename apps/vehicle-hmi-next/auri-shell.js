@@ -64,7 +64,8 @@
   };
   const TAKEOVER_STAGES = new Set([
     "takeover_L2", "takeover_L3", "planning", "service_prepared",
-    "waiting_confirmation", "executing", "service_executed", "action_completed"
+    "waiting_confirmation", "executing", "service_executed", "action_completed",
+    "parked_review"
   ]);
   const TAKEOVER_STAGE_VIEW = {
     takeover_L2: ["AURI 接管", "我正在核对时间和可调整任务。", "processing"],
@@ -74,7 +75,8 @@
     waiting_confirmation: ["等待确认", "方案已准备，只需确认一次。", "warning"],
     executing: ["正在执行", "正在同步消息、任务与服务状态。", "processing"],
     service_executed: ["执行完成", "处理结果正在同步到各端。", "success"],
-    action_completed: ["问题已处理", "已完成本次接管，按当前路线继续即可。", "success"]
+    action_completed: ["问题已处理", "已完成本次接管，按当前路线继续即可。", "success"],
+    parked_review: ["手机继续处理", "本次接管已结束，消息、订单和处理记录已同步到手机。", "success"]
   };
   const HAPTIC_LABEL = {
     none: "无振动", double_short: "双短震", single_pulse: "一次短震",
@@ -189,9 +191,13 @@
     document.getElementById("auri-takeover-stage").textContent = label;
     const riskLine = document.getElementById("auri-takeover-risk");
     const utteranceLine = viewModel.utterance.available ? ` · 手机：“${viewModel.utterance.preview}”` : "";
-    riskLine.textContent = `${viewModel.risk.label}${utteranceLine}`;
+    riskLine.textContent = stage === "parked_review"
+      ? "车辆已停稳 · 完整明细已同步"
+      : `${viewModel.risk.label}${utteranceLine}`;
     riskLine.title = viewModel.utterance.available ? viewModel.utterance.text : viewModel.risk.label;
-    document.getElementById("auri-takeover-conclusion").textContent = viewModel.agentOutput.available ? viewModel.agentOutput.preview : fallback;
+    document.getElementById("auri-takeover-conclusion").textContent = stage === "parked_review"
+      ? fallback
+      : viewModel.agentOutput.available ? viewModel.agentOutput.preview : fallback;
 
     const actions = takeoverActions();
     document.getElementById("auri-takeover-actions").innerHTML = actions.map((action) => `
@@ -201,9 +207,9 @@
     `).join("");
 
     const devices = [
-      ["手机", viewModel.utterance.available ? "语音已同步" : "保持连接", viewModel.utterance.available],
+      ["手机", viewModel.lifecycle.primarySurface === "mobile" ? "当前主端" : viewModel.utterance.available ? "语音已同步" : "保持连接", viewModel.lifecycle.primarySurface === "mobile" || viewModel.utterance.available],
       ["腕表", viewModel.wearable.connected ? viewModel.wearable.modeLabel : "未连接", viewModel.wearable.connected],
-      ["车机", viewModel.lifecycle.primarySurface === "vehicle_hmi" ? "当前主端" : "只读接续", true]
+      ["车机", viewModel.lifecycle.primarySurface === "vehicle_hmi" ? "当前主端" : stage === "parked_review" ? "本次结束" : "只读接续", true]
     ];
     document.getElementById("auri-takeover-devices").innerHTML = devices.map(([name, status, active]) => `
       <span class="${active ? "is-active" : ""}"><i></i><b>${escapeHtml(name)}</b><small>${escapeHtml(status)}</small></span>
