@@ -18,6 +18,12 @@ assert.equal(vm.tasks.flexible, 1);
 assert.equal(vm.tasks.primary.title, "接孩子");
 assert.equal(vm.tasks.navigation.location, "阳光小学");
 assert.equal(vm.navigation.destination, "阳光小学");
+assert.equal(vm.navigation.route.id, "route_demo_task_pickup_child");
+assert.deepEqual(vm.navigation.route.origin.coordinates, [120.791879, 31.33468]);
+assert.deepEqual(vm.navigation.route.destination.coordinates, [120.7359, 31.3048]);
+assert.equal(vm.navigation.route.progress, 0.7);
+assert.equal(vm.navigation.route.source, "demo_fixture");
+assert.equal(vm.navigation.route.isSimulated, true);
 assert.equal(vm.navigation.etaLabel, "18:28");
 assert.equal(vm.navigation.lateMinutes, 18);
 assert.equal(vm.risk.level, "L2");
@@ -56,12 +62,14 @@ const emptyState = {
   output: null,
   last_utterance: null,
   service_orders: [],
+  navigation: null,
   vehicle_state: { ac_on: false, ac_target_temp: 24, ac_mode: "auto", fan_speed: "medium" }
 };
 const emptyVm = model.buildVehicleHmiViewModel(emptyState, { now });
 assert.equal(emptyVm.tasks.total, 0);
 assert.equal(emptyVm.navigation.hasDestination, false);
 assert.equal(emptyVm.navigation.etaLabel, "--:--");
+assert.equal(emptyVm.navigation.route, null);
 assert.equal(emptyVm.vehicle.available, true);
 assert.equal(emptyVm.vehicle.temperatureLabel, "24°C");
 assert.equal(emptyVm.interaction.canConfirm, false);
@@ -69,6 +77,7 @@ assert.equal(emptyVm.interaction.canConfirm, false);
 const mixedState = {
   ...fixture,
   revision: 9,
+  navigation: null,
   tasks: [
     { ...fixture.tasks[0], task_id: "completed", title: "已完成旧任务", status: "completed", location: "旧地点" },
     { ...fixture.tasks[1], task_id: "flex", title: "提交周报", status: "pending", location: null },
@@ -90,6 +99,7 @@ assert.equal(mixedVm.actions.counts.failed, 1);
 const locationFallbackVm = model.buildVehicleHmiViewModel({
   ...fixture,
   revision: 10,
+  navigation: null,
   tasks: [
     { ...fixture.tasks[0], task_id: "report", title: "提交报告", task_type: "rigid", priority: "high", location: null },
     { ...fixture.tasks[1], task_id: "pickup", title: "机场接人", task_type: "flexible", priority: "medium", location: "苏南硕放机场" }
@@ -98,6 +108,33 @@ const locationFallbackVm = model.buildVehicleHmiViewModel({
 assert.equal(locationFallbackVm.tasks.primary.title, "提交报告");
 assert.equal(locationFallbackVm.tasks.navigation.title, "机场接人");
 assert.equal(locationFallbackVm.navigation.destination, "苏南硕放机场");
+assert.equal(locationFallbackVm.navigation.route, null);
+
+const legacyLocationFallbackVm = model.buildVehicleHmiViewModel({
+  ...fixture,
+  revision: 15,
+  navigation: null,
+  tasks: [
+    { ...fixture.tasks[0], task_id: "legacy", title: "机场接人", location: "苏南硕放机场" }
+  ]
+}, { now });
+assert.equal(legacyLocationFallbackVm.navigation.route, null);
+assert.equal(legacyLocationFallbackVm.navigation.destination, "苏南硕放机场");
+
+const invalidContractVm = model.buildVehicleHmiViewModel({
+  ...fixture,
+  revision: 16,
+  navigation: { ...fixture.navigation, task_id: "missing-task", progress: null }
+}, { now });
+assert.equal(invalidContractVm.navigation.route, null);
+assert.equal(invalidContractVm.navigation.destination, "阳光小学");
+
+const nullProgressVm = model.buildVehicleHmiViewModel({
+  ...fixture,
+  revision: 17,
+  navigation: { ...fixture.navigation, progress: null }
+}, { now });
+assert.equal(nullProgressVm.navigation.route.progress, null);
 
 const failedServiceVm = model.buildVehicleHmiViewModel({
   ...fixture,

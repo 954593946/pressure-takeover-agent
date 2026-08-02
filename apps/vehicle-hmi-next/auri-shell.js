@@ -9,11 +9,11 @@
     return;
   }
 
-  const ROUTE_ORIGIN = { name: "博世苏州 · 星龙街455号", coordinates: [120.791879, 31.334680] };
-  const DEMO_DESTINATIONS = [
-    { pattern: /(阳光小学|学校|接孩子|接送)/, name: "阳光小学", coordinates: [120.7359, 31.3048] },
-    { pattern: /(苏州中心|东方之门)/, name: "苏州中心", coordinates: [120.6677, 31.3181] },
-    { pattern: /(超市|采购|商超)/, name: "邻里生鲜超市", coordinates: [120.7506, 31.3147] }
+  const COMPAT_ROUTE_ORIGIN = { name: "博世苏州 · 星龙街455号", coordinates: [120.791879, 31.334680] };
+  const COMPAT_DEMO_DESTINATIONS = [
+    { aliases: ["阳光小学", "Demo 阳光小学"], name: "阳光小学", coordinates: [120.7359, 31.3048] },
+    { aliases: ["苏州中心", "东方之门"], name: "苏州中心", coordinates: [120.6677, 31.3181] },
+    { aliases: ["邻里生鲜超市", "Demo 邻里生鲜超市"], name: "邻里生鲜超市", coordinates: [120.7506, 31.3147] }
   ];
 
   const POIS = [
@@ -916,7 +916,7 @@
     const minutes = document.getElementById("vd-nav-min");
     const kilometers = document.getElementById("vd-nav-km");
     const progress = document.getElementById("vd-nav-progress");
-    const stageProgress = STAGE_PROGRESS[vm.lifecycle.stage] ?? 0.03;
+    const stageProgress = vm.navigation.route?.progress ?? STAGE_PROGRESS[vm.lifecycle.stage] ?? 0.03;
     if (card) {
       card.dataset.risk = vm.risk.tone;
       card.classList.toggle("is-default", !vm.navigation.hasDestination);
@@ -994,7 +994,7 @@
     const stage = viewModel.lifecycle.stage;
     if (stage === lastAnimatedStage) return;
     lastAnimatedStage = stage;
-    const progress = STAGE_PROGRESS[stage];
+    const progress = viewModel.navigation.route?.progress ?? STAGE_PROGRESS[stage];
     if (mapAdapter.getStatus() !== "online" && Number.isFinite(progress) && typeof window.mapCarTo === "function") {
       try { window.mapCarTo(progress, 1150); } catch (_error) { /* visual controller stays optional */ }
     }
@@ -1009,26 +1009,37 @@
     const lng = Number(raw.longitude ?? raw.lng);
     const lat = Number(raw.latitude ?? raw.lat);
     if (Number.isFinite(lng) && Number.isFinite(lat)) return [lng, lat];
-    const text = `${task?.location || ""} ${task?.title || ""}`;
-    return DEMO_DESTINATIONS.find((item) => item.pattern.test(text))?.coordinates || null;
+    const location = String(task?.location || "").trim();
+    return COMPAT_DEMO_DESTINATIONS.find((item) => item.aliases.includes(location))?.coordinates || null;
   }
 
   function routeDefinition() {
+    const contractRoute = viewModel.navigation.route;
+    if (contractRoute?.origin?.coordinates && contractRoute?.destination?.coordinates) {
+      return {
+        id: contractRoute.id,
+        start: contractRoute.origin.coordinates,
+        end: contractRoute.destination.coordinates,
+        originName: contractRoute.origin.name || contractRoute.origin.address || "出发地",
+        destinationName: contractRoute.destination.name || contractRoute.destination.address || "目的地"
+      };
+    }
     const task = viewModel.tasks.navigation;
     const end = coordinatesFromTask(task);
     if (!task || !end) return null;
-    const known = DEMO_DESTINATIONS.find((item) => item.coordinates[0] === end[0] && item.coordinates[1] === end[1]);
+    const known = COMPAT_DEMO_DESTINATIONS.find((item) => item.coordinates[0] === end[0] && item.coordinates[1] === end[1]);
     return {
-      start: ROUTE_ORIGIN.coordinates,
+      id: `compat:${task.id || task.location || task.title}`,
+      start: COMPAT_ROUTE_ORIGIN.coordinates,
       end,
-      originName: ROUTE_ORIGIN.name,
+      originName: COMPAT_ROUTE_ORIGIN.name,
       destinationName: task.location || known?.name || task.title || "目的地"
     };
   }
 
   function navigationSnapshot() {
     const stage = viewModel.lifecycle.stage;
-    const progress = STAGE_PROGRESS[stage] ?? 0.03;
+    const progress = viewModel.navigation.route?.progress ?? STAGE_PROGRESS[stage] ?? 0.03;
     const driving = viewModel.lifecycle.scene === "driving" || ["handover_to_vehicle", "vehicle_observation", "takeover_L2", "takeover_L3", "planning", "service_prepared", "waiting_confirmation", "executing", "service_executed", "action_completed", "cooldown"].includes(stage);
     return {
       stage,
@@ -1050,7 +1061,7 @@
       renderNavigation();
       return;
     }
-    const routeKey = `${viewModel.meta.sessionId || "no-session"}:${viewModel.tasks.navigation?.id || viewModel.navigation.destination}:${route.end.join(",")}`;
+    const routeKey = `${viewModel.meta.sessionId || "no-session"}:${route.id || viewModel.tasks.navigation?.id || viewModel.navigation.destination}:${route.end.join(",")}`;
     await mapAdapter.setRoute(route, routeKey);
     mapAdapter.update(navigationSnapshot());
   }

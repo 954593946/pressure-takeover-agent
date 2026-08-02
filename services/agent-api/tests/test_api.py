@@ -11,7 +11,7 @@ from jsonschema import Draft202012Validator
 from auri_agent.app import create_app
 from auri_agent.config import Settings
 from auri_agent.llm import ExtractedTask, TaskExtraction, TaskParser
-from auri_agent.models import ConfirmationRequest, Event, initial_state, now
+from auri_agent.models import ConfirmationRequest, Event, GeoPoint, initial_state, now
 from auri_agent.prompts import TASK_RIGIDITY_POLICY, build_agent_prompt
 from auri_agent.runtime import AgentRuntime
 
@@ -113,6 +113,73 @@ async def test_mobile_voice_transcript_is_written_to_world_state() -> None:
     assert accepted.state.last_utterance.text == "我还来得及吗？帮我处理"
     assert accepted.state.last_utterance.source == "mobile"
     assert accepted.state.last_utterance.input_mode == "voice"
+
+
+def test_geo_point_rejects_invalid_coordinate_ranges() -> None:
+    with pytest.raises(ValueError):
+        GeoPoint(name="invalid longitude", longitude=181, latitude=31)
+    with pytest.raises(ValueError):
+        GeoPoint(name="invalid latitude", longitude=120, latitude=-91)
+
+
+@pytest.mark.asyncio
+async def test_agent_publishes_demo_navigation_contract_for_known_location(client: AsyncClient) -> None:
+    created = await client.post(
+        "/v1/event",
+        json=await event(client, "evt_route_task", "task.created", {"text": "今天18:10接孩子"}, "mobile"),
+    )
+    state = created.json()["state"]
+
+    assert state["navigation"]["route_id"] == "route_demo_task_pickup_child"
+    assert state["navigation"]["task_id"] == "task_pickup_child"
+    assert state["navigation"]["origin"]["address"] == "江苏省苏州工业园区星龙街455号"
+    assert state["navigation"]["origin"]["longitude"] == pytest.approx(120.791879)
+    assert state["navigation"]["destination"]["name"] == "阳光小学"
+    assert state["navigation"]["destination"]["latitude"] == pytest.approx(31.3048)
+    assert state["navigation"]["source"] == "demo_fixture"
+    assert state["navigation"]["is_simulated"] is True
+    assert state["navigation"]["progress"] == pytest.approx(0.03)
+    assert state["navigation"]["updated_at"] == state["updated_at"]
+
+    entered = await client.post(
+        "/v1/event",
+        json=await event(client, "evt_route_vehicle", "scene.vehicle_entered", {}),
+    )
+    driving_state = entered.json()["state"]
+    assert driving_state["navigation"]["route_id"] == state["navigation"]["route_id"]
+    assert driving_state["navigation"]["progress"] == pytest.approx(0.32)
+    assert driving_state["navigation"]["updated_at"] == driving_state["updated_at"]
+
+
+@pytest.mark.asyncio
+async def test_agent_does_not_invent_coordinates_for_unknown_location(client: AsyncClient) -> None:
+    response = await client.post(
+        "/v1/event",
+        json=await event(
+            client,
+            "evt_unknown_route",
+            "task.created",
+            {
+                "tasks": [
+                    {
+                        "task_id": "task_private_location",
+                        "title": "拜访客户",
+                        "scheduled_at": None,
+                        "location": "客户临时地址",
+                        "task_type": "rigid",
+                        "priority": "high",
+                        "adjustable": False,
+                        "status": "pending",
+                        "waiting_party": ["客户"],
+                        "capability_tags": [],
+                    }
+                ]
+            },
+            "mobile",
+        ),
+    )
+    assert response.status_code == 202
+    assert response.json()["state"]["navigation"] is None
 
 
 @pytest.mark.asyncio

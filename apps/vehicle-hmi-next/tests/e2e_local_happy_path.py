@@ -83,10 +83,16 @@ def main():
         task_state = submit(
             "task.created", {"text": "今天18:10接孩子，之后去超市"}, "mobile"
         )
+        assert task_state["navigation"]["task_id"] == "task_pickup_child"
+        assert task_state["navigation"]["source"] == "demo_fixture"
+        assert task_state["navigation"]["is_simulated"] is True
         page.wait_for_function("window.AURI_HMI_NEXT.getState().viewModel.tasks.total >= 2")
         assert page.evaluate(
             "window.AURI_HMI_NEXT.getState().viewModel.meta.revision"
         ) == task_state["revision"]
+        displayed_route = page.evaluate("window.AURI_HMI_NEXT.getState().viewModel.navigation.route")
+        assert displayed_route["id"] == task_state["navigation"]["route_id"]
+        assert displayed_route["destination"]["coordinates"] == [120.7359, 31.3048]
         assert page.locator(".auri-responsibility-item").count() == 2
         responsibility_text = page.locator("#auri-responsibility-strip").inner_text()
         assert "接孩子" in responsibility_text

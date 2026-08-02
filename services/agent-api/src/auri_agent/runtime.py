@@ -8,6 +8,7 @@ from .agent import AuriAgent
 from .config import Settings
 from .engine import DomainError, RiskEngine, add_auxiliary_signal, consume_confirmation
 from .llm import TaskParser
+from .navigation import sync_navigation_state
 from .models import (
     ConfirmationRequest,
     Event,
@@ -252,8 +253,10 @@ class AgentRuntime:
         return state
 
     def _touch(self, ledger_entry: str) -> None:
+        timestamp = now()
         self._state.revision += 1
-        self._state.updated_at = now()
+        self._state.updated_at = timestamp
+        sync_navigation_state(self._state, updated_at=timestamp)
         self._state.action_ledger.append(ledger_entry)
 
     async def subscribe(self) -> asyncio.Queue[WorldState]:

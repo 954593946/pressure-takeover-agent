@@ -31,6 +31,8 @@ py -3.11 -m venv .venv
 
 完整工具、确认和 Event 边界见 [`contracts/tool-calling-spec.md`](../../contracts/tool-calling-spec.md)。
 
+导航位置使用可选的 `WorldState.navigation`：Agent 发布路线对应任务、起终点坐标、来源和模拟标识，HMI 只读消费。字段定义、数据流、兼容和隐私边界见 [`docs/navigation-location-contract.md`](../../docs/navigation-location-contract.md)。
+
 ## 配置
 
 ```dotenv

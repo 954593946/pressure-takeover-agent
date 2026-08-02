@@ -153,6 +153,48 @@
     };
   }
 
+  function geoPointView(point) {
+    if (!point || typeof point !== "object") return null;
+    const name = String(point.name || "").trim();
+    const longitude = finiteNumber(point.longitude);
+    const latitude = finiteNumber(point.latitude);
+    if (!name || longitude === null || latitude === null || longitude < -180 || longitude > 180 || latitude < -90 || latitude > 90) return null;
+    return {
+      name,
+      address: String(point.address || "").trim(),
+      longitude,
+      latitude,
+      coordinates: [longitude, latitude]
+    };
+  }
+
+  function navigationContractView(state) {
+    const navigation = state?.navigation;
+    if (!navigation || typeof navigation !== "object") return null;
+    const id = String(navigation.route_id || "").trim();
+    const taskId = String(navigation.task_id || "").trim();
+    const source = navigation.source;
+    const taskExists = asArray(state.tasks).some((task) => task?.task_id === taskId);
+    if (!id || !taskId || !taskExists || !["agent", "vehicle_api", "demo_fixture"].includes(source) || typeof navigation.is_simulated !== "boolean") return null;
+    const origin = geoPointView(navigation.origin);
+    const destination = geoPointView(navigation.destination);
+    if (!origin || !destination) return null;
+    const progressValue = navigation.progress === null || navigation.progress === undefined
+      ? null
+      : finiteNumber(navigation.progress);
+    return {
+      id,
+      taskId,
+      origin,
+      destination,
+      currentLocation: geoPointView(navigation.current_location),
+      progress: progressValue === null ? null : Math.min(1, Math.max(0, progressValue)),
+      source,
+      isSimulated: navigation.is_simulated,
+      updatedAt: navigation.updated_at || null
+    };
+  }
+
   function actionView(action) {
     return {
       id: action.action_id || "",
@@ -283,9 +325,11 @@
     const sourceTasks = sortedTasks(state);
     const taskItems = sourceTasks.map((task) => taskView(task, locale, timeZone));
     const primary = taskItems.find((task) => !task.completed) || taskItems[0] || null;
-    const navigation = taskItems.find((task) => !task.completed && task.location)
+    const taskNavigation = taskItems.find((task) => !task.completed && task.location)
       || taskItems.find((task) => task.location)
       || primary;
+    const route = navigationContractView(state);
+    const routeTask = taskItems.find((task) => task.id === route?.taskId) || taskNavigation;
     const lateMinutes = Math.max(0, finiteNumber(state.risk?.late_minutes) || 0);
     const riskBase = RISK_VIEW[state.risk?.pressure_level] || RISK_VIEW.L0;
     const etaLabel = formatClock(state.eta, locale, timeZone);
@@ -319,14 +363,15 @@
       },
       interaction: interactionView(state, now),
       navigation: {
-        hasDestination: Boolean(navigation),
-        hasRouteLocation: Boolean(navigation?.location),
-        destination: navigation?.location || navigation?.title || "等待手机同步路线",
-        taskTitle: navigation?.title || "",
+        hasDestination: Boolean(route?.destination || taskNavigation),
+        hasRouteLocation: Boolean(route || taskNavigation?.location),
+        destination: route?.destination.name || taskNavigation?.location || taskNavigation?.title || "等待手机同步路线",
+        taskTitle: routeTask?.title || "",
         hasEta: Boolean(etaLabel),
         etaIso: state.eta || null,
         etaLabel: etaLabel || "--:--",
-        lateMinutes
+        lateMinutes,
+        route
       },
       risk: {
         level: state.risk?.pressure_level || "L0",
@@ -344,7 +389,7 @@
         completed: taskItems.filter((task) => task.completed).length,
         items: taskItems,
         primary,
-        navigation
+        navigation: routeTask
       },
       actions: { items: actionItems, counts: actionSummary(actionItems) },
       agentOutput: {

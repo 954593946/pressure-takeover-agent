@@ -212,6 +212,25 @@ class VehicleState(StrictModel):
     fan_speed: Literal["low", "medium", "high"] = "medium"
 
 
+class GeoPoint(StrictModel):
+    name: str = Field(min_length=1)
+    longitude: float = Field(ge=-180, le=180)
+    latitude: float = Field(ge=-90, le=90)
+    address: str | None = None
+
+
+class NavigationState(StrictModel):
+    route_id: str = Field(min_length=1)
+    task_id: str = Field(min_length=1)
+    origin: GeoPoint
+    destination: GeoPoint
+    current_location: GeoPoint | None = None
+    progress: float | None = Field(default=None, ge=0, le=1)
+    source: Literal["agent", "vehicle_api", "demo_fixture"]
+    is_simulated: bool
+    updated_at: datetime = Field(default_factory=now)
+
+
 class WorldState(StrictModel):
     schema_version: Literal["0.2.0"] = "0.2.0"
     session_id: str
@@ -233,6 +252,7 @@ class WorldState(StrictModel):
     action_ledger: list[str] = Field(default_factory=list)
     service_mock_mode: Literal["success", "out_of_stock", "over_budget"] = "success"
     vehicle_state: VehicleState = Field(default_factory=VehicleState)
+    navigation: NavigationState | None = None
 
 
 class ConfirmationRequest(StrictModel):
