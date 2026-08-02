@@ -120,6 +120,7 @@
     const roadName = String(step?.road || "").trim()
       || instruction.match(/(?:进入|沿|驶入)([^，。]+?)(?:后|行驶|靠|左转|右转|$)/)?.[1]
       || "当前道路";
+    const totalDurationSeconds = Number(route?.time || 0);
     return {
       instruction,
       maneuver,
@@ -128,7 +129,8 @@
         ? { value: (remaining / 1000).toFixed(1), unit: "公里" }
         : { value: String(Math.max(50, Math.round(remaining / 10) * 10)), unit: "米" },
       totalDistanceMeters: totalDistance,
-      totalDurationSeconds: Number(route?.time || 0),
+      totalDurationSeconds,
+      remainingDurationSeconds: Math.max(0, Math.round(totalDurationSeconds * (1 - clamp(progress)))),
       remainingDistanceMeters: Math.max(0, totalDistance - targetDistance),
       stepIndex,
       stepCount: steps.length

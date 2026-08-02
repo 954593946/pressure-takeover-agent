@@ -40,6 +40,9 @@
     L3: { label: "高负荷保护", tone: "critical", icon: "!" },
     Recovery: { label: "正在恢复", tone: "success", icon: "✓" }
   };
+  const STAGES = new Set(Object.keys(STAGE_LABEL));
+  const SCENES = new Set(["off_vehicle", "approaching_vehicle", "driving", "high_load_driving", "parked"]);
+  const SURFACES = new Set(["mobile", "vehicle_hmi", "none"]);
 
   function asArray(value) {
     return Array.isArray(value) ? value.filter(Boolean) : [];
@@ -81,6 +84,17 @@
     if (state.schema_version !== SCHEMA_VERSION) return { valid: false, reason: "schema_incompatible" };
     if (!String(state.session_id || "").trim()) return { valid: false, reason: "missing_session" };
     if (!Number.isInteger(state.revision) || state.revision < 0) return { valid: false, reason: "invalid_revision" };
+    if (!String(state.updated_at || "").trim() || Number.isNaN(Date.parse(state.updated_at))) return { valid: false, reason: "invalid_updated_at" };
+    if (!STAGES.has(state.stage)) return { valid: false, reason: "invalid_stage" };
+    if (!SCENES.has(state.scene)) return { valid: false, reason: "invalid_scene" };
+    if (!SURFACES.has(state.primary_surface)) return { valid: false, reason: "invalid_primary_surface" };
+    if (!state.risk || typeof state.risk !== "object") return { valid: false, reason: "missing_risk" };
+    for (const key of ["tasks", "actions", "service_orders", "action_ledger"]) {
+      if (!Array.isArray(state[key])) return { valid: false, reason: `invalid_${key}` };
+    }
+    if (!state.profile || typeof state.profile !== "object") return { valid: false, reason: "missing_profile" };
+    if (!state.wearable || typeof state.wearable !== "object") return { valid: false, reason: "missing_wearable" };
+    if (!state.vehicle_state || typeof state.vehicle_state !== "object") return { valid: false, reason: "missing_vehicle_state" };
     return { valid: true, reason: null };
   }
 
@@ -240,6 +254,7 @@
       mode: state.primary_surface === "vehicle_hmi" ? "primary" : state.primary_surface === "none" ? "suppressed" : "read_only",
       canConfirm,
       disabledReason,
+      expiresAt,
       confirmationId: confirmation?.confirmation_id || null,
       actionIds: asArray(confirmation?.action_ids)
     };
@@ -257,7 +272,7 @@
         tasks: { total: 0, rigid: 0, flexible: 0, completed: 0, items: [], primary: null, navigation: null },
         navigation: { hasDestination: false, hasRouteLocation: false, destination: "等待手机同步路线", hasEta: false, etaLabel: "--:--", lateMinutes: 0 },
         risk: { level: "L0", label: "状态未知", tone: "calm", icon: "○", lateMinutes: 0, reasonCodes: [], auxiliarySignals: [] },
-        interaction: { mode: "suppressed", canConfirm: false, disabledReason: validation.reason },
+        interaction: { mode: "suppressed", canConfirm: false, disabledReason: validation.reason, expiresAt: null },
         actions: { items: [], counts: actionSummary([]) },
         agentOutput: { available: false, fullText: "", preview: "" },
         utterance: { available: false, text: "", sourceLabel: "等待手机语音" },
@@ -268,7 +283,9 @@
     const sourceTasks = sortedTasks(state);
     const taskItems = sourceTasks.map((task) => taskView(task, locale, timeZone));
     const primary = taskItems.find((task) => !task.completed) || taskItems[0] || null;
-    const navigation = primary || taskItems.find((task) => !task.completed && task.location) || null;
+    const navigation = taskItems.find((task) => !task.completed && task.location)
+      || taskItems.find((task) => task.location)
+      || primary;
     const lateMinutes = Math.max(0, finiteNumber(state.risk?.late_minutes) || 0);
     const riskBase = RISK_VIEW[state.risk?.pressure_level] || RISK_VIEW.L0;
     const etaLabel = formatClock(state.eta, locale, timeZone);
@@ -278,6 +295,7 @@
     const outputExpiresAt = output?.expires_at ? Date.parse(output.expires_at) : null;
     const outputExpired = Number.isFinite(outputExpiresAt) && outputExpiresAt <= now;
     const suppressed = asArray(output?.suppressed_surfaces).includes("vehicle_hmi");
+    const ownedByVehicle = output?.owner_surface === "vehicle_hmi";
     const outputText = String(output?.conclusion || "").trim();
     const climateOnlyOutput = isClimateOnlyConclusion(outputText);
     const utterance = state.last_utterance || null;
@@ -330,7 +348,8 @@
       },
       actions: { items: actionItems, counts: actionSummary(actionItems) },
       agentOutput: {
-        available: Boolean(outputText && !suppressed && !outputExpired && !climateOnlyOutput),
+        available: Boolean(outputText && ownedByVehicle && !suppressed && !outputExpired && !climateOnlyOutput),
+        messageId: output?.message_id || null,
         fullText: outputText,
         preview: previewText(outputText, 76),
         ownerSurface: output?.owner_surface || null,
@@ -353,7 +372,8 @@
       vehicle: vehicleView(state),
       serviceOrders: {
         items: orderItems,
-        totalAmount: orderItems.reduce((total, order) => total + (order.total || 0), 0)
+        totalAmount: orderItems.reduce((total, order) => total + (order.total || 0), 0),
+        hasFailure: orderItems.some((order) => Boolean(order.errorCode) || ["failed", "blocked"].includes(order.status))
       }
     };
   }

@@ -278,6 +278,7 @@ async function main() {
   assert.equal(firstMeta.roadName, "星龙街");
   assert.deepEqual(firstMeta.nextDistance, { value: "1.0", unit: "公里" });
   assert.equal(firstMeta.remainingDistanceMeters, 4000);
+  assert.equal(firstMeta.remainingDurationSeconds, 900);
 
   const secondMeta = amap.routeMeta(successfulRoute, 0.3);
   assert.equal(secondMeta.stepIndex, 1);
@@ -286,6 +287,7 @@ async function main() {
   assert.equal(secondMeta.roadName, "现代大道");
   assert.deepEqual(secondMeta.nextDistance, { value: "800", unit: "米" });
   assert.equal(secondMeta.remainingDistanceMeters, 2800);
+  assert.equal(secondMeta.remainingDurationSeconds, 630);
 
   resetRuntime();
   const online = createAdapter();

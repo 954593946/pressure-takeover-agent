@@ -4,9 +4,7 @@
 <meta charset="UTF-8">
 <title>AURI · 你只管开，我来处理</title>
 <link rel="icon" href="icons/auri-icon.png">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<script>window.AURI_HMI_MODE="world-state";</script>
 <!-- Local env sidecar (gitignored). Missing = offline-demo mode. See env.example.js -->
 <script src="env.js" onerror="console.info('[AURI] env.js not found · visual shell mode')"></script>
 <style>
@@ -14504,6 +14502,7 @@ function _initDemoCtl(){
 
 /* ── 离线演示模式检测：placeholder key 时给出可见提示 ── */
 (function initVoiceMode(){
+  if(window.AURI_HMI_MODE==='world-state') return;
   if(_voiceLive()) return;
   const mic=document.querySelector('.tb-mic');
   if(mic){mic.classList.add('offline');mic.title='语音服务未配置 (placeholder key)';}
@@ -14514,8 +14513,10 @@ function _initDemoCtl(){
 
 window.addEventListener('load',()=>{
   try{initMap();}catch(e){console.warn('[SafeDriver] map init skipped',e);}
-  try{_initDemoCtl();}catch(e){console.warn('[SafeDriver] demo ctl init skipped',e);}
-  try{_restoreMeituanCoffeeLifecycleWatcher();}catch(e){console.warn('[SafeDriver] coffee lifecycle restore skipped',e);}
+  if(window.AURI_HMI_MODE!=='world-state'){
+    try{_initDemoCtl();}catch(e){console.warn('[SafeDriver] demo ctl init skipped',e);}
+    try{_restoreMeituanCoffeeLifecycleWatcher();}catch(e){console.warn('[SafeDriver] coffee lifecycle restore skipped',e);}
+  }
   // 初始化时把左下角导航卡静态文字按容器宽度缩放到一行, 与第一个场景一致 (否则 30px 默认字号会超出)
   try{requestAnimationFrame(()=>_fitNavTexts());}catch(e){}
 });

@@ -86,6 +86,7 @@
   let viewModel = model.buildVehicleHmiViewModel(null);
   let activeSection = null;
   let connectionStatus = { type: "idle" };
+  let lastHealth = null;
   let lastAnimatedStage = null;
   let lastError = null;
   let routeMeta = null;
@@ -93,10 +94,20 @@
   let mapConfigReady = false;
   let mapInitPromise = null;
   let confirmInFlight = false;
+  let confirmOutcomeUnknown = false;
   let confirmError = null;
   let lastConfirmationId = null;
+  let confirmationExpiryTimer = null;
   const notifiedDeviceCommands = new Set();
+  const notifiedStages = new Set();
   let noticeTimer = null;
+  let stageNoticeTimer = null;
+  let noticeHideTimer = null;
+  let stageNoticeHideTimer = null;
+  const completionSpeechKeys = new Set((() => {
+    try { return JSON.parse(sessionStorage.getItem("auri-hmi-next-completion-speech") || "[]"); }
+    catch (_error) { return []; }
+  })());
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -119,6 +130,16 @@
 
   function emptyRow(icon, title, detail) {
     return row(icon, title, detail, "等待");
+  }
+
+  function rowButton(icon, title, detail, state, target, tone = "") {
+    return `
+      <button class="auri-shell-row auri-shell-row-button${tone ? ` is-${tone}` : ""}" type="button" data-panel-target="${escapeHtml(target)}">
+        <span class="auri-shell-row-icon" aria-hidden="true">${escapeHtml(icon)}</span>
+        <span class="auri-shell-row-copy"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(detail)}</span></span>
+        <span class="auri-shell-row-state">${escapeHtml(state)}</span>
+      </button>
+    `;
   }
 
   function ensureTakeoverUi() {
@@ -146,6 +167,28 @@
     nav.insertAdjacentElement("afterend", card);
     card.querySelector("#auri-takeover-confirm")?.addEventListener("click", () => void confirmCurrentActions("button"));
 
+    const taskStrip = document.createElement("div");
+    taskStrip.id = "auri-responsibility-strip";
+    taskStrip.className = "auri-responsibility-strip";
+    taskStrip.hidden = true;
+    nav.querySelector(".vd-nav-progress")?.insertAdjacentElement("beforebegin", taskStrip);
+    taskStrip.addEventListener("click", (event) => {
+      if (event.target.closest("button")) openPanel("tasks");
+    });
+
+    nav.setAttribute("role", "button");
+    nav.setAttribute("tabindex", "0");
+    nav.title = "查看行程详情";
+    nav.addEventListener("click", (event) => {
+      if (!event.target.closest("#auri-responsibility-strip")) openPanel("route");
+    });
+    nav.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openPanel("route");
+      }
+    });
+
     const notice = document.createElement("aside");
     notice.id = "auri-device-notice";
     notice.className = "auri-device-notice";
@@ -157,15 +200,39 @@
     `;
     document.querySelector(".right-panel")?.appendChild(notice);
     notice.querySelector("button")?.addEventListener("click", hideDeviceNotice);
+
+    const stageNotice = document.createElement("aside");
+    stageNotice.id = "auri-stage-notice";
+    stageNotice.className = "auri-stage-notice";
+    stageNotice.hidden = true;
+    stageNotice.setAttribute("aria-live", "polite");
+    stageNotice.innerHTML = `
+      <span class="auri-stage-notice-icon" aria-hidden="true">A</span>
+      <span><small id="auri-stage-notice-kicker">场景切换</small><b id="auri-stage-notice-title"></b><em id="auri-stage-notice-detail"></em></span>
+      <button type="button" aria-label="关闭提示">×</button>
+    `;
+    document.querySelector(".right-panel")?.appendChild(stageNotice);
+    stageNotice.querySelector("button")?.addEventListener("click", hideStageNotice);
   }
 
   function takeoverActions() {
-    const actions = viewModel.actions.items.slice(0, 3).map((action) => ({
-      icon: action.status === "completed" ? "✓" : action.type === "message" ? "信" : action.type === "service_order" ? "单" : "调",
-      text: action.preview,
-      state: action.statusLabel,
-      completed: action.status === "completed"
-    }));
+    const actions = viewModel.actions.items.slice(0, 3).map((action) => {
+      const order = action.type === "service_order"
+        ? viewModel.serviceOrders.items.find((item) => item.id === action.detailsRef)
+        : null;
+      const orderText = order
+        ? `模拟配送 · ${order.itemCount} 件/${order.itemKinds} 种 · ${order.total === null ? "金额待定" : `${order.total} 元`} · ${order.deliveryWindow || "配送待定"}`
+        : null;
+      const messageText = action.type === "message"
+        ? `给${action.target || "联系人"}的消息草稿已生成（模拟）`
+        : null;
+      return {
+        icon: action.status === "completed" ? "✓" : action.type === "message" ? "信" : action.type === "service_order" ? "单" : "调",
+        text: orderText || messageText || action.preview,
+        state: action.statusLabel,
+        completed: action.status === "completed"
+      };
+    });
     if (actions.length) return actions;
     if (["takeover_L2", "takeover_L3", "planning"].includes(viewModel.lifecycle.stage)) {
       return [
@@ -197,6 +264,8 @@
     riskLine.title = viewModel.utterance.available ? viewModel.utterance.text : viewModel.risk.label;
     document.getElementById("auri-takeover-conclusion").textContent = stage === "parked_review"
       ? fallback
+      : viewModel.serviceOrders.hasFailure
+        ? "生活服务暂不可用，消息和任务调整方案仍保留。"
       : viewModel.agentOutput.available ? viewModel.agentOutput.preview : fallback;
 
     const actions = takeoverActions();
@@ -209,17 +278,23 @@
     const devices = [
       ["手机", viewModel.lifecycle.primarySurface === "mobile" ? "当前主端" : viewModel.utterance.available ? "语音已同步" : "保持连接", viewModel.lifecycle.primarySurface === "mobile" || viewModel.utterance.available],
       ["腕表", viewModel.wearable.connected ? viewModel.wearable.modeLabel : "未连接", viewModel.wearable.connected],
-      ["车机", viewModel.lifecycle.primarySurface === "vehicle_hmi" ? "当前主端" : stage === "parked_review" ? "本次结束" : "只读接续", true]
+      ["车机", viewModel.lifecycle.primarySurface === "vehicle_hmi" ? "当前主端" : stage === "parked_review" ? "本次结束" : "只读显示", true]
     ];
     document.getElementById("auri-takeover-devices").innerHTML = devices.map(([name, status, active]) => `
       <span class="${active ? "is-active" : ""}"><i></i><b>${escapeHtml(name)}</b><small>${escapeHtml(status)}</small></span>
     `).join("");
 
     const button = document.getElementById("auri-takeover-confirm");
-    const showConfirm = stage === "waiting_confirmation" && viewModel.interaction.canConfirm;
+    clearTimeout(confirmationExpiryTimer);
+    const expiresIn = Number(viewModel.interaction.expiresAt) - Date.now();
+    const confirmationExpired = Number.isFinite(expiresIn) && expiresIn <= 0;
+    if (Number.isFinite(expiresIn) && expiresIn > 0) {
+      confirmationExpiryTimer = setTimeout(renderTakeover, Math.min(expiresIn + 20, 2147483647));
+    }
+    const showConfirm = stage === "waiting_confirmation" && viewModel.interaction.canConfirm && !confirmationExpired;
     const showExecuting = stage === "executing" || confirmInFlight;
     button.hidden = !(showConfirm || showExecuting);
-    button.disabled = !showConfirm || confirmInFlight;
+    button.disabled = !showConfirm || confirmInFlight || confirmOutcomeUnknown;
     button.classList.toggle("is-loading", showExecuting);
     document.getElementById("auri-confirm-label").textContent = showExecuting ? "正在执行" : "确认处理";
     const error = document.getElementById("auri-confirm-error");
@@ -227,29 +302,126 @@
     error.textContent = confirmError || "";
   }
 
+  function renderResponsibilityStrip() {
+    const strip = document.getElementById("auri-responsibility-strip");
+    if (!strip) return;
+    const tasks = viewModel.tasks.items;
+    strip.hidden = !tasks.length;
+    if (!tasks.length) {
+      strip.innerHTML = "";
+      return;
+    }
+    const visible = tasks.slice(0, 2);
+    strip.innerHTML = visible.map((task) => `
+      <button class="auri-responsibility-item is-${escapeHtml(task.tone)}" type="button" title="查看全部任务">
+        <span>${task.tone === "rigid" ? "刚性责任" : "弹性任务"}</span>
+        <b>${escapeHtml(task.displayTitle)}</b>
+        <em>${escapeHtml(task.status)}</em>
+      </button>
+    `).join("") + (tasks.length > 2 ? `<button class="auri-responsibility-more" type="button" title="查看全部任务">+${tasks.length - 2}</button>` : "");
+  }
+
   function hideDeviceNotice() {
     clearTimeout(noticeTimer);
+    clearTimeout(noticeHideTimer);
     const notice = document.getElementById("auri-device-notice");
     notice?.classList.remove("is-visible");
-    if (notice) setTimeout(() => { notice.hidden = true; }, 220);
+    if (notice) noticeHideTimer = setTimeout(() => { notice.hidden = true; }, 220);
   }
 
   function renderDeviceNotice() {
     const wearable = viewModel.wearable;
-    if (!wearable.connected || !wearable.commandId) return;
+    if (viewModel.lifecycle.primarySurface !== "vehicle_hmi") return;
+    if (!wearable.commandId || wearable.mode === "idle" || !wearable.haptic || wearable.haptic === "none") return;
     const commandKey = `${viewModel.meta.sessionId || "session"}:${wearable.commandId}`;
     if (notifiedDeviceCommands.has(commandKey)) return;
     notifiedDeviceCommands.add(commandKey);
     const notice = document.getElementById("auri-device-notice");
     if (!notice) return;
-    const title = ["warning", "error"].includes(wearable.mode) ? "腕上提醒已送达" : wearable.mode === "completed" ? "三端状态已同步" : "腕上设备已接续";
+    const delivered = wearable.connected;
+    const title = ["warning", "error"].includes(wearable.mode)
+      ? delivered ? "腕上提醒已送达" : "腕上提醒等待同步"
+      : wearable.mode === "completed"
+        ? delivered ? "三端状态已同步" : "处理结果等待腕上同步"
+        : delivered ? "腕上设备已接续" : "腕上状态等待设备连接";
     document.getElementById("auri-notice-title").textContent = title;
-    document.getElementById("auri-notice-text").textContent = `${wearable.text} · ${HAPTIC_LABEL[wearable.haptic] || "状态提示"}`;
+    document.getElementById("auri-notice-text").textContent = `${wearable.text} · ${HAPTIC_LABEL[wearable.haptic] || "状态提示"}${delivered ? "" : " · 设备未连接"}`;
     notice.dataset.tone = wearable.mode;
+    clearTimeout(noticeHideTimer);
     notice.hidden = false;
     requestAnimationFrame(() => notice.classList.add("is-visible"));
     clearTimeout(noticeTimer);
     noticeTimer = setTimeout(hideDeviceNotice, 4600);
+  }
+
+  function hideStageNotice() {
+    clearTimeout(stageNoticeTimer);
+    clearTimeout(stageNoticeHideTimer);
+    const notice = document.getElementById("auri-stage-notice");
+    notice?.classList.remove("is-visible");
+    if (notice) stageNoticeHideTimer = setTimeout(() => { notice.hidden = true; }, 220);
+  }
+
+  function stageNoticeView() {
+    const stage = viewModel.lifecycle.stage;
+    const destination = viewModel.navigation.destination;
+    const completed = viewModel.actions.counts.completed;
+    const total = viewModel.actions.counts.total;
+    if (stage === "handover_to_vehicle") return ["场景切换", "路线正在同步到车机", `${destination} · 手机进入驾驶只读`, "handover"];
+    if (stage === "vehicle_observation") return ["导航已接续", `正在前往 ${destination}`, "ETA 与任务状态会持续同步", "guidance"];
+    if (stage === "action_completed") return ["处理完成", total ? `${completed}/${total} 项动作已完成` : "本次问题已处理", "手机、腕表与车机正在同步结果", "success"];
+    if (stage === "cooldown") return ["恢复驾驶", "AURI 已降低打扰", "按当前路线继续即可", "success", true];
+    if (stage === "parked_review") return ["本次接管结束", "完整记录已同步到手机", "消息、订单和处理结果可在手机查看", "success"];
+    return null;
+  }
+
+  function renderStageNotice() {
+    if (viewModel.lifecycle.primarySurface !== "vehicle_hmi") {
+      const notice = document.getElementById("auri-stage-notice");
+      if (notice && !notice.hidden) hideStageNotice();
+      return;
+    }
+    const view = stageNoticeView();
+    if (!view || !viewModel.meta.sessionId) {
+      const notice = document.getElementById("auri-stage-notice");
+      if (notice && !notice.hidden) hideStageNotice();
+      return;
+    }
+    const stageKey = `${viewModel.meta.sessionId}:${viewModel.lifecycle.stage}`;
+    if (notifiedStages.has(stageKey)) return;
+    notifiedStages.add(stageKey);
+    const notice = document.getElementById("auri-stage-notice");
+    if (!notice) return;
+    const [kicker, title, detail, tone, persistent] = view;
+    notice.dataset.tone = tone;
+    notice.dataset.stage = viewModel.lifecycle.stage;
+    document.getElementById("auri-stage-notice-kicker").textContent = kicker;
+    document.getElementById("auri-stage-notice-title").textContent = title;
+    document.getElementById("auri-stage-notice-detail").textContent = detail;
+    clearTimeout(stageNoticeHideTimer);
+    notice.hidden = false;
+    requestAnimationFrame(() => notice.classList.add("is-visible"));
+    clearTimeout(stageNoticeTimer);
+    if (!persistent) stageNoticeTimer = setTimeout(hideStageNotice, 4800);
+  }
+
+  function announceCompletion() {
+    if (viewModel.lifecycle.stage !== "action_completed" || viewModel.lifecycle.primarySurface !== "vehicle_hmi") return;
+    const messageId = viewModel.agentOutput.messageId;
+    if (!messageId) return;
+    const key = `${viewModel.meta.sessionId}:${messageId}`;
+    if (completionSpeechKeys.has(key)) return;
+    completionSpeechKeys.add(key);
+    try {
+      sessionStorage.setItem("auri-hmi-next-completion-speech", JSON.stringify([...completionSpeechKeys].slice(-30)));
+      if (window.speechSynthesis && window.SpeechSynthesisUtterance) {
+        const utterance = new SpeechSynthesisUtterance("已处理，你按当前速度安全驾驶即可。");
+        utterance.lang = "zh-CN";
+        utterance.rate = 0.96;
+        utterance.pitch = 1;
+        window.speechSynthesis.speak(utterance);
+      }
+    } catch (_error) { /* TTS is a non-blocking output channel. */ }
   }
 
   function confirmationErrorMessage(error) {
@@ -264,6 +436,7 @@
     const confirmationId = viewModel.interaction.confirmationId;
     if (!viewModel.interaction.canConfirm || !confirmationId || confirmInFlight) return;
     confirmInFlight = true;
+    confirmOutcomeUnknown = false;
     confirmError = null;
     renderTakeover();
     try {
@@ -279,8 +452,18 @@
       });
       client.injectSnapshot(state, "confirm");
     } catch (error) {
-      confirmError = confirmationErrorMessage(error);
-      void client.refresh("confirm_reconcile").catch(() => null);
+      confirmOutcomeUnknown = true;
+      confirmError = "正在核对执行结果，请勿重复确认。";
+      try {
+        const reconciled = await client.refresh("confirm_reconcile");
+        const stillPending = reconciled?.stage === "waiting_confirmation"
+          && reconciled?.confirmation?.confirmation_id === confirmationId
+          && reconciled?.confirmation?.status === "pending";
+        confirmOutcomeUnknown = false;
+        if (stillPending) confirmError = `${confirmationErrorMessage(error)} 本次未执行，可再次确认。`;
+      } catch (_reconcileError) {
+        confirmError = "执行结果暂时未知，正在等待 Agent 状态同步。";
+      }
     } finally {
       confirmInFlight = false;
       renderTakeover();
@@ -308,17 +491,19 @@
           vm.utterance.available
             ? row("声", "手机语音", vm.utterance.preview, vm.utterance.receivedAtLabel || "刚刚", "processing")
             : emptyRow("声", "手机语音", "等待用户在手机端求助"),
-          row(vm.wearable.connected ? "腕" : "○", "腕上设备", vm.wearable.connected ? vm.wearable.text : "尚未连接", vm.wearable.connected ? vm.wearable.modeLabel : "离线", vm.wearable.mode)
+          row(vm.wearable.connected ? "腕" : "○", "腕上设备", vm.wearable.connected ? vm.wearable.text : "尚未连接", vm.wearable.connected ? vm.wearable.modeLabel : "离线", vm.wearable.mode),
+          rowButton("联", "设备状态", "查看手机、腕表与车机当前同步状态", "查看", "sync")
         ]
       };
     }
 
     if (section === "tasks") {
-      const taskRows = vm.tasks.items.map((task) => row(
+      const taskRows = vm.tasks.items.map((task) => rowButton(
         task.tone === "rigid" ? "刚" : "弹",
         task.displayTitle,
         task.location || (task.waitingParty.length ? task.waitingParty.join("、") : task.type),
         task.status,
+        `task:${task.id}`,
         task.tone
       ));
       return {
@@ -330,18 +515,53 @@
           : "请在手机端通过语音创建任务，车机会在状态更新后自动接续。",
         status: vm.tasks.completed ? `${vm.tasks.completed}/${vm.tasks.total} 已完成` : `${vm.tasks.total} 项`,
         tone: vm.tasks.total ? "processing" : "idle",
-        rows: taskRows.length ? taskRows : [emptyRow("＋", "任务入口", "等待手机语音创建任务")]
+        rows: taskRows.length
+          ? [...taskRows, rowButton("路", "当前行程", `${vm.navigation.destination} · ETA ${vm.navigation.etaLabel}`, "查看", "route")]
+          : [emptyRow("＋", "任务入口", "等待手机语音创建任务")]
+      };
+    }
+
+    if (section.startsWith("task:")) {
+      const taskId = section.slice("task:".length);
+      const task = vm.tasks.items.find((item) => item.id === taskId);
+      if (!task) return panelFor("tasks");
+      return {
+        title: task.title,
+        subtitle: `${task.type} · ${task.status}`,
+        lead: task.displayTitle,
+        copy: task.location
+          ? `地点：${task.location}${task.waitingParty.length ? ` · 关联：${task.waitingParty.join("、")}` : ""}`
+          : task.waitingParty.length ? `关联：${task.waitingParty.join("、")}` : "任务详情随 Agent World State 更新。",
+        status: task.status,
+        tone: task.tone === "rigid" ? "warning" : "processing",
+        rows: [
+          row(task.tone === "rigid" ? "刚" : "弹", task.type, task.tone === "rigid" ? "优先保护时间窗口" : "可由 Agent 调整顺序", task.status, task.tone),
+          task.location
+            ? rowButton("路", "导航目的地", task.location, "查看", "route")
+            : row("○", "导航目的地", "当前任务未提供地点", "无路线"),
+          rowButton("返", "返回任务列表", "查看全部刚性与弹性任务", "返回", "tasks")
+        ]
       };
     }
 
     if (section === "messages") {
-      const actionRows = vm.actions.items.map((action) => row(
+      const actionRows = vm.actions.items.map((action) => rowButton(
         action.type === "message" ? "信" : action.type === "service_order" ? "单" : "调",
         action.target || "Agent 动作",
-        action.preview,
+        action.summary,
         action.statusLabel,
+        `action:${action.id}`,
         action.status === "completed" ? "completed" : action.status === "failed" || action.status === "blocked" ? "error" : "processing"
       ));
+      const orderRows = vm.serviceOrders.items
+        .filter((order) => !vm.actions.items.some((action) => action.detailsRef === order.id))
+        .map((order) => row(
+          "单",
+          "生活服务",
+          `${order.itemCount} 件 · ${order.total === null ? "金额待定" : `${order.total} 元`} · ${order.deliveryWindow || "配送时间待定"}`,
+          order.status,
+          order.status === "submitted" ? "completed" : order.errorCode ? "error" : "processing"
+        ));
       return {
         title: "消息与执行",
         subtitle: vm.actions.counts.total ? `${vm.actions.counts.completed}/${vm.actions.counts.total} 已完成` : "等待 Agent 方案",
@@ -349,7 +569,76 @@
         copy: vm.agentOutput.available ? vm.agentOutput.fullText : "消息、任务调整和生活服务均以 Agent 返回的执行事实为准。",
         status: vm.actions.counts.failed || vm.actions.counts.blocked ? "需要注意" : vm.actions.counts.total ? "状态已同步" : "等待",
         tone: vm.actions.counts.failed || vm.actions.counts.blocked ? "critical" : vm.actions.counts.completed === vm.actions.counts.total && vm.actions.counts.total ? "success" : "processing",
-        rows: actionRows.length ? actionRows : [emptyRow("□", "消息与服务", "等待 Agent 生成处理方案")]
+        rows: actionRows.length || orderRows.length ? [...actionRows, ...orderRows] : [emptyRow("□", "消息与服务", "等待 Agent 生成处理方案")]
+      };
+    }
+
+    if (section.startsWith("action:")) {
+      const actionId = section.slice("action:".length);
+      const action = vm.actions.items.find((item) => item.id === actionId);
+      if (!action) return panelFor("messages");
+      const order = vm.serviceOrders.items.find((item) => item.id === action.detailsRef);
+      const detailRows = [
+        action.type === "message"
+          ? row("信", action.target || "联系人", action.summary, action.statusLabel, action.status === "completed" ? "completed" : "processing")
+          : row("调", "Agent 动作", action.summary, action.statusLabel, action.status === "completed" ? "completed" : "processing")
+      ];
+      if (order) detailRows.push(row("单", `${order.itemCount} 件商品`, `${order.total === null ? "金额待定" : `${order.total} 元`} · ${order.deliveryWindow || "配送时间待定"}`, order.status, order.errorCode ? "error" : order.status === "submitted" ? "completed" : "processing"));
+      detailRows.push(rowButton("返", "返回动作列表", "查看全部消息、任务调整和生活服务", "返回", "messages"));
+      return {
+        title: action.type === "message" ? `给${action.target || "联系人"}的消息` : action.type === "service_order" ? "生活服务方案" : "任务调整详情",
+        subtitle: action.statusLabel,
+        lead: action.summary,
+        copy: action.requiresConfirmation ? "该动作需要由当前授权端确认后执行。" : "该动作状态由 Agent 执行结果同步更新。",
+        status: action.statusLabel,
+        tone: action.status === "completed" ? "success" : action.status === "failed" || action.status === "blocked" ? "critical" : "processing",
+        rows: detailRows
+      };
+    }
+
+    if (section === "route") {
+      const remainingMeters = Number(routeMeta?.remainingDistanceMeters);
+      const remaining = Number.isFinite(remainingMeters)
+        ? remainingMeters >= 1000
+          ? `${(remainingMeters / 1000).toFixed(1)} 公里`
+          : `${Math.round(remainingMeters)} 米`
+        : "等待路线数据";
+      return {
+        title: "行程详情",
+        subtitle: mapStatus.mode === "online" ? "高德实时导航" : "离线导航",
+        lead: vm.navigation.hasDestination ? vm.navigation.destination : "等待手机同步路线",
+        copy: vm.risk.lateMinutes
+          ? `当前预计晚到 ${vm.risk.lateMinutes} 分钟，请保持安全驾驶。`
+          : vm.navigation.hasEta ? `预计 ${vm.navigation.etaLabel} 到达。` : "任务建立后会自动准备路线。",
+        status: vm.risk.label,
+        tone: vm.risk.tone,
+        rows: [
+          row("时", "预计到达", vm.navigation.taskTitle || "当前导航任务", vm.navigation.etaLabel, vm.risk.lateMinutes ? "warning" : "success"),
+          row("路", "下一动作", routeMeta?.instruction || "等待导航指引", routeMeta?.nextDistance ? `${routeMeta.nextDistance.value}${routeMeta.nextDistance.unit}` : "--", "processing"),
+          row("距", "剩余距离", mapStatus.mode === "online" ? "路线随车辆位置更新" : "离线演示路线", remaining, mapStatus.mode === "online" ? "success" : "idle"),
+          rowButton("务", "沿途任务", vm.tasks.total ? `${vm.tasks.total} 项任务随 World State 动态更新` : "当前无任务", "查看", "tasks")
+        ]
+      };
+    }
+
+    if (section === "sync") {
+      const primary = vm.lifecycle.primarySurface;
+      const phoneState = primary === "mobile" ? "当前主端" : vm.utterance.available ? "语音已同步" : "保持连接";
+      const carState = primary === "vehicle_hmi" ? "当前主端" : vm.lifecycle.stage === "parked_review" ? "本次结束" : "只读显示";
+      return {
+        title: "设备同步",
+        subtitle: "手机 · 腕表 · 车机",
+        lead: primary === "vehicle_hmi" ? "驾驶任务已接续到车机" : primary === "mobile" ? "手机正在管理完整信息" : "当前保持低干扰",
+        copy: vm.lifecycle.stage === "parked_review"
+          ? "停车后，消息、订单和处理记录回到手机继续查看。"
+          : "各端显示同一任务和处理结果，操作入口跟随当前场景切换。",
+        status: connectionStatus.type === "streaming" ? "状态已同步" : "正在同步",
+        tone: connectionStatus.type === "streaming" ? "success" : "processing",
+        rows: [
+          row("手", "手机", vm.utterance.available ? `最近语音：“${vm.utterance.preview}”` : "任务与权限中心", phoneState, primary === "mobile" ? "success" : "processing"),
+          row("腕", "腕表", vm.wearable.connected ? `${vm.wearable.text} · ${HAPTIC_LABEL[vm.wearable.haptic] || "无触觉"}` : "未连接时不阻断主流程", vm.wearable.connected ? vm.wearable.modeLabel : "离线", vm.wearable.connected ? vm.wearable.mode : "idle"),
+          row("车", "车机", vm.navigation.hasDestination ? `导航至 ${vm.navigation.destination}` : "等待路线", carState, primary === "vehicle_hmi" ? "success" : "processing")
+        ]
       };
     }
 
@@ -376,6 +665,9 @@
   function connectionPanel() {
     const config = client.getConfig();
     const statusLabel = STATUS_VIEW[connectionStatus.type]?.[0] || "等待连接";
+    const session = viewModel.meta.sessionId ? `…${viewModel.meta.sessionId.slice(-8)}` : "--";
+    const revision = viewModel.meta.revision >= 0 ? String(viewModel.meta.revision) : "--";
+    const schema = lastHealth?.schema_version || viewModel.meta.schemaVersion || "--";
     return {
       title: "连接 Agent",
       subtitle: statusLabel,
@@ -385,6 +677,14 @@
       tone: STATUS_VIEW[connectionStatus.type]?.[1] || "idle",
       form: `
         <form class="auri-config-form" id="auri-config-form">
+          <div class="auri-connection-summary">
+            <span><small>同步方式</small><b>${escapeHtml(connectionStatus.type === "streaming" ? "实时流" : connectionStatus.type === "polling_fallback" ? "轮询恢复" : statusLabel)}</b></span>
+            <span><small>Session</small><b>${escapeHtml(session)}</b></span>
+            <span><small>Revision</small><b>${escapeHtml(revision)}</b></span>
+            <span><small>Schema</small><b>${escapeHtml(schema)}</b></span>
+            <span><small>Agent Health</small><b>${escapeHtml(lastHealth?.status === "ok" ? "正常" : lastHealth ? "异常" : "等待预检")}</b></span>
+            <span><small>LLM</small><b>${escapeHtml(lastHealth?.llm_model ? `${lastHealth.llm_model} · ${lastHealth.llm_last_mode || "待调用"}` : "状态未提供")}</b></span>
+          </div>
           <label><span>Agent API</span><input id="auri-config-api" type="url" spellcheck="false" value="${escapeHtml(config.apiBase)}" required></label>
           <label><span>Team Token</span><input id="auri-config-token" type="password" autocomplete="off" value="${escapeHtml(config.token)}" placeholder="仅保存在当前浏览器"></label>
           <div class="auri-config-presets">
@@ -487,6 +787,9 @@
 
     document.querySelectorAll("[data-auri-section]").forEach((item) => {
       item.classList.toggle("active", item.dataset.auriSection === section);
+    });
+    body?.querySelectorAll("[data-panel-target]").forEach((button) => {
+      button.addEventListener("click", () => openPanel(button.dataset.panelTarget));
     });
     bindConfigForm();
   }
@@ -592,6 +895,7 @@
 
   function renderConnectionStatus(next) {
     connectionStatus = next;
+    if (next.health) lastHealth = next.health;
     const [label, tone] = STATUS_VIEW[next.type] || STATUS_VIEW.idle;
     const chip = document.getElementById("tb-offline");
     if (chip) {
@@ -630,9 +934,18 @@
     if (destination) destination.textContent = vm.navigation.taskTitle || "暂无导航任务";
     if (eta) eta.textContent = vm.navigation.etaLabel;
     const remainingKm = routeMeta ? Math.max(0, routeMeta.remainingDistanceMeters / 1000) : null;
-    if (minutes) minutes.textContent = vm.tasks.total ? String(vm.tasks.total) : "--";
+    const routeMinutes = Number.isFinite(Number(routeMeta?.remainingDurationSeconds))
+      ? Math.max(1, Math.round(Number(routeMeta.remainingDurationSeconds) / 60))
+      : null;
+    const etaTime = Date.parse(vm.navigation.etaIso || "");
+    const updatedTime = Date.parse(vm.meta.updatedAt || "");
+    const etaMinutes = Number.isFinite(etaTime) && Number.isFinite(updatedTime)
+      ? Math.round((etaTime - updatedTime) / 60000)
+      : null;
+    const remainingMinutes = routeMinutes ?? (etaMinutes > 0 && etaMinutes <= 360 ? etaMinutes : null);
+    if (minutes) minutes.textContent = remainingMinutes === null ? "--" : String(remainingMinutes);
     if (kilometers) kilometers.textContent = remainingKm === null ? "--" : remainingKm >= 10 ? String(Math.round(remainingKm)) : remainingKm.toFixed(1);
-    if (minutes?.nextElementSibling) minutes.nextElementSibling.textContent = "今日任务";
+    if (minutes?.nextElementSibling) minutes.nextElementSibling.textContent = "剩余分钟";
     if (kilometers?.nextElementSibling) kilometers.nextElementSibling.textContent = "剩余公里";
     if (progress) progress.style.width = `${Math.round(stageProgress * 100)}%`;
     renderTurnArrow(routeMeta?.maneuver || "straight");
@@ -792,8 +1105,10 @@
     viewModel = model.buildVehicleHmiViewModel(state);
     if (lastConfirmationId !== viewModel.interaction.confirmationId) {
       confirmError = null;
+      confirmOutcomeUnknown = false;
       lastConfirmationId = viewModel.interaction.confirmationId;
     }
+    if (viewModel.lifecycle.stage !== "waiting_confirmation") confirmOutcomeUnknown = false;
     const hmi = document.getElementById("hmi");
     if (hmi) {
       hmi.dataset.auriStage = viewModel.lifecycle.stage;
@@ -801,9 +1116,12 @@
       hmi.dataset.auriPrimarySurface = viewModel.lifecycle.primarySurface;
     }
     renderNavigation();
+    renderResponsibilityStrip();
     renderClimate();
     renderTakeover();
     renderDeviceNotice();
+    renderStageNotice();
+    announceCompletion();
     updateRoutePOIs();
     animateStage();
     if (mapAdapter.getStatus() === "online") mapAdapter.update(navigationSnapshot());
@@ -817,9 +1135,13 @@
     onError(error) {
       lastError = error?.status === 401
         ? "Team Token 无效或缺失"
+        : error?.status === 503
+          ? "Agent 服务正在启动或暂不可用"
         : error?.code === "TIMEOUT"
-          ? "请求超时"
-          : "无法连接 Agent 服务";
+          ? "请求超时，公网服务可能正在唤醒"
+          : error?.name === "TypeError"
+            ? "网络不可达，请检查服务地址或浏览器网络"
+            : "无法连接 Agent 服务";
     }
   });
   client.subscribe((state) => renderWorldState(state));

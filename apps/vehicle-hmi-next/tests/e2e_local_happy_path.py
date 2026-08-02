@@ -67,7 +67,9 @@ def main():
         config = json.dumps({"apiBase": AGENT, "token": TOKEN, "stream": True})
         page.add_init_script(
             f"window.AURI_HMI_CONFIG={config};"
-            "try{localStorage.removeItem('auri-hmi-next-config')}catch(_e){}"
+            "try{localStorage.removeItem('auri-hmi-next-config')}catch(_e){};"
+            "window.__auriSpoken=[];"
+            "try{window.speechSynthesis.speak=(item)=>window.__auriSpoken.push(item.text)}catch(_e){}"
         )
         page.goto(HMI, wait_until="domcontentloaded", timeout=30000)
         page.wait_for_function(
@@ -76,6 +78,7 @@ def main():
         page.wait_for_function("window.AURI_HMI_NEXT?.getState().syncMode === 'streaming'")
         initial = page.evaluate("window.AURI_HMI_NEXT.getState()")
         assert initial["viewModel"]["tasks"]["total"] == 0
+        assert page.locator("#auri-responsibility-strip").is_hidden()
 
         task_state = submit(
             "task.created", {"text": "今天18:10接孩子，之后去超市"}, "mobile"
@@ -84,6 +87,15 @@ def main():
         assert page.evaluate(
             "window.AURI_HMI_NEXT.getState().viewModel.meta.revision"
         ) == task_state["revision"]
+        assert page.locator(".auri-responsibility-item").count() == 2
+        responsibility_text = page.locator("#auri-responsibility-strip").inner_text()
+        assert "接孩子" in responsibility_text
+        assert "超市" in responsibility_text
+
+        page.locator("#vd-nav-card").click(position={"x": 400, "y": 18})
+        assert "行程详情" in page.locator("#hdr-a").inner_text()
+        assert "阳光小学" in page.locator("#body-a").inner_text()
+        page.locator(".auri-panel-close").click()
 
         warning_state = submit("meeting.overrun", {"delay_minutes": 20})
         page.wait_for_function(
@@ -91,12 +103,25 @@ def main():
             arg=warning_state["revision"],
         )
         assert warning_state["stage"] == "pre_departure_warning"
+        assert page.locator("#auri-stage-notice").is_hidden()
+        assert page.locator("#auri-device-notice").is_hidden()
 
         vehicle_state = submit("scene.vehicle_entered", {})
         page.wait_for_function(
             "window.AURI_HMI_NEXT.getState().viewModel.lifecycle.primarySurface === 'vehicle_hmi'"
         )
         assert vehicle_state["scene"] == "driving"
+        page.wait_for_function("document.querySelector('#auri-stage-notice')?.classList.contains('is-visible')")
+        stage_notice_text = page.locator("#auri-stage-notice").inner_text()
+        assert any(text in stage_notice_text for text in ["路线正在同步到车机", "正在前往"])
+        page.wait_for_function("document.querySelector('#auri-device-notice')?.classList.contains('is-visible')")
+        assert "腕上" in page.locator("#auri-device-notice").inner_text()
+
+        page.locator('[data-auri-section="auri"]').click()
+        page.locator('[data-panel-target="sync"]').click()
+        assert "设备同步" in page.locator("#hdr-a").inner_text()
+        assert all(label in page.locator("#body-a").inner_text() for label in ["手机", "腕表", "车机"])
+        page.locator(".auri-panel-close").click()
 
         rigid = next(
             (task for task in vehicle_state["tasks"] if task.get("task_type") == "rigid"),
@@ -140,12 +165,16 @@ def main():
         shown = page.evaluate("window.AURI_HMI_NEXT.getState().viewModel")
         assert shown["meta"]["revision"] == completed["revision"]
         assert all(action["status"] == "completed" for action in completed["actions"])
+        page.wait_for_timeout(200)
+        assert page.evaluate("window.__auriSpoken") == ["已处理，你按当前速度安全驾驶即可。"]
 
         submit("cooldown.elapsed", {})
         page.wait_for_function(
             "window.AURI_HMI_NEXT.getState().viewModel.lifecycle.stage === 'cooldown'"
         )
         assert page.locator("#vd-nav-card").is_visible()
+        assert page.locator("#auri-stage-notice").is_visible()
+        assert "AURI 已降低打扰" in page.locator("#auri-stage-notice").inner_text()
 
         parked = submit("scene.parked", {})
         page.wait_for_function(

@@ -56,14 +56,14 @@ const emptyState = {
   output: null,
   last_utterance: null,
   service_orders: [],
-  vehicle_state: null
+  vehicle_state: { ac_on: false, ac_target_temp: 24, ac_mode: "auto", fan_speed: "medium" }
 };
 const emptyVm = model.buildVehicleHmiViewModel(emptyState, { now });
 assert.equal(emptyVm.tasks.total, 0);
 assert.equal(emptyVm.navigation.hasDestination, false);
 assert.equal(emptyVm.navigation.etaLabel, "--:--");
-assert.equal(emptyVm.vehicle.available, false);
-assert.equal(emptyVm.vehicle.temperatureLabel, "--");
+assert.equal(emptyVm.vehicle.available, true);
+assert.equal(emptyVm.vehicle.temperatureLabel, "24°C");
 assert.equal(emptyVm.interaction.canConfirm, false);
 
 const mixedState = {
@@ -86,6 +86,25 @@ assert.equal(mixedVm.tasks.navigation.title, "机场接人");
 assert.equal(mixedVm.actions.counts.completed, 1);
 assert.equal(mixedVm.actions.counts.blocked, 1);
 assert.equal(mixedVm.actions.counts.failed, 1);
+
+const locationFallbackVm = model.buildVehicleHmiViewModel({
+  ...fixture,
+  revision: 10,
+  tasks: [
+    { ...fixture.tasks[0], task_id: "report", title: "提交报告", task_type: "rigid", priority: "high", location: null },
+    { ...fixture.tasks[1], task_id: "pickup", title: "机场接人", task_type: "flexible", priority: "medium", location: "苏南硕放机场" }
+  ]
+}, { now });
+assert.equal(locationFallbackVm.tasks.primary.title, "提交报告");
+assert.equal(locationFallbackVm.tasks.navigation.title, "机场接人");
+assert.equal(locationFallbackVm.navigation.destination, "苏南硕放机场");
+
+const failedServiceVm = model.buildVehicleHmiViewModel({
+  ...fixture,
+  revision: 11,
+  service_orders: [{ ...fixture.service_orders[0], status: "failed", error_code: "PROVIDER_UNAVAILABLE" }]
+}, { now });
+assert.equal(failedServiceVm.serviceOrders.hasFailure, true);
 
 const suppressed = model.buildVehicleHmiViewModel({
   ...fixture,
@@ -110,6 +129,17 @@ const wrongSurface = model.buildVehicleHmiViewModel({
 }, { now });
 assert.equal(wrongSurface.interaction.canConfirm, false);
 assert.equal(wrongSurface.interaction.disabledReason, "wrong_surface");
+
+const mobileOwnedOutput = model.buildVehicleHmiViewModel({
+  ...fixture,
+  revision: 13,
+  output: { ...fixture.output, owner_surface: "mobile", suppressed_surfaces: [] }
+}, { now });
+assert.equal(mobileOwnedOutput.agentOutput.available, false);
+
+const missingRequired = model.buildVehicleHmiViewModel({ ...fixture, revision: 14, tasks: undefined }, { now });
+assert.equal(missingRequired.meta.isCompatible, false);
+assert.equal(missingRequired.meta.reason, "invalid_tasks");
 
 assert.deepEqual(
   model.acceptWorldState({ sessionId: "s1", revision: 2, retiredSessionIds: [] }, { ...fixture, session_id: "s1", revision: 3 }),

@@ -1,4 +1,6 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const model = require("../src/world-state-model.js");
 const agent = require("../src/agent-client.js");
 
@@ -46,8 +48,12 @@ async function main() {
   assert.equal(parsed.events[0].data, '{"revision":1,\n"ok":true}');
   assert.equal(parsed.remainder, "event: ping\ndata: keep");
 
+  const fixture = JSON.parse(fs.readFileSync(
+    path.resolve(__dirname, "../../../contracts/examples/world-state.json"),
+    "utf8"
+  ));
   const baseState = {
-    schema_version: "0.2.0",
+    ...fixture,
     session_id: "session-a",
     revision: 1
   };
