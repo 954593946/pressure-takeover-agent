@@ -211,6 +211,8 @@ service.mock.config
 | 停车复盘 | `POST /v1/event` | `scene.parked` | 主端回到手机复盘。 |
 | 重置 Demo | `POST /v1/session/reset` | - | 回到初始状态。 |
 
+“载入演示预置任务”无需先单独点击“连接 Agent”。填写当前 Agent API 和 Team Token 后可直接点击“载入”，控制台会保存配置、读取当前 State，再提交 `task.created`；如果共享 State 已有任务，按钮会锁定，避免覆盖手机端输入。
+
 ## 推荐演示顺序
 
 建议每次演示前先点击 `重置 Demo`。

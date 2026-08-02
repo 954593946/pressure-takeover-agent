@@ -415,7 +415,7 @@ function blockedReason(actionKey) {
   const stage = worldState?.stage;
   const hasTasks = Boolean(worldState?.tasks?.length);
   const hasConfirmation = worldState?.confirmation?.status === "pending";
-  if (!worldState && !["refresh", "waitTask"].includes(actionKey)) return "未连接 Agent";
+  if (!worldState && !["refresh", "waitTask", "presetTask"].includes(actionKey)) return "未连接 Agent";
   if (actionKey === "presetTask" && hasTasks) return "当前已有手机任务，无需载入演示预置";
   if (["serviceSuccess", "serviceStock", "serviceBudget"].includes(actionKey) && hasTasks) return "主故事已开始，服务模拟配置已锁定";
   if (["meeting", "approach", "vehicle", "traffic", "stress", "utterance"].includes(actionKey) && !hasTasks) return "需要先创建任务";
@@ -538,6 +538,15 @@ document.addEventListener("click", async (event) => {
     const action = actionButton.dataset.action;
     if (action === "confirm") await confirm("button");
     else if (action === "voiceConfirm") await confirm("voice");
+    else if (action === "presetTask") {
+      if (!worldState) {
+        saveConfig();
+        await loadHealth("preset.health");
+        await loadState("preset.state");
+        connectStream();
+      }
+      await submitEvent(action);
+    }
     else if (["refresh", "waitTask"].includes(action)) {
       if (action === "waitTask") {
         mobileTaskSyncAcknowledged = true;

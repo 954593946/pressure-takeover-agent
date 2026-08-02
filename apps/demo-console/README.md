@@ -81,5 +81,6 @@ http://127.0.0.1:5174/apps/demo-console/
 - 控制台不直接设置 stage、pressure、actions、confirmation。
 - 所有状态展示都来自 Agent 返回的 World State。
 - 现场手机端失败时，控制台侧栏的预置任务按钮作为可选兜底，但仍走正式 API。
+- 预置任务按钮在 State 尚未加载时仍可点击；它会先保存当前 Agent 地址和 Token、完成连接，再通过正式 `task.created` 事件载入任务。已有任务时自动锁定，避免覆盖手机任务。
 - 主故事创建任务后锁定服务模拟配置，避免现场误切成功/缺货/超预算分支。
 - 确认请求结果不明确时先重新读取 `/v1/state`，确认仍为 pending 才允许重试。
