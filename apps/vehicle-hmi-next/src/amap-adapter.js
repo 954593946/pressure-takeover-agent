@@ -7,7 +7,14 @@
 
   const USAGE_KEY = "auri-hmi-next-amap-usage";
   const DEFAULT_LIMITS = { mapLoads: 200, routePlans: 200 };
+  const MAX_FAILURE_FALLBACK_MS = 1800;
   let loaderPromise = null;
+
+  function boundedTimeoutMs(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) return MAX_FAILURE_FALLBACK_MS;
+    return Math.min(MAX_FAILURE_FALLBACK_MS, Math.max(10, Math.round(parsed)));
+  }
 
   function clamp(value, min = 0, max = 1) {
     return Math.max(min, Math.min(max, Number(value) || 0));
@@ -185,8 +192,26 @@
       script.async = true;
       script.dataset.auriAmap = "true";
       script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(config.amapKey)}&plugin=AMap.Driving,AMap.MoveAnimation`;
-      script.onload = () => root.AMap ? resolve(root.AMap) : reject(new Error("高德地图对象不可用"));
-      script.onerror = () => reject(new Error("高德地图加载失败"));
+      const timeoutMs = boundedTimeoutMs(config.amapLoadTimeoutMs);
+      let settled = false;
+      let timer = null;
+      const finish = (callback, value, removeScript = false) => {
+        if (settled) return;
+        settled = true;
+        if (timer !== null) root.clearTimeout(timer);
+        script.onload = null;
+        script.onerror = null;
+        if (removeScript) script.remove?.();
+        callback(value);
+      };
+      script.onload = () => root.AMap
+        ? finish(resolve, root.AMap)
+        : finish(reject, new Error("高德地图对象不可用"), true);
+      script.onerror = () => finish(reject, new Error("高德地图加载失败"), true);
+      timer = root.setTimeout(
+        () => finish(reject, new Error(`高德地图加载超时（${timeoutMs}ms）`), true),
+        timeoutMs
+      );
       root.document.head.appendChild(script);
     }).catch((error) => {
       loaderPromise = null;
@@ -227,6 +252,8 @@
       this.cameraMode = "overview";
       this.pendingRouteKey = null;
       this.pendingRoutePromise = null;
+      this.failedRouteKey = null;
+      this.failedRouteReason = null;
     }
 
     async init(config) {
@@ -238,7 +265,7 @@
       const usage = readUsage();
       const limits = usageLimits(config);
       if (usage.mapLoads >= limits.mapLoads) {
-        this.fallback("地图调用保护已启用");
+        this.fallback("已切换离线导航", "地图调用保护已启用");
         return { mode: "offline", reason: "usage_guard" };
       }
       this.onStatus({ mode: "loading", message: "正在连接高德地图", usage });
@@ -270,8 +297,9 @@
         this.onStatus({ mode: "map_ready", message: "高德地图已连接", usage: readUsage() });
         return { mode: "map_ready" };
       } catch (error) {
-        this.fallback(error?.message || "高德地图不可用");
-        return { mode: "offline", reason: error?.message || String(error) };
+        const reason = error?.message || String(error);
+        this.fallback("已切换离线导航", reason);
+        return { mode: "offline", reason };
       }
     }
 
@@ -295,9 +323,12 @@
       if (!this.map || !routeConfig?.start || !routeConfig?.end) return { mode: this.status, planned: false };
       if (this.routeKey === routeKey && this.routePath.length) return { mode: "online", planned: false };
       if (this.pendingRouteKey === routeKey && this.pendingRoutePromise) return this.pendingRoutePromise;
+      if (this.failedRouteKey === routeKey) {
+        return { mode: "offline", planned: false, reason: this.failedRouteReason || "route_failed" };
+      }
       const usage = readUsage();
       if (usage.routePlans >= usageLimits(this.config).routePlans) {
-        this.fallback("路线调用保护已启用");
+        this.fallback("已切换离线导航", "路线调用保护已启用");
         return { mode: "offline", reason: "usage_guard" };
       }
       this.onStatus({ mode: "loading", message: "正在规划路线", usage });
@@ -306,20 +337,35 @@
       this.pendingRoutePromise = (async () => {
         try {
           const route = await new Promise((resolve, reject) => {
-          const driving = new AMap.Driving({ policy: AMap.DrivingPolicy?.LEAST_TIME ?? 0, extensions: "all", hideMarkers: true, showTraffic: true });
-          recordUsage("routePlans");
-          driving.search(routeConfig.start, routeConfig.end, (status, result) => {
-            const candidate = result?.routes?.[0];
-            const path = flattenDrivingPath(candidate);
-            if (status !== "complete" || path.length < 2) reject(new Error(result?.info || "高德路线规划失败"));
-            else resolve({ route: candidate, path });
-          });
+            const timeoutMs = boundedTimeoutMs(this.config?.amapRouteTimeoutMs);
+            const driving = new AMap.Driving({ policy: AMap.DrivingPolicy?.LEAST_TIME ?? 0, extensions: "all", hideMarkers: true, showTraffic: true });
+            let settled = false;
+            let timer = null;
+            const finish = (callback, value) => {
+              if (settled) return;
+              settled = true;
+              if (timer !== null) root.clearTimeout(timer);
+              callback(value);
+            };
+            timer = root.setTimeout(
+              () => finish(reject, new Error(`高德路线规划超时（${timeoutMs}ms）`)),
+              timeoutMs
+            );
+            recordUsage("routePlans");
+            driving.search(routeConfig.start, routeConfig.end, (status, result) => {
+              const candidate = result?.routes?.[0];
+              const path = flattenDrivingPath(candidate);
+              if (status !== "complete" || path.length < 2) finish(reject, new Error(result?.info || "高德路线规划失败"));
+              else finish(resolve, { route: candidate, path });
+            });
           });
           this.clearRoute();
           this.routeKey = routeKey;
           this.drivingRoute = route.route;
           this.routePath = route.path;
           this.routeGeometry = buildRouteGeometry(route.path);
+          this.failedRouteKey = null;
+          this.failedRouteReason = null;
           this.drawRoute(AMap, routeConfig);
           this.status = "online";
           this.mapWrap.classList.add("is-amap-online");
@@ -330,7 +376,9 @@
           if (this.lastSnapshot) this.update(this.lastSnapshot);
           return { mode: "online", planned: true };
         } catch (error) {
-          this.fallback(error?.message || "高德路线不可用");
+          this.failedRouteKey = routeKey;
+          this.failedRouteReason = error?.message || String(error);
+          this.fallback("已切换离线导航", this.failedRouteReason);
           return { mode: "offline", reason: error?.message || String(error) };
         } finally {
           if (this.pendingRouteKey === routeKey) {
@@ -495,12 +543,12 @@
       this.fallback(message);
     }
 
-    fallback(message) {
+    fallback(message, detail = null) {
       this.status = "offline";
       this.overlays.vehicleMarker?.stopMove?.();
       this.container.hidden = true;
       this.mapWrap.classList.remove("is-amap-online");
-      this.onStatus({ mode: "offline", message, usage: readUsage() });
+      this.onStatus({ mode: "offline", message, detail, usage: readUsage() });
     }
 
     getStatus() { return this.status; }
@@ -509,8 +557,10 @@
   }
 
   return {
+    MAX_FAILURE_FALLBACK_MS,
     USAGE_KEY,
     bearing,
+    boundedTimeoutMs,
     buildRouteGeometry,
     create(options) { return new AuriAmapAdapter(options); },
     flattenDrivingPath,

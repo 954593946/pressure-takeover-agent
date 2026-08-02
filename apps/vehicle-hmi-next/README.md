@@ -2,7 +2,7 @@
 
 这是基于 Bosch-Agent 真实运行底座重建的 AURI 车机 HMI 候选版本。
 
-当前完成 Phase 8 视觉、断线恢复与长稳候选验收：AURI 品牌外壳、只读 World State、高德真实导航、驾驶员侧接管确认、本地完整主线和 AURI 体验补全均已实现。页面保留 Bosch-Agent 的 1920x1080 固定画布、整屏缩放、高清车辆、地图舞台、路线控制器、右侧玻璃浮层和底部 Dock；任务、ETA、风险、手机语音、腕上设备、动作和空调状态来自 Agent 完整快照。
+当前完成 Phase 9 地图故障快速降级候选验收：AURI 品牌外壳、只读 World State、高德真实导航、驾驶员侧接管确认、本地完整主线和 AURI 体验补全均已实现。页面保留 Bosch-Agent 的 1920x1080 固定画布、整屏缩放、高清车辆、地图舞台、路线控制器、右侧玻璃浮层和底部 Dock；任务、ETA、风险、手机语音、腕上设备、动作和空调状态来自 Agent 完整快照。
 
 ## 运行
 
@@ -26,7 +26,7 @@ http://127.0.0.1:5174/apps/vehicle-hmi/
 
 完成视觉和功能验收前，不替换正式目录。
 
-## Phase 1-8 已完成能力
+## Phase 1-9 已完成能力
 
 - AURI Logo、名称、口号和品牌 Token。
 - 无任务首屏与“等待手机同步路线”状态。
@@ -79,6 +79,9 @@ http://127.0.0.1:5174/apps/vehicle-hmi/
 - 车外、接近车辆和停车阶段速度归零；驾驶阶段的 `68` 明确标记为 Demo 车辆信号，不冒充 Agent 契约字段。
 - SSE 真正断开 15 秒期间页面不假更新；恢复网络后先取最新快照并重新进入 streaming。
 - 30 分钟长稳采样通过：Heap、DOM、Document、Timeout、Interval 和 RAF 均无持续增长，未检测到重复计时器。
+- 高德 SDK 加载或路线规划永不返回时，1800ms 硬超时并恢复 Bosch 离线地图；外部配置不能放宽到 2 秒以上。
+- 同一失败路线在后续 revision 中不会重复规划或消耗免费额度；新路线仍可重新尝试。
+- 地图故障的技术原因只保留在返回值和状态详情中，甲方界面统一显示“已切换离线导航”。
 
 ## 当前没有实现
 
@@ -158,6 +161,15 @@ node apps/vehicle-hmi-next/tests/amap-adapter.test.cjs
 ```
 
 2026-08-02 基线：断网 15.06 秒期间 revision 保持 1，恢复后 0.27 秒追到 revision 4；1805.17 秒内 31 次采样，Heap 净增 6,428 bytes，DOM/Document 净增 0，活动 Timeout/Interval/RAF 始终各 1，无重复计时器或页面错误。headless RAF 中位数 43.73 FPS，仅作为自动化基线，目标展示设备 45 FPS 仍需实机验收。
+
+### 高德故障快速降级
+
+```bash
+/home/fly/miniconda3/envs/bosch-agent-dev/bin/python \
+  apps/vehicle-hmi-next/tests/e2e_amap_fallback.py
+```
+
+测试在 Chromium 中注入可初始化但路线永不回调的高德替身，使用正式 World State 示例触发导航。2026-08-02 基线为 1.855 秒切换到 Bosch 离线地图，路线规划计数为 1，JavaScript 错误为 0；截图写入 `/tmp/auri-hmi-amap-fallback.png`。
 
 ### 本地完整主线
 

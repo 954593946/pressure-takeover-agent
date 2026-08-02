@@ -28,6 +28,7 @@ class FakeElement {
     this.tagName = tagName.toUpperCase();
     this.children = [];
     this.className = "";
+    this.dataset = {};
     this.hidden = false;
     this.innerHTML = "";
     this.textContent = "";
@@ -173,6 +174,7 @@ const successfulRoute = {
 class FakeDriving {
   search(_start, _end, callback) {
     routePlanCount += 1;
+    if (drivingResultMode === "hang") return;
     if (drivingResultMode === "failure") {
       callback("error", { info: "route unavailable" });
       return;
@@ -202,7 +204,7 @@ global.localStorage = {
   }
 };
 
-global.AMap = {
+const fakeAMap = {
   Map: FakeMap,
   TileLayer: { Traffic: FakeTrafficLayer },
   Driving: FakeDriving,
@@ -210,6 +212,7 @@ global.AMap = {
   Polyline: FakePolyline,
   Marker: FakeMarker
 };
+global.AMap = fakeAMap;
 
 const amap = require("../src/amap-adapter.js");
 
@@ -249,7 +252,26 @@ function currentLocalMonth() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
+async function settleWithin(promise, timeoutMs = 200) {
+  const startedAt = Date.now();
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve({ timedOut: true }), timeoutMs);
+  });
+  const outcome = await Promise.race([
+    promise.then((value) => ({ timedOut: false, value })),
+    timeout
+  ]);
+  clearTimeout(timer);
+  return { ...outcome, elapsedMs: Date.now() - startedAt };
+}
+
 async function main() {
+  assert.equal(amap.MAX_FAILURE_FALLBACK_MS, 1800);
+  assert.equal(amap.boundedTimeoutMs(), 1800);
+  assert.equal(amap.boundedTimeoutMs(10000), 1800, "external config cannot exceed the 2-second fallback budget");
+  assert.equal(amap.boundedTimeoutMs(20), 20);
+
   const flattened = amap.flattenDrivingPath({
     steps: [
       { path: [[0, 0], [0.001, 0], [0.001, 0]] },
@@ -359,7 +381,8 @@ async function main() {
   });
   assert.deepEqual(mapGuardResult, { mode: "offline", reason: "usage_guard" });
   assert.equal(mapGuard.container.hidden, true);
-  assert.match(mapGuard.statuses.at(-1).message, /地图调用保护/);
+  assert.equal(mapGuard.statuses.at(-1).message, "已切换离线导航");
+  assert.match(mapGuard.statuses.at(-1).detail, /地图调用保护/);
 
   resetRuntime();
   const routeGuard = createAdapter();
@@ -391,6 +414,8 @@ async function main() {
   const failedRouteResult = await failedRoute.adapter.setRoute(routeConfig, "failed-route");
   assert.equal(failedRouteResult.mode, "offline");
   assert.match(failedRouteResult.reason, /route unavailable/);
+  assert.equal(failedRoute.statuses.at(-1).message, "已切换离线导航");
+  assert.match(failedRoute.statuses.at(-1).detail, /route unavailable/);
   assert.equal(failedRoute.container.hidden, true);
   assert.equal(failedRoute.mapWrap.classList.contains("is-amap-online"), false);
 
@@ -400,6 +425,62 @@ async function main() {
   assert.deepEqual(offlineResult, { mode: "offline" });
   assert.equal(offline.container.hidden, true);
   assert.equal(offline.adapter.getStatus(), "offline");
+
+  const timeoutFailures = [];
+
+  resetRuntime();
+  drivingResultMode = "hang";
+  const hangingRoute = createAdapter();
+  await hangingRoute.adapter.init({
+    mapProvider: "amap",
+    amapKey: "test-key",
+    amapMonthlyMapLimit: 10,
+    amapMonthlyRouteLimit: 10,
+    amapRouteTimeoutMs: 20
+  });
+  const hangingRouteOutcome = await settleWithin(
+    hangingRoute.adapter.setRoute(routeConfig, "hanging-route"),
+    200
+  );
+  try {
+    assert.equal(hangingRouteOutcome.timedOut, false, "hanging Driving.search must fall back within 200ms");
+    assert.ok(hangingRouteOutcome.elapsedMs < 200, `route timeout fallback took ${hangingRouteOutcome.elapsedMs}ms`);
+    assert.equal(hangingRouteOutcome.value.mode, "offline");
+    assert.match(hangingRouteOutcome.value.reason, /超时/);
+    assert.equal(hangingRoute.container.hidden, true);
+    assert.equal(hangingRoute.mapWrap.classList.contains("is-amap-online"), false);
+    const plansAfterFailure = routePlanCount;
+    const duplicateFailure = await hangingRoute.adapter.setRoute(routeConfig, "hanging-route");
+    assert.equal(duplicateFailure.mode, "offline");
+    assert.equal(duplicateFailure.planned, false);
+    assert.equal(routePlanCount, plansAfterFailure, "same failed route must not consume another route plan");
+  } catch (error) {
+    timeoutFailures.push(error);
+  }
+
+  resetRuntime();
+  const loadingTimeout = createAdapter();
+  delete global.AMap;
+  try {
+    const loadingOutcome = await settleWithin(loadingTimeout.adapter.init({
+      mapProvider: "amap",
+      amapKey: "test-key",
+      amapMonthlyMapLimit: 10,
+      amapMonthlyRouteLimit: 10,
+      amapLoadTimeoutMs: 20
+    }), 200);
+    assert.equal(loadingOutcome.timedOut, false, "AMap script loading must fall back within 200ms");
+    assert.ok(loadingOutcome.elapsedMs < 200, `AMap load timeout fallback took ${loadingOutcome.elapsedMs}ms`);
+    assert.equal(loadingOutcome.value.mode, "offline");
+    assert.match(loadingOutcome.value.reason, /超时/);
+    assert.equal(loadingTimeout.container.hidden, true);
+  } catch (error) {
+    timeoutFailures.push(error);
+  } finally {
+    global.AMap = fakeAMap;
+  }
+
+  if (timeoutFailures.length) throw new AggregateError(timeoutFailures, "AMap timeout fallback tests failed");
 
   console.log("vehicle-hmi-next amap-adapter tests passed");
 }
