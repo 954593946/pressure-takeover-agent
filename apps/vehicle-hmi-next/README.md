@@ -2,7 +2,7 @@
 
 这是基于 Bosch-Agent 真实运行底座重建的 AURI 车机 HMI 候选版本。
 
-当前进入 Phase 6 候选验收：AURI 品牌外壳、只读 World State、高德真实导航、驾驶员侧接管确认、本地完整主线和 AURI 体验补全均已实现。页面保留 Bosch-Agent 的 1920x1080 固定画布、整屏缩放、高清车辆、地图舞台、路线控制器、右侧玻璃浮层和底部 Dock；任务、ETA、风险、手机语音、腕上设备、动作和空调状态来自 Agent 完整快照。
+当前完成 Phase 7 多端联调候选验收：AURI 品牌外壳、只读 World State、高德真实导航、驾驶员侧接管确认、本地完整主线和 AURI 体验补全均已实现。页面保留 Bosch-Agent 的 1920x1080 固定画布、整屏缩放、高清车辆、地图舞台、路线控制器、右侧玻璃浮层和底部 Dock；任务、ETA、风险、手机语音、腕上设备、动作和空调状态来自 Agent 完整快照。
 
 ## 运行
 
@@ -26,7 +26,7 @@ http://127.0.0.1:5174/apps/vehicle-hmi/
 
 完成视觉和功能验收前，不替换正式目录。
 
-## Phase 1-6 已完成能力
+## Phase 1-7 已完成能力
 
 - AURI Logo、名称、口号和品牌 Token。
 - 无任务首屏与“等待手机同步路线”状态。
@@ -70,15 +70,20 @@ http://127.0.0.1:5174/apps/vehicle-hmi/
 - 确认按钮按过期时间自动关闭；网络结果未知时保持锁定，完成 `/v1/state` 对账后才允许重试。
 - World State 校验覆盖必填字段、Stage、Scene、Owner 和主要数组；非车机 Owner 的 output 不进入车机主结论。
 - 候选页不再加载旧 Leaflet/二维码外部依赖，旧咖啡订单恢复、旧语音和旧导演控制器在 AURI 模式下不启动。
+- 手机使用的 `/v1/chat`、Demo Console 和候选 HMI 已在同一本地 Session 完成跨端主线：任务创建、会议延迟、进入车辆、拥堵、手机语音求助、车机确认、cooldown 和停车复盘均由统一 revision 驱动。
+- 手机空调口令可结构化写入 `vehicle_state` 的开关、温度、模式和风量；Console 与 HMI 通过同一 SSE 快照同步展示，不保留本地业务副本。
+- 候选 HMI 主动断开状态流后，由 Console 推进 Agent；重新连接会先拉取最新 State 再恢复 SSE，验证无状态漂移。
+- 1920x720 宽屏边界截图通过，确认卡、地图、腕上通知和底部 Dock 无重叠或内部溢出。
 
 ## 当前没有实现
 
 - 全部 Demo 阶段的连续自动播放与性能长稳测试。
-- WebSocket 可选兼容路径和四端完整联调。
+- WebSocket 可选兼容路径、真实腕表硬件和完整四端现场联调。
+- 公网共享 Agent 的完整写入主线；当前只允许在团队约定的专用 Session 和时间窗口执行，避免改写他人演示状态。
 - 后端 `/health` 的服务名、构建 SHA 和启动时间字段；当前 HMI 只展示后端实际提供的健康、Schema 和 LLM 状态。
 - 正式 Route/Location 坐标契约；当前已知 Demo 地点使用冻结映射，未知地址保持离线降级。
 
-剩余能力按 `myProj/Bosch-Agent底座_AURI重构/todolist.md` 完成四端联调、长稳测试和正式切换。禁止从旧 `apps/vehicle-hmi/` 复制 DOM、CSS 或卡片布局；只允许迁移经过测试的数据和接口逻辑。
+剩余能力按 `myProj/Bosch-Agent底座_AURI重构/todolist.md` 完成真实腕表联调、公网写入、长稳测试和正式切换。禁止从旧 `apps/vehicle-hmi/` 复制 DOM、CSS 或卡片布局；只允许迁移经过测试的数据和接口逻辑。
 
 ## 开发约束
 
@@ -130,3 +135,16 @@ AURI_HMI_URL=http://127.0.0.1:5174/apps/vehicle-hmi-next/ \
 ```
 
 脚本会重置目标 Agent Session，只能指向独立本地 Agent；检测到 `onrender.com` 会直接拒绝执行。它真实提交标准事件、等待 SSE revision、点击车机确认，并验证停车后主端回到手机。脚本不包含任何 API Key 或 Team Token。
+
+### Console + 手机 Chat + HMI 多端联调
+
+使用同一独立本地 Agent 和静态服务器，运行：
+
+```bash
+AURI_AGENT_URL=http://127.0.0.1:8795 \
+AURI_WEB_ROOT=http://127.0.0.1:5174 \
+/home/fly/miniconda3/envs/bosch-agent-dev/bin/python \
+  apps/vehicle-hmi-next/tests/e2e_console_hmi_sync.py
+```
+
+脚本通过手机实际使用的 `/v1/chat` 创建任务和控制空调，通过 Console 页面真实按钮推进外部事件，通过候选 HMI 按钮确认动作，并验证两个页面的 Session、revision、任务、语音、动作和 `vehicle_state` 一致。脚本还会暂停 HMI 状态流、推进 Agent 后重新连接，验证快照追平与 SSE 恢复。检测到 `onrender.com` 时会拒绝重置和运行。

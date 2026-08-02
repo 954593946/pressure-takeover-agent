@@ -266,6 +266,26 @@ async def test_ac_temperature_and_close_commands_are_deterministic() -> None:
 
 
 @pytest.mark.asyncio
+async def test_ac_mode_and_fan_commands_are_written_to_world_state() -> None:
+    agent = AuriAgent(Settings(llm_enabled=False, openai_api_key=""))
+
+    result = await agent.handle(
+        "空调调到26度制冷大风",
+        initial_state("demo_ac_mode_fan"),
+        source="mobile",
+        event_id="evt_ac_mode_fan",
+    )
+
+    assert result.called_tools == ["control_ac"]
+    assert result.state.vehicle_state.ac_on is True
+    assert result.state.vehicle_state.ac_target_temp == 26
+    assert result.state.vehicle_state.ac_mode == "cool"
+    assert result.state.vehicle_state.fan_speed == "high"
+    assert "26℃" in result.state.output.conclusion
+    assert "已经同步" in result.state.output.conclusion
+
+
+@pytest.mark.asyncio
 async def test_chat_stream_opens_ac_on_first_request_after_task_creation() -> None:
     runtime = AgentRuntime(Settings(llm_enabled=False, openai_api_key=""))
     chat = ChatAgent(runtime)

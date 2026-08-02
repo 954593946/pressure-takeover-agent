@@ -50,8 +50,8 @@ http://127.0.0.1:5174/apps/demo-console/
 页面支持在顶部输入：
 
 - `Agent API`：例如 `http://127.0.0.1:8000` 或云端 Agent 地址。
-- `Team Token`：仅本地运行时填写，保存到浏览器 `localStorage`。
-  默认 Agent API 为团队 LangChain 公网地址；本地开发可点击 `本地 Agent` 切换。
+- `Team Token`：连接启用共享访问的 Agent 时填写，保存到浏览器 `localStorage`。
+  默认 Agent API 为团队主公网地址 `https://auri-agent-api.onrender.com`；备用 LangChain 地址和本地 Agent 均可通过页面按钮切换。
 
 不要把团队 Token、OpenAI API Key 或其他密钥提交到仓库。
 

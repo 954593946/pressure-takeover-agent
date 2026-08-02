@@ -208,6 +208,21 @@ class AuriAgent:
         command: dict[str, Any] = {"ac_on": True}
         if temperature_match is not None:
             command["target_temp"] = float(temperature_match.group(1))
+        if any(marker in compact for marker in ("制冷", "冷风", "冷气")):
+            command["mode"] = "cool"
+        elif any(marker in compact for marker in ("制热", "暖风", "热风")):
+            command["mode"] = "heat"
+        elif any(marker in compact for marker in ("送风", "通风")):
+            command["mode"] = "fan"
+        elif "自动" in compact:
+            command["mode"] = "auto"
+
+        if any(marker in compact for marker in ("大风", "高风", "强风", "风量高", "最大风量")):
+            command["fan_speed"] = "high"
+        elif any(marker in compact for marker in ("小风", "低风", "微风", "风量低")):
+            command["fan_speed"] = "low"
+        elif any(marker in compact for marker in ("中风", "风量中")):
+            command["fan_speed"] = "medium"
         return command
 
     async def compose_confirmation_reply(self, state: WorldState, *, decision: str) -> str:
