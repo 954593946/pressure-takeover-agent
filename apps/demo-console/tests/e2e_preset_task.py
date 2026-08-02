@@ -42,7 +42,15 @@ def main() -> None:
         browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
         page = browser.new_page(viewport={"width": 1920, "height": 1080})
         page_errors: list[str] = []
+        event_payloads: list[dict] = []
         page.on("pageerror", lambda error: page_errors.append(str(error)))
+        page.on(
+            "request",
+            lambda req: event_payloads.append(json.loads(req.post_data))
+            if req.url == f"{AGENT}/v1/event" and req.post_data
+            else None,
+        )
+        page.route(f"{AGENT}/health", lambda route: route.abort())
         page.add_init_script(
             f"localStorage.setItem('auri-demo-console-config', {json.dumps(config)});"
         )
@@ -58,6 +66,9 @@ def main() -> None:
 
         preset.click()
         page.wait_for_function(
+            "document.querySelector('button[data-action=\"presetTask\"]')?.textContent.includes('连接并载入中')"
+        )
+        page.wait_for_function(
             "document.querySelectorAll('#tasks li').length === 2"
             " && document.querySelector('#tasks')?.textContent.includes('接孩子')"
             " && document.querySelector('#tasks')?.textContent.includes('超市采购')"
@@ -65,6 +76,10 @@ def main() -> None:
         state = api("/v1/state")
         assert [task["title"] for task in state["tasks"]] == ["接孩子", "超市采购"]
         assert state["revision"] == 1
+        assert len(event_payloads) == 1
+        assert len(event_payloads[0]["payload"]["tasks"]) == 2
+        assert event_payloads[0]["payload"]["tasks"][0]["task_type"] == "rigid"
+        assert event_payloads[0]["payload"]["tasks"][1]["capability_tags"] == ["grocery_delivery"]
         assert preset.is_disabled()
         assert "task.created" in page.locator("#eventLog").inner_text()
         assert not page_errors, page_errors
@@ -77,6 +92,7 @@ def main() -> None:
                     "session_id": state["session_id"],
                     "revision": state["revision"],
                     "tasks": [task["title"] for task in state["tasks"]],
+                    "structured_task_count": len(event_payloads[0]["payload"]["tasks"]),
                     "button_locked_after_create": preset.is_disabled(),
                     "javascript_errors": len(page_errors),
                 },

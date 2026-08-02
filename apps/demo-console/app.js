@@ -8,6 +8,8 @@ const LEGACY_AGENT_API = "https://auri-langchain-agent-api.onrender.com";
 const LOCAL_AGENT_API = "http://127.0.0.1:8000";
 const DEMO_PRESET_TASK_TEXT = "今天18:10接孩子，之后去超市";
 const DEMO_TRAFFIC_DELAY_MINUTES = 18;
+const API_TIMEOUT_MS = 45_000;
+const GET_RETRY_DELAYS_MS = [0, 900, 2200];
 
 const storedConfigRaw = JSON.parse(localStorage.getItem("auri-demo-console-config") || "{}");
 const storedConfig = storedConfigRaw.apiBase === LEGACY_AGENT_API && storedConfigRaw.configVersion !== 2
@@ -16,7 +18,7 @@ const storedConfig = storedConfigRaw.apiBase === LEGACY_AGENT_API && storedConfi
 const CONFIG = { ...DEFAULT_CONFIG, ...storedConfig, ...(window.AURI_CONFIG || {}) };
 
 const ACTIONS = {
-  presetTask: ["task.created", "mobile", { text: DEMO_PRESET_TASK_TEXT }],
+  presetTask: ["task.created", "mobile", null],
   meeting: ["meeting.overrun", "demo_console", { delay_minutes: 20 }],
   approach: ["scene.approaching", "demo_console", {}],
   vehicle: ["scene.vehicle_entered", "demo_console", {}],
@@ -30,6 +32,50 @@ const ACTIONS = {
   cooldown: ["cooldown.elapsed", "demo_console", {}],
   parked: ["scene.parked", "demo_console", {}]
 };
+
+function shanghaiDate() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function presetTaskPayload() {
+  const date = shanghaiDate();
+  return {
+    text: DEMO_PRESET_TASK_TEXT,
+    tasks: [
+      {
+        task_id: "task_pickup_child",
+        title: "接孩子",
+        scheduled_at: `${date}T18:10:00+08:00`,
+        location: "阳光小学",
+        task_type: "rigid",
+        priority: "high",
+        adjustable: false,
+        status: "pending",
+        waiting_party: ["王老师", "孩子妈妈"],
+        capability_tags: []
+      },
+      {
+        task_id: "task_grocery",
+        title: "超市采购",
+        scheduled_at: `${date}T19:30:00+08:00`,
+        location: null,
+        task_type: "flexible",
+        priority: "low",
+        adjustable: true,
+        status: "pending",
+        waiting_party: [],
+        capability_tags: ["grocery_delivery"]
+      }
+    ]
+  };
+}
 
 function trafficPayload(state) {
   const tasks = Array.isArray(state?.tasks) ? state.tasks : [];
@@ -49,7 +95,9 @@ function trafficPayload(state) {
 
 function eventDefinition(actionKey) {
   const [type, source, payload] = ACTIONS[actionKey];
-  return [type, source, actionKey === "traffic" ? trafficPayload(worldState) : payload];
+  if (actionKey === "traffic") return [type, source, trafficPayload(worldState)];
+  if (actionKey === "presetTask") return [type, source, presetTaskPayload()];
+  return [type, source, payload];
 }
 
 const $ = (selector) => document.querySelector(selector);
@@ -134,6 +182,9 @@ function log(kind, message, detail = "") {
 
 function friendlyError(error) {
   const message = error?.message || String(error);
+  if (message.includes("请求超时")) {
+    return `${message}；公网 Agent 可能正在冷启动，请稍后重试。`;
+  }
   if (message.includes("NetworkError") || message.includes("Failed to fetch") || message.includes("Load failed")) {
     return `${message}；请确认 Agent 后端已启动、Agent API 地址正确，且后端 CORS 放行当前页面端口。`;
   }
@@ -143,17 +194,60 @@ function friendlyError(error) {
   return message;
 }
 
+function wait(milliseconds) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = API_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error?.name === "AbortError") throw new Error(`请求超时（${Math.round(timeoutMs / 1000)} 秒）`);
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+async function fetchWithGetRetry(url, options = {}) {
+  let lastError = null;
+  for (let attempt = 0; attempt < GET_RETRY_DELAYS_MS.length; attempt += 1) {
+    if (GET_RETRY_DELAYS_MS[attempt]) await wait(GET_RETRY_DELAYS_MS[attempt]);
+    try {
+      const response = await fetchWithTimeout(url, options);
+      if ([502, 503, 504].includes(response.status) && attempt < GET_RETRY_DELAYS_MS.length - 1) {
+        lastError = new Error(`Agent 暂不可用（HTTP ${response.status}）`);
+        log("retry", new URL(url).pathname, `HTTP ${response.status} · 第 ${attempt + 2} 次连接`);
+        continue;
+      }
+      return response;
+    } catch (error) {
+      lastError = error;
+      if (attempt < GET_RETRY_DELAYS_MS.length - 1) {
+        log("retry", new URL(url).pathname, `第 ${attempt + 2} 次连接`);
+      }
+    }
+  }
+  throw lastError;
+}
+
 async function apiFetch(path, options = {}) {
   const { returnMeta = false, ...fetchOptions } = options;
   const startedAt = performance.now();
-  const response = await fetch(`${CONFIG.apiBase}${path}`, {
+  const requestOptions = {
     ...fetchOptions,
     headers: authHeaders({
       Accept: "application/json",
       ...(fetchOptions.body ? { "Content-Type": "application/json" } : {}),
       ...(fetchOptions.headers || {})
     })
-  });
+  };
+  const method = String(fetchOptions.method || "GET").toUpperCase();
+  const response = method === "GET"
+    ? await fetchWithGetRetry(`${CONFIG.apiBase}${path}`, requestOptions)
+    : await fetchWithTimeout(`${CONFIG.apiBase}${path}`, requestOptions);
   const text = await response.text();
   const data = text ? JSON.parse(text) : null;
   if (!response.ok) {
@@ -169,7 +263,7 @@ async function apiFetch(path, options = {}) {
 }
 
 async function loadHealth(reason = "health") {
-  const response = await fetch(`${CONFIG.apiBase}/health`, {
+  const response = await fetchWithGetRetry(`${CONFIG.apiBase}/health`, {
     headers: { Accept: "application/json" }
   });
   const text = await response.text();
@@ -533,18 +627,21 @@ function saveConfig() {
 document.addEventListener("click", async (event) => {
   const actionButton = event.target.closest("button[data-action]");
   if (!actionButton) return;
+  const originalLabel = actionButton.textContent;
   actionButton.disabled = true;
   try {
     const action = actionButton.dataset.action;
     if (action === "confirm") await confirm("button");
     else if (action === "voiceConfirm") await confirm("voice");
     else if (action === "presetTask") {
-      if (!worldState) {
-        saveConfig();
-        await loadHealth("preset.health");
-        await loadState("preset.state");
-        connectStream();
-      }
+      actionButton.textContent = "连接并载入中…";
+      saveConfig();
+      syncMode = "connecting";
+      renderSyncMode("正在鉴权并读取 World State");
+      log("preset", "开始载入", "先连接 State，再创建演示任务");
+      await loadState("preset.state");
+      connectStream();
+      loadHealth("preset.health").catch((error) => log("error", "preset health", friendlyError(error)));
       await submitEvent(action);
     }
     else if (["refresh", "waitTask"].includes(action)) {
@@ -558,6 +655,7 @@ document.addEventListener("click", async (event) => {
   } catch (error) {
     log("error", actionButton.dataset.action, friendlyError(error));
   } finally {
+    actionButton.textContent = originalLabel;
     actionButton.disabled = false;
     updateButtonStates();
   }

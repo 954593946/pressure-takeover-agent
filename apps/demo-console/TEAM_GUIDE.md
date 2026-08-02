@@ -211,7 +211,9 @@ service.mock.config
 | 停车复盘 | `POST /v1/event` | `scene.parked` | 主端回到手机复盘。 |
 | 重置 Demo | `POST /v1/session/reset` | - | 回到初始状态。 |
 
-“载入演示预置任务”无需先单独点击“连接 Agent”。填写当前 Agent API 和 Team Token 后可直接点击“载入”，控制台会保存配置、读取当前 State，再提交 `task.created`；如果共享 State 已有任务，按钮会锁定，避免覆盖手机端输入。
+“载入演示预置任务”无需先单独点击“连接 Agent”。填写当前 Agent API 和 Team Token 后可直接点击“载入”，控制台会保存配置、读取当前 State，再提交包含结构化 `tasks[]` 的 `task.created`，不等待 LLM 解析；如果共享 State 已有任务，按钮会锁定，避免覆盖手机端输入。
+
+公网服务冷启动时，按钮会显示“连接并载入中…”，`State Sync` 和 Event Log 同步显示连接/重试进度。Health 检查在 State 连接后后台执行，不阻塞任务载入；GET 请求三次失败或单次超过 45 秒后会显示明确错误，不会无限等待。
 
 ## 推荐演示顺序
 
