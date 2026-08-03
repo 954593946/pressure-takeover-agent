@@ -6,8 +6,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -49,32 +47,8 @@ fun ProfileScreen(
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("偏好方案：$profileLabel", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-            if (state.isSyncing) {
-                Spacer(Modifier.width(8.dp))
-                CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp, color = AuriNavy)
-                Spacer(Modifier.width(6.dp))
-                Text("同步中…", style = MaterialTheme.typography.labelSmall, color = AuriNavy)
-            }
         }
         Spacer(Modifier.height(20.dp))
-
-        // ─── Sync error ────────────────────────────────────────────────────
-        if (state.syncError != null) {
-            Surface(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                shape = RoundedCornerShape(12.dp),
-                color = AuriCritical.copy(alpha = 0.1f),
-            ) {
-                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("⚠️", fontSize = 16.sp)
-                    Spacer(Modifier.width(8.dp))
-                    Text(state.syncError ?: "", style = MaterialTheme.typography.bodySmall, color = AuriCritical, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { viewModel.dismissError() }, modifier = Modifier.size(20.dp)) {
-                        Icon(Icons.Filled.Close, contentDescription = "关闭", tint = AuriCritical, modifier = Modifier.size(16.dp))
-                    }
-                }
-            }
-        }
 
         // ─── 停车复盘入口 ──────────────────────────────────────────────────
         EntryCard(
@@ -108,7 +82,7 @@ fun ProfileScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 8.dp)
-                    .clickable(enabled = !state.isSyncing) {
+                    .clickable {
                         viewModel.switchToPreset(preset)
                     },
             ) {
@@ -241,19 +215,6 @@ fun ProfileScreen(
         )
 
         Spacer(Modifier.height(24.dp))
-
-        // ─── Demo note ─────────────────────────────────────────────────────
-        Card(
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = AuriWarning.copy(alpha = 0.08f)),
-        ) {
-            Text(
-                "Demo 模式 · 偏好设置不影响安全权限（L0-L3 阈值、确认权、主交互端仍由确定性代码决定）",
-                modifier = Modifier.padding(14.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = AuriNavy.copy(alpha = 0.6f),
-            )
-        }
     }
 }
 

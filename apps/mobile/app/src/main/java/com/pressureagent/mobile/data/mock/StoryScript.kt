@@ -91,7 +91,7 @@ object StoryScript {
         actions = emptyList(),
         profile = defaultProfile(),
         wearable = Wearable(connected = true, mode = WearableMode.IDLE, text = "任务已创建"),
-        actionLedger = listOf("创建任务: 接孩子(刚性) + 超市采购(弹性)"),
+        actionLedger = listOf("📋 创建了 2 个任务：接孩子、超市采购"),
     )
 
     /**
@@ -122,8 +122,8 @@ object StoryScript {
             haptic = HapticPattern.DOUBLE_SHORT,
         ),
         actionLedger = listOf(
-            "创建任务: 接孩子(刚性) + 超市采购(弹性)",
-            "会议延迟: 出发时间晚于计划",
+            "📋 创建了 2 个任务：接孩子、超市采购",
+            "⚠️ 会议延迟，出发时间晚于计划",
         ),
     )
 
@@ -156,9 +156,9 @@ object StoryScript {
             haptic = HapticPattern.SINGLE_PULSE,
         ),
         actionLedger = listOf(
-            "创建任务: 接孩子(刚性) + 超市采购(弹性)",
-            "会议延迟: 出发时间晚于计划",
-            "交接车机: primary_surface → vehicle_hmi",
+            "📋 创建了 2 个任务：接孩子、超市采购",
+            "⚠️ 会议延迟，出发时间晚于计划",
+            "🚗 手机交接至车机，车载屏幕接管",
         ),
     )
 
@@ -191,9 +191,9 @@ object StoryScript {
             haptic = HapticPattern.NONE,
         ),
         actionLedger = listOf(
-            "创建任务: 接孩子(刚性) + 超市采购(弹性)",
-            "会议延迟: 出发时间晚于计划",
-            "交接车机: primary_surface → vehicle_hmi",
+            "📋 创建了 2 个任务：接孩子、超市采购",
+            "⚠️ 会议延迟，出发时间晚于计划",
+            "🚗 手机交接至车机，车载屏幕接管",
         ),
     )
 
@@ -238,10 +238,10 @@ object StoryScript {
             signalConfidence = 0.7,
         ),
         actionLedger = listOf(
-            "创建任务: 接孩子(刚性) + 超市采购(弹性)",
-            "会议延迟: 出发时间晚于计划",
-            "交接车机: primary_surface → vehicle_hmi",
-            "L2 接管: 交通拥堵，ETA 18:28（+18min）",
+            "📋 创建了 2 个任务：接孩子、超市采购",
+            "⚠️ 会议延迟，出发时间晚于计划",
+            "🚗 手机交接至车机，车载屏幕接管",
+            "🚦 前方拥堵，预计晚到 18 分钟",
         ),
     )
 
@@ -317,11 +317,11 @@ object StoryScript {
         ),
         /* no service_orders yet — will be generated in next step */
         actionLedger = listOf(
-            "创建任务: 接孩子(刚性) + 超市采购(弹性)",
-            "会议延迟: 出发时间晚于计划",
-            "交接车机: primary_surface → vehicle_hmi",
-            "L2 接管: 交通拥堵，ETA 18:28（+18min）",
-            "规划动作: 顺延超市 + 草拟老师/家人消息",
+            "📋 创建了 2 个任务：接孩子、超市采购",
+            "⚠️ 会议延迟，出发时间晚于计划",
+            "🚗 手机交接至车机，车载屏幕接管",
+            "🚦 前方拥堵，预计晚到 18 分钟",
+            "📝 已调整计划：超市延后，草拟通知消息",
         ),
     )
 
@@ -420,12 +420,12 @@ object StoryScript {
             haptic = HapticPattern.THREE_BEAT,
         ),
         actionLedger = listOf(
-            "创建任务: 接孩子(刚性) + 超市采购(弹性)",
-            "会议延迟: 出发时间晚于计划",
-            "交接车机: primary_surface → vehicle_hmi",
-            "L2 接管: 交通拥堵，ETA 18:28（+18min）",
-            "规划动作: 顺延超市 + 草拟老师/家人消息",
-            "服务方案: 超市配送 4项 ¥101.3，配送 18:40-19:10",
+            "📋 创建了 2 个任务：接孩子、超市采购",
+            "⚠️ 会议延迟，出发时间晚于计划",
+            "🚗 手机交接至车机，车载屏幕接管",
+            "🚦 前方拥堵，预计晚到 18 分钟",
+            "📝 已调整计划：超市延后，草拟通知消息",
+            "🛒 超市配送方案就绪：4件商品 ¥101.3",
         ),
         serviceMockMode = "success",
     )
@@ -533,13 +533,13 @@ object StoryScript {
             haptic = HapticPattern.SOFT_SHORT,
         ),
         actionLedger = listOf(
-            "创建任务: 接孩子(刚性) + 超市采购(弹性)",
-            "会议延迟: 出发时间晚于计划",
-            "交接车机: primary_surface → vehicle_hmi",
-            "L2 接管: 交通拥堵，ETA 18:28（+18min）",
-            "规划动作: 顺延超市 + 草拟老师/家人消息",
-            "服务方案: 超市配送 4项 ¥101.3",
-            "已确认: 消息已发送（模拟），订单已提交（模拟）",
+            "📋 创建了 2 个任务：接孩子、超市采购",
+            "⚠️ 会议延迟，出发时间晚于计划",
+            "🚗 手机交接至车机，车载屏幕接管",
+            "🚦 前方拥堵，预计晚到 18 分钟",
+            "📝 已调整计划：超市延后，草拟通知消息",
+            "🛒 超市配送方案就绪：4件商品 ¥101.3",
+            "✅ 消息已发送，订单已提交",
         ),
         serviceMockMode = "success",
     )

@@ -95,39 +95,31 @@ fun VehicleScreen(viewModel: VehicleViewModel = hiltViewModel()) {
             }
         }
 
-        // ─── Quick status grid 2×2 ─────────────────────────────────────────
+        // ─── Quick status cards ─────────────────────────────────────────────
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                QuickStatusCard(
-                    icon = if (state.vehicleStatus.isLocked) "🔒" else "🔓",
-                    label = "门锁",
-                    value = if (state.vehicleStatus.isLocked) "已上锁" else "已解锁",
-                    modifier = Modifier.weight(1f),
-                )
-                QuickStatusCard(
-                    icon = "🌡",
-                    label = "空调",
-                    value = "${state.vehicleStatus.cabinTempCelsius}°C",
-                    modifier = Modifier.weight(1f),
-                )
-            }
+            QuickStatusCard(
+                icon = if (state.vehicleStatus.isLocked) "🔒" else "🔓",
+                label = "门锁",
+                value = if (state.vehicleStatus.isLocked) "已上锁" else "已解锁",
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                QuickStatusCard(
-                    icon = "📍",
-                    label = "位置",
-                    value = state.vehicleStatus.location ?: "未知",
-                    modifier = Modifier.weight(1f),
-                )
-                QuickStatusCard(
-                    icon = "🛡",
-                    label = "安防",
-                    value = if (state.vehicleStatus.securityStatus == "normal") "正常" else "⚠ 警报",
-                    valueColor = if (state.vehicleStatus.securityStatus != "normal") AuriCritical else AuriNavy,
-                    modifier = Modifier.weight(1f),
-                )
-            }
+            QuickStatusCard(
+                icon = "📍",
+                label = "位置",
+                value = state.vehicleStatus.location ?: "未知",
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        item {
+            QuickStatusCard(
+                icon = "🛡",
+                label = "安防",
+                value = if (state.vehicleStatus.securityStatus == "normal") "正常" else "⚠ 警报",
+                valueColor = if (state.vehicleStatus.securityStatus != "normal") AuriCritical else AuriNavy,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
 
         // ─── AC Control (shared state: Agent writes, phone + HMI both read) ─
