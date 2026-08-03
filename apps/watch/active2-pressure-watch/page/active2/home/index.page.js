@@ -202,7 +202,7 @@ function renderWearableState(command) {
   });
   stateWidgets.footer.setProperty(hmUI.prop.MORE, {
     ...FOOTER_STYLE,
-    text: "AURI Active 2"
+    text: "AURI"
   });
 
   getGlobalData().currentState = command;
