@@ -107,9 +107,10 @@ private fun SummaryStat(label: String, value: String) {
 private fun TimelineItem(index: Int, total: Int, text: String) {
     val isLast = index == total
     val dotColor = when {
-        text.contains("L2") || text.contains("L3") -> AuriWarning
-        text.contains("已完成") || text.contains("已确认") || text.contains("已发送") || text.contains("已下单") -> AuriSuccess
-        text.contains("交接") -> AuriProcessing
+        text.contains("🚦") || text.contains("⚠️") -> AuriWarning
+        text.contains("✅") || text.contains("🛒") -> AuriSuccess
+        text.contains("🚗") || text.contains("📝") -> AuriProcessing
+        text.contains("📋") -> AuriNavy.copy(alpha = 0.7f)
         else -> AuriNavy.copy(alpha = 0.4f)
     }
 

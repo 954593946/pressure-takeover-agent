@@ -10,7 +10,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.*
@@ -41,7 +40,6 @@ import java.util.Locale
 @Composable
 fun CalendarScreen(
     viewModel: CalendarViewModel = hiltViewModel(),
-    onNavigateToCreate: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
 
@@ -53,14 +51,6 @@ fun CalendarScreen(
 
     Scaffold(
         containerColor = AuriIvory,
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = onNavigateToCreate,
-                containerColor = AuriNavy,
-                contentColor = Color.White,
-                shape = RoundedCornerShape(16.dp),
-            ) { Icon(Icons.Filled.Add, contentDescription = "创建任务") }
-        },
     ) { scaffoldPadding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(scaffoldPadding),
