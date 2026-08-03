@@ -49,6 +49,7 @@ class FakeMap {
     this.options = options;
     this.added = [];
     this.removed = [];
+    this.rotation = Number(options.rotation || 0);
   }
 
   add(value) {
@@ -73,7 +74,12 @@ class FakeMap {
   }
 
   setRotation(rotation) {
+    this.rotation = rotation;
     calls.push(["rotation", rotation]);
+  }
+
+  getRotation() {
+    return this.rotation;
   }
 
   zoomIn() {
@@ -275,6 +281,10 @@ async function main() {
   assert.equal(amap.boundedTimeoutMs(), 1800);
   assert.equal(amap.boundedTimeoutMs(10000), 1800, "external config cannot exceed the 2-second fallback budget");
   assert.equal(amap.boundedTimeoutMs(20), 20);
+  assertClose(amap.bearing([120, 31], [120, 31.01]), 0);
+  assertClose(amap.bearing([120, 31], [120.01, 31]), 90);
+  assertClose(amap.screenHeading(-90, 90), 0);
+  assertClose(amap.screenHeading(90, 0), 90);
 
   const flattened = amap.flattenDrivingPath({
     steps: [
@@ -358,6 +368,8 @@ async function main() {
     lateMinutes: 18
   });
   assert.equal(online.adapter.getCameraMode(), "follow");
+  assert.ok(online.adapter.getCameraRotation() > 0);
+  assertClose(online.adapter.overlays.vehicleMarker.angle, 0, 1e-6);
   assert.equal(online.adapter.overlays.incidentMarker.visible, true);
   assert.equal(online.adapter.overlays.incidentContent.textContent, "拥堵 · 晚到 18 分钟");
   assert.deepEqual(

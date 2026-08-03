@@ -58,11 +58,16 @@ KEY_CONTAINERS = [
     "#hmi",
     ".top-bar",
     ".hmi-body",
+    "#auri-driver-panel",
+    ".auri-driver-summary",
+    "#auri-driver-context",
+    ".auri-driver-tasks",
     "#vd-panel",
     ".vd-half-top",
     ".vd-half-bot",
     ".right-panel",
     ".map-design",
+    "#auri-nav-hud",
     ".bottom-bar",
     "#vd-nav-card",
     "#auri-responsibility-strip",
@@ -70,6 +75,20 @@ KEY_CONTAINERS = [
     "#auri-stage-notice",
     "#auri-device-notice",
 ]
+
+NOTICE_STAGES = {
+    "pre_departure_warning",
+    "handover_to_vehicle",
+    "vehicle_observation",
+    "takeover_L2",
+    "takeover_L3",
+    "planning",
+    "service_prepared",
+    "waiting_confirmation",
+    "action_completed",
+    "cooldown",
+    "parked_review",
+}
 
 
 def validate_agent_url() -> None:
@@ -248,6 +267,48 @@ def capture(page: Page, state: dict, index: int, source: str) -> dict:
     freeze_visuals(page)
     transform = route_transform(page)
     audit = audit_layout(page)
+    quality = page.evaluate(
+        """() => {
+          const rect=selector=>{
+            const node=document.querySelector(selector);
+            if(!node) return null;
+            const box=node.getBoundingClientRect();
+            return {left:box.left,right:box.right,top:box.top,bottom:box.bottom,width:box.width,height:box.height};
+          };
+          const visible=selector=>{
+            const node=document.querySelector(selector);
+            if(!node || node.hidden) return false;
+            const style=getComputedStyle(node);
+            const box=node.getBoundingClientRect();
+            return style.display!=='none' && style.visibility!=='hidden' && Number(style.opacity||1)>.01 && box.width>0 && box.height>0;
+          };
+          const iconSelectors=['.auri-shell-row-icon','.auri-notice-icon','.auri-stage-notice-icon','.auri-takeover-action>span','.auri-driver-task-icon','.auri-driver-context-icon'];
+          const iconTexts=iconSelectors.flatMap(selector=>Array.from(document.querySelectorAll(selector))).filter(node=>visibleNode(node)).map(node=>node.textContent.trim()).filter(Boolean);
+          function visibleNode(node){
+            const style=getComputedStyle(node); const box=node.getBoundingClientRect();
+            return !node.hidden && style.display!=='none' && style.visibility!=='hidden' && box.width>0 && box.height>0;
+          }
+          return {
+            driver:rect('#auri-driver-panel'), vehicle:rect('#vd-panel'), map:rect('.right-panel'), dock:rect('.bottom-bar'),
+            driverVisible:visible('#auri-driver-panel'), navCardVisible:visible('#vd-nav-card'), navHudVisible:visible('#auri-nav-hud'),
+            stageNoticeVisible:visible('#auri-stage-notice'), deviceNoticeVisible:visible('#auri-device-notice'),
+            processPoisVisible:visible('.map-poi-layer'), iconTexts,
+            bottomLauncherVisible:visible('.sidebar')
+          };
+        }"""
+    )
+    assert quality["driverVisible"] is True, quality
+    assert quality["navCardVisible"] is True, quality
+    assert quality["navHudVisible"] is True, quality
+    assert quality["bottomLauncherVisible"] is False, quality
+    assert quality["processPoisVisible"] is False, quality
+    assert quality["driver"]["right"] <= quality["vehicle"]["left"] + 1, quality
+    assert quality["vehicle"]["right"] <= quality["map"]["left"] + 1, quality
+    assert quality["map"]["right"] <= quality["dock"]["right"] + 1, quality
+    banned_icons = {"声", "腕", "表", "联", "刚", "弹", "信", "单", "路", "务", "返", "调", "距", "温"}
+    assert not banned_icons.intersection(quality["iconTexts"]), quality
+    if state["stage"] in NOTICE_STAGES:
+        assert quality["stageNoticeVisible"] is True, quality
     occlusion = page.evaluate(
         """() => {
           const sample=(selector,xRatio=.5,yRatio=.5)=>{
@@ -292,6 +353,7 @@ def capture(page: Page, state: dict, index: int, source: str) -> dict:
             "internal_overflow": len(audit["internalOverflow"]),
             "broken_images": len(audit["brokenImages"]),
         },
+        "quality": quality,
         "occlusion": occlusion,
     }
 

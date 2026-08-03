@@ -79,6 +79,8 @@ def main():
         initial = page.evaluate("window.AURI_HMI_NEXT.getState()")
         assert initial["viewModel"]["tasks"]["total"] == 0
         assert page.locator("#auri-responsibility-strip").is_hidden()
+        assert "等待手机创建今天的任务" in page.locator("#auri-driver-title").inner_text()
+        assert page.locator("#auri-driver-task-count").inner_text() == "0 项"
 
         task_state = submit(
             "task.created", {"text": "今天18:10接孩子，之后去超市"}, "mobile"
@@ -94,6 +96,7 @@ def main():
         assert displayed_route["id"] == task_state["navigation"]["route_id"]
         assert displayed_route["destination"]["coordinates"] == [120.7359, 31.3048]
         assert page.locator(".auri-responsibility-item").count() == 2
+        assert page.locator(".auri-driver-task:not(.is-empty)").count() == 2
         responsibility_text = page.locator("#auri-responsibility-strip").inner_text()
         assert "接孩子" in responsibility_text
         assert "超市" in responsibility_text
@@ -109,8 +112,10 @@ def main():
             arg=warning_state["revision"],
         )
         assert warning_state["stage"] == "pre_departure_warning"
-        assert page.locator("#auri-stage-notice").is_hidden()
-        assert page.locator("#auri-device-notice").is_hidden()
+        page.wait_for_function("document.querySelector('#auri-stage-notice')?.classList.contains('is-visible')")
+        assert "出发窗口正在缩短" in page.locator("#auri-stage-notice").inner_text()
+        page.wait_for_function("document.querySelector('#auri-device-notice')?.classList.contains('is-visible')")
+        assert "腕表" in page.locator("#auri-device-notice").inner_text()
 
         vehicle_state = submit("scene.vehicle_entered", {})
         page.wait_for_function(
@@ -121,10 +126,10 @@ def main():
         stage_notice_text = page.locator("#auri-stage-notice").inner_text()
         assert any(text in stage_notice_text for text in ["路线正在同步到车机", "正在前往"])
         page.wait_for_function("document.querySelector('#auri-device-notice')?.classList.contains('is-visible')")
-        assert "腕上" in page.locator("#auri-device-notice").inner_text()
+        assert "腕表" in page.locator("#auri-device-notice").inner_text()
 
         page.locator('[data-auri-section="auri"]').click()
-        page.locator('[data-panel-target="sync"]').click()
+        page.locator('#body-a [data-panel-target="sync"]').click()
         assert "设备同步" in page.locator("#hdr-a").inner_text()
         assert all(label in page.locator("#body-a").inner_text() for label in ["手机", "腕表", "车机"])
         page.locator(".auri-panel-close").click()
@@ -188,7 +193,7 @@ def main():
         )
         assert parked["primary_surface"] == "mobile"
         assert page.locator("#auri-takeover-card").is_visible()
-        assert page.locator("#vd-nav-card").is_hidden()
+        assert page.locator("#vd-nav-card").is_visible()
         assert "手机继续处理" in page.locator("#auri-takeover-stage").inner_text()
         page.wait_for_timeout(400)
         page.screenshot(path=SCREENSHOT_DIR / "auri-hmi-e2e-parked-review.png")

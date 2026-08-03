@@ -16,18 +16,6 @@
     { aliases: ["邻里生鲜超市", "Demo 邻里生鲜超市"], name: "邻里生鲜超市", coordinates: [120.7506, 31.3147] }
   ];
 
-  const POIS = [
-    ["●", "当前位置", "home"],
-    ["↗", "路线接续", ""],
-    ["▦", "行程观察", ""],
-    ["◉", "ETA 更新", ""],
-    ["◷", "风险预测", "warning"],
-    ["⇄", "手机任务同步", ""],
-    ["A", "AURI 处理", "processing"],
-    ["✓", "方案准备", "processing"],
-    ["○", "等待授权", "warning"],
-    ["✓", "行程继续", "success"]
-  ];
   const STAGE_PROGRESS = {
     off_vehicle_idle: 0.03,
     pre_departure_warning: 0.08,
@@ -118,10 +106,50 @@
       .replaceAll("'", "&#039;");
   }
 
+  const ICON_PATHS = {
+    assistant: '<circle cx="12" cy="12" r="8"/><path d="M12 7.5v9M7.5 12h9"/>',
+    phone: '<rect x="7" y="2.5" width="10" height="19" rx="2.2"/><path d="M10.5 5.5h3M10.5 18.5h3"/>',
+    mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M9 21h6"/>',
+    watch: '<rect x="7" y="6" width="10" height="12" rx="3"/><path d="m9 6 1-3h4l1 3m0 12-1 3h-4l-1-3"/>',
+    car: '<path d="m5 16-1-2 2-6h12l2 6-1 2"/><path d="M4 14h16v5H4zM7 19v2m10-2v2M7 11h10"/>',
+    task: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 2.2 2.2L16 8.5"/>',
+    calendar: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 10h18"/>',
+    message: '<path d="M4 5h16v12H8l-4 4z"/><path d="M8 9h8m-8 4h5"/>',
+    order: '<path d="M3 5h2l2.2 10h9.8l2-7H6"/><circle cx="9" cy="19" r="1.2"/><circle cx="17" cy="19" r="1.2"/>',
+    route: '<circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M7.5 16.5 16.5 7.5M8 6h5M8 6l2-2M8 6l2 2"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
+    distance: '<path d="M4 17h16M6 14v6m12-6v6M8 8l4-4 4 4M12 4v10"/>',
+    devices: '<rect x="3" y="5" width="12" height="9" rx="1.5"/><path d="M7 18h4M9 14v4"/><rect x="17" y="7" width="4" height="10" rx="1"/>',
+    climate: '<path d="M12 3v18M5.6 6.5l12.8 11M18.4 6.5l-12.8 11M4 12h16"/><circle cx="12" cy="12" r="2"/>',
+    warning: '<path d="M12 3 2.5 20h19z"/><path d="M12 9v4m0 3h.01"/>',
+    check: '<circle cx="12" cy="12" r="9"/><path d="m7.5 12 3 3 6-7"/>',
+    flexible: '<path d="M4 8h10a4 4 0 0 1 4 4v5"/><path d="m15 14 3 3 3-3M4 16h7"/>',
+    back: '<path d="m15 18-6-6 6-6"/>',
+    add: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
+    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10h.01"/>'
+  };
+
+  const ICON_ALIASES = {
+    "声": "mic", "腕": "watch", "联": "devices", "刚": "calendar", "弹": "flexible",
+    "路": "route", "返": "back", "信": "message", "单": "order", "调": "task",
+    "时": "clock", "距": "distance", "务": "task", "手": "phone", "车": "car",
+    "温": "climate", "○": "info", "＋": "add", "+": "add", "✓": "check",
+    "1": "clock", "2": "flexible"
+  };
+
+  function semanticIconName(name) {
+    return ICON_PATHS[name] ? name : ICON_ALIASES[String(name)] || "info";
+  }
+
+  function iconSvg(name, className = "") {
+    const icon = semanticIconName(name);
+    return `<svg class="auri-icon${className ? ` ${className}` : ""}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[icon]}</svg>`;
+  }
+
   function row(icon, title, detail, state, tone = "") {
     return `
       <div class="auri-shell-row${tone ? ` is-${tone}` : ""}">
-        <span class="auri-shell-row-icon" aria-hidden="true">${escapeHtml(icon)}</span>
+        <span class="auri-shell-row-icon" aria-hidden="true">${iconSvg(icon)}</span>
         <span class="auri-shell-row-copy"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(detail)}</span></span>
         <span class="auri-shell-row-state">${escapeHtml(state)}</span>
       </div>
@@ -135,15 +163,80 @@
   function rowButton(icon, title, detail, state, target, tone = "") {
     return `
       <button class="auri-shell-row auri-shell-row-button${tone ? ` is-${tone}` : ""}" type="button" data-panel-target="${escapeHtml(target)}">
-        <span class="auri-shell-row-icon" aria-hidden="true">${escapeHtml(icon)}</span>
+        <span class="auri-shell-row-icon" aria-hidden="true">${iconSvg(icon)}</span>
         <span class="auri-shell-row-copy"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(detail)}</span></span>
         <span class="auri-shell-row-state">${escapeHtml(state)}</span>
       </button>
     `;
   }
 
+  function ensureDriverPanel() {
+    const body = document.querySelector(".hmi-body");
+    const vehiclePanel = document.querySelector(".vd-panel");
+    if (!body || !vehiclePanel || document.getElementById("auri-driver-panel")) return;
+    const panel = document.createElement("aside");
+    panel.id = "auri-driver-panel";
+    panel.className = "auri-driver-panel";
+    panel.setAttribute("aria-label", "AURI 驾驶协助");
+    panel.innerHTML = `
+      <header class="auri-driver-head">
+        <span class="auri-driver-brand"><img src="icons/auri-icon.png" alt=""><span><b>AURI</b><small>你只管开，我来处理</small></span></span>
+        <button class="auri-driver-risk" id="auri-driver-risk" type="button" data-panel-target="auri">状态平稳</button>
+      </header>
+      <section class="auri-driver-summary" data-panel-target="auri" role="button" tabindex="0">
+        <small id="auri-driver-kicker">AURI 当前判断</small>
+        <h2 id="auri-driver-title">等待手机创建今天的任务</h2>
+        <p id="auri-driver-copy">请在手机端通过语音创建，任务会自动同步到这里。</p>
+      </section>
+      <section class="auri-driver-context" id="auri-driver-context" data-panel-target="auri" role="button" tabindex="0">
+        <span class="auri-driver-context-icon">${iconSvg("phone")}</span>
+        <span><small id="auri-driver-source">手机端</small><b id="auri-driver-utterance">等待语音输入</b></span>
+        <em id="auri-driver-context-state">待同步</em>
+      </section>
+      <section class="auri-driver-tasks" aria-label="当前任务">
+        <div class="auri-driver-section-head"><span>当前任务</span><button type="button" data-panel-target="tasks" id="auri-driver-task-count">0 项</button></div>
+        <div id="auri-driver-task-list" class="auri-driver-task-list"></div>
+      </section>
+      <section class="auri-driver-devices" aria-label="设备状态">
+        <button type="button" data-panel-target="sync" id="auri-device-phone">${iconSvg("phone")}<span><b>手机</b><small>等待同步</small></span></button>
+        <button type="button" data-panel-target="sync" id="auri-device-watch">${iconSvg("watch")}<span><b>腕表</b><small>未连接</small></span></button>
+        <button type="button" data-panel-target="sync" id="auri-device-car">${iconSvg("car")}<span><b>车机</b><small>已就绪</small></span></button>
+      </section>
+      <div id="auri-driver-primary" class="auri-driver-primary"></div>
+    `;
+    body.insertBefore(panel, vehiclePanel);
+    panel.addEventListener("click", (event) => {
+      const target = event.target.closest("[data-panel-target]");
+      if (target) openPanel(target.dataset.panelTarget);
+    });
+    panel.addEventListener("keydown", (event) => {
+      const target = event.target.closest("[data-panel-target]");
+      if (target && (event.key === "Enter" || event.key === " ")) {
+        event.preventDefault();
+        openPanel(target.dataset.panelTarget);
+      }
+    });
+  }
+
+  function ensureNavigationHud() {
+    const map = document.querySelector(".right-panel");
+    if (!map || document.getElementById("auri-nav-hud")) return;
+    const hud = document.createElement("section");
+    hud.id = "auri-nav-hud";
+    hud.className = "auri-nav-hud";
+    hud.setAttribute("aria-label", "下一步导航");
+    hud.innerHTML = `
+      <span class="auri-nav-maneuver" id="auri-nav-maneuver">${iconSvg("route")}</span>
+      <span class="auri-nav-next"><b id="auri-nav-next-distance">等待路线</b><small id="auri-nav-next-road">手机同步目的地后开始导航</small></span>
+      <span class="auri-nav-remaining"><b id="auri-nav-remaining-time">--</b><small id="auri-nav-remaining-distance">-- 公里</small></span>
+    `;
+    map.appendChild(hud);
+  }
+
   function ensureTakeoverUi() {
-    const host = document.querySelector(".vd-half-bot");
+    ensureDriverPanel();
+    ensureNavigationHud();
+    const host = document.getElementById("auri-driver-primary");
     const nav = document.getElementById("vd-nav-card");
     if (!host || !nav || document.getElementById("auri-takeover-card")) return;
     const card = document.createElement("section");
@@ -164,7 +257,7 @@
       </button>
       <p class="auri-confirm-error" id="auri-confirm-error" role="status" hidden></p>
     `;
-    nav.insertAdjacentElement("afterend", card);
+    host.appendChild(card);
     card.querySelector("#auri-takeover-confirm")?.addEventListener("click", () => void confirmCurrentActions("button"));
 
     const taskStrip = document.createElement("div");
@@ -194,7 +287,7 @@
     notice.className = "auri-device-notice";
     notice.hidden = true;
     notice.innerHTML = `
-      <span class="auri-notice-icon" aria-hidden="true">腕</span>
+      <span class="auri-notice-icon" aria-hidden="true">${iconSvg("watch")}</span>
       <span class="auri-notice-copy"><b id="auri-notice-title">腕上提醒</b><small id="auri-notice-text"></small></span>
       <button type="button" aria-label="关闭提醒">×</button>
     `;
@@ -207,7 +300,7 @@
     stageNotice.hidden = true;
     stageNotice.setAttribute("aria-live", "polite");
     stageNotice.innerHTML = `
-      <span class="auri-stage-notice-icon" aria-hidden="true">A</span>
+      <span class="auri-stage-notice-icon" aria-hidden="true">${iconSvg("assistant")}</span>
       <span><small id="auri-stage-notice-kicker">场景切换</small><b id="auri-stage-notice-title"></b><em id="auri-stage-notice-detail"></em></span>
       <button type="button" aria-label="关闭提示">×</button>
     `;
@@ -227,7 +320,7 @@
         ? `给${action.target || "联系人"}的消息草稿已生成（模拟）`
         : null;
       return {
-        icon: action.status === "completed" ? "✓" : action.type === "message" ? "信" : action.type === "service_order" ? "单" : "调",
+        icon: action.status === "completed" ? "check" : action.type === "message" ? "message" : action.type === "service_order" ? "order" : "task",
         text: orderText || messageText || action.preview,
         state: action.statusLabel,
         completed: action.status === "completed"
@@ -236,15 +329,90 @@
     if (actions.length) return actions;
     if (["takeover_L2", "takeover_L3", "planning"].includes(viewModel.lifecycle.stage)) {
       return [
-        { icon: "1", text: "核对 ETA 与刚性任务", state: "进行中" },
-        { icon: "2", text: "寻找可后置或可代办事项", state: "等待" }
+        { icon: "clock", text: "核对 ETA 与刚性任务", state: "进行中" },
+        { icon: "flexible", text: "寻找可后置或可代办事项", state: "等待" }
       ];
     }
     return [];
   }
 
+  function driverSummaryView() {
+    const vm = viewModel;
+    const stage = vm.lifecycle.stage;
+    const late = vm.risk.lateMinutes;
+    if (!vm.tasks.total && stage === "off_vehicle_idle") {
+      return ["AURI 当前判断", "等待手机创建今天的任务", "请在手机端通过语音创建，任务会自动同步到这里。"];
+    }
+    if (stage === "pre_departure_warning") {
+      return ["时间风险", "出发窗口正在缩短", late ? `按当前计划预计晚到 ${late} 分钟，AURI 正在保护刚性任务。` : "建议尽快出发，AURI 会持续核对 ETA。"];
+    }
+    if (stage === "handover_to_vehicle") return ["场景已切换", "路线已接续到车机", `正在前往 ${vm.navigation.destination}，手机进入驾驶只读状态。`];
+    if (stage === "vehicle_observation") return ["行程进行中", `正在前往 ${vm.navigation.destination}`, late ? `当前预计晚到 ${late} 分钟，AURI 正在观察变化。` : "行程状态平稳，AURI 会在风险成立时主动处理。"];
+    if (["takeover_L2", "takeover_L3", "planning"].includes(stage)) return ["AURI 正在处理", "我已收到你的求助", "正在核对到达时间、任务优先级和可代办事项。"];
+    if (["service_prepared", "waiting_confirmation"].includes(stage)) return ["方案已准备", "需要你确认一次", late ? `预计晚到 ${late} 分钟，消息和可调整事项已经备好。` : "必要消息和可调整事项已经备好。"];
+    if (["executing", "service_executed"].includes(stage)) return ["正在执行", "处理结果正在同步", "手机、腕表和车机会自动更新当前状态。"];
+    if (["action_completed", "cooldown"].includes(stage)) return ["问题已处理", "按当前路线继续即可", "AURI 已完成必要动作，并降低后续打扰。"];
+    if (stage === "parked_review") return ["本次行程已结束", "完整记录已回到手机", "消息、服务和处理记录可在手机端查看。"];
+    return ["AURI 当前判断", vm.tasks.total ? `${vm.tasks.total} 项任务已同步` : vm.lifecycle.stageLabel, vm.agentOutput.available ? vm.agentOutput.preview : "AURI 正在持续检查任务与行程。"];
+  }
+
+  function renderDriverPanel() {
+    const panel = document.getElementById("auri-driver-panel");
+    if (!panel) return;
+    const [kicker, title, copy] = driverSummaryView();
+    panel.dataset.tone = viewModel.risk.tone;
+    panel.classList.toggle("is-takeover", TAKEOVER_STAGES.has(viewModel.lifecycle.stage));
+    document.getElementById("auri-driver-kicker").textContent = kicker;
+    document.getElementById("auri-driver-title").textContent = title;
+    document.getElementById("auri-driver-copy").textContent = copy;
+    const risk = document.getElementById("auri-driver-risk");
+    risk.textContent = viewModel.risk.label;
+    risk.dataset.tone = viewModel.risk.tone;
+
+    const utterance = document.getElementById("auri-driver-utterance");
+    const source = document.getElementById("auri-driver-source");
+    const contextState = document.getElementById("auri-driver-context-state");
+    const context = document.getElementById("auri-driver-context");
+    if (viewModel.utterance.available) {
+      source.textContent = viewModel.utterance.sourceLabel || "手机语音";
+      utterance.textContent = `“${viewModel.utterance.preview}”`;
+      utterance.title = viewModel.utterance.text;
+      contextState.textContent = viewModel.utterance.receivedAtLabel || "已同步";
+      context.classList.add("is-active");
+    } else {
+      source.textContent = "手机语音";
+      utterance.textContent = viewModel.tasks.total ? "等待用户在手机端求助" : "等待用户在手机端创建任务";
+      utterance.title = "";
+      contextState.textContent = "等待";
+      context.classList.remove("is-active");
+    }
+
+    const taskList = document.getElementById("auri-driver-task-list");
+    const taskCount = document.getElementById("auri-driver-task-count");
+    taskCount.textContent = `${viewModel.tasks.total} 项`;
+    taskList.innerHTML = viewModel.tasks.total
+      ? viewModel.tasks.items.slice(0, 3).map((task) => `
+          <button type="button" class="auri-driver-task is-${escapeHtml(task.tone)}" data-panel-target="task:${escapeHtml(task.id)}">
+            <span class="auri-driver-task-icon">${iconSvg(task.tone === "rigid" ? "calendar" : "flexible")}</span>
+            <span><b>${escapeHtml(task.displayTitle)}</b><small>${escapeHtml(task.tone === "rigid" ? "优先保护时间窗口" : "可调整顺序")}</small></span>
+            <em>${escapeHtml(task.status)}</em>
+          </button>
+        `).join("") + (viewModel.tasks.total > 3 ? `<button type="button" class="auri-driver-task-more" data-panel-target="tasks">查看其余 ${viewModel.tasks.total - 3} 项任务</button>` : "")
+      : `<button type="button" class="auri-driver-task is-empty" data-panel-target="tasks"><span class="auri-driver-task-icon">${iconSvg("add")}</span><span><b>暂无任务</b><small>任务将从手机端自动同步</small></span><em>等待</em></button>`;
+
+    const phone = document.querySelector("#auri-device-phone small");
+    const watch = document.querySelector("#auri-device-watch small");
+    const car = document.querySelector("#auri-device-car small");
+    if (phone) phone.textContent = viewModel.utterance.available || viewModel.tasks.total ? "已同步" : "等待同步";
+    if (watch) watch.textContent = viewModel.wearable.connected ? viewModel.wearable.modeLabel : "未连接";
+    if (car) car.textContent = viewModel.lifecycle.primarySurface === "vehicle_hmi" ? "当前主端" : "已就绪";
+    document.getElementById("auri-device-phone")?.classList.toggle("is-active", Boolean(viewModel.utterance.available || viewModel.tasks.total));
+    document.getElementById("auri-device-watch")?.classList.toggle("is-active", viewModel.wearable.connected);
+    document.getElementById("auri-device-car")?.classList.toggle("is-active", viewModel.lifecycle.primarySurface === "vehicle_hmi");
+  }
+
   function renderTakeover() {
-    const host = document.querySelector(".vd-half-bot");
+    const host = document.getElementById("auri-driver-panel");
     const card = document.getElementById("auri-takeover-card");
     if (!host || !card) return;
     const stage = viewModel.lifecycle.stage;
@@ -284,7 +452,7 @@
     const actions = takeoverActions();
     document.getElementById("auri-takeover-actions").innerHTML = actions.map((action) => `
       <div class="auri-takeover-action${action.completed ? " is-completed" : ""}">
-        <span>${escapeHtml(action.icon)}</span><b>${escapeHtml(action.text)}</b><small>${escapeHtml(action.state)}</small>
+        <span>${iconSvg(action.icon)}</span><b>${escapeHtml(action.text)}</b><small>${escapeHtml(action.state)}</small>
       </div>
     `).join("");
 
@@ -344,8 +512,11 @@
 
   function renderDeviceNotice() {
     const wearable = viewModel.wearable;
-    if (viewModel.lifecycle.primarySurface !== "vehicle_hmi") return;
-    if (!wearable.commandId || wearable.mode === "idle" || !wearable.haptic || wearable.haptic === "none") return;
+    if (!wearable.commandId || wearable.mode === "idle" || !wearable.haptic || wearable.haptic === "none") {
+      const notice = document.getElementById("auri-device-notice");
+      if (notice && !notice.hidden) hideDeviceNotice();
+      return;
+    }
     const commandKey = `${viewModel.meta.sessionId || "session"}:${wearable.commandId}`;
     if (notifiedDeviceCommands.has(commandKey)) return;
     notifiedDeviceCommands.add(commandKey);
@@ -353,10 +524,10 @@
     if (!notice) return;
     const delivered = wearable.connected;
     const title = ["warning", "error"].includes(wearable.mode)
-      ? delivered ? "腕上提醒已送达" : "腕上提醒等待同步"
+      ? delivered ? "腕表已发出风险提醒" : "腕表风险提醒已准备"
       : wearable.mode === "completed"
-        ? delivered ? "三端状态已同步" : "处理结果等待腕上同步"
-        : delivered ? "腕上设备已接续" : "腕上状态等待设备连接";
+        ? delivered ? "手机、腕表与车机已同步" : "处理结果已准备同步"
+        : delivered ? "腕表已接续当前状态" : "腕表状态已准备";
     document.getElementById("auri-notice-title").textContent = title;
     document.getElementById("auri-notice-text").textContent = `${wearable.text} · ${HAPTIC_LABEL[wearable.haptic] || "状态提示"}${delivered ? "" : " · 设备未连接"}`;
     notice.dataset.tone = wearable.mode;
@@ -380,8 +551,11 @@
     const destination = viewModel.navigation.destination;
     const completed = viewModel.actions.counts.completed;
     const total = viewModel.actions.counts.total;
+    if (stage === "pre_departure_warning") return ["时间风险", "出发窗口正在缩短", viewModel.wearable.connected ? "腕表已双短震并显示黄色提醒" : "腕表黄色提醒已准备，设备连接后同步", "warning"];
     if (stage === "handover_to_vehicle") return ["场景切换", "路线正在同步到车机", `${destination} · 手机进入驾驶只读`, "handover"];
     if (stage === "vehicle_observation") return ["导航已接续", `正在前往 ${destination}`, "ETA 与任务状态会持续同步", "guidance"];
+    if (["takeover_L2", "takeover_L3", "planning"].includes(stage)) return ["手机求助已接收", "AURI 正在处理现实问题", "正在核对 ETA、任务优先级和可代办事项", stage === "takeover_L3" ? "critical" : "guidance"];
+    if (["service_prepared", "waiting_confirmation"].includes(stage)) return ["处理方案已准备", "只需确认一次", "消息与可调整事项已在左侧就绪", "warning"];
     if (stage === "action_completed") return ["处理完成", total ? `${completed}/${total} 项动作已完成` : "本次问题已处理", "手机、腕表与车机正在同步结果", "success"];
     if (stage === "cooldown") return ["恢复驾驶", "AURI 已降低打扰", "按当前路线继续即可", "success", true];
     if (stage === "parked_review") return ["本次接管结束", "完整记录已同步到手机", "消息、订单和处理结果可在手机查看", "success"];
@@ -389,11 +563,6 @@
   }
 
   function renderStageNotice() {
-    if (viewModel.lifecycle.primarySurface !== "vehicle_hmi") {
-      const notice = document.getElementById("auri-stage-notice");
-      if (notice && !notice.hidden) hideStageNotice();
-      return;
-    }
     const view = stageNoticeView();
     if (!view || !viewModel.meta.sessionId) {
       const notice = document.getElementById("auri-stage-notice");
@@ -852,32 +1021,6 @@
     scene.append(badge, plate);
   }
 
-  function replaceRoutePOIs() {
-    const nodes = [...document.querySelectorAll(".map-poi-layer .map-poi")];
-    nodes.forEach((node, index) => {
-      const config = POIS[index];
-      if (!config) {
-        node.remove();
-        return;
-      }
-      const [icon, label, tone] = config;
-      node.className.baseVal = `map-poi${tone ? ` map-poi-${tone}` : ""}`;
-      const iconNode = node.querySelector(".poi-ico");
-      const labelNode = node.querySelector(".poi-tag");
-      if (iconNode) iconNode.textContent = icon;
-      if (labelNode) labelNode.textContent = label;
-    });
-  }
-
-  function updateRoutePOIs() {
-    const nodes = [...document.querySelectorAll(".map-poi-layer .map-poi")];
-    const destination = viewModel.navigation.hasDestination ? viewModel.navigation.destination : "等待路线";
-    const lastLabel = nodes.at(-1)?.querySelector(".poi-tag");
-    if (lastLabel) lastLabel.textContent = destination;
-    const warningLabel = nodes[4]?.querySelector(".poi-tag");
-    if (warningLabel) warningLabel.textContent = viewModel.risk.lateMinutes ? `预计晚到 ${viewModel.risk.lateMinutes} 分钟` : viewModel.risk.label;
-  }
-
   function prepareTopBar() {
     const play = document.getElementById("playbtn");
     play?.removeAttribute("onclick");
@@ -996,6 +1139,33 @@
     if (kilometers?.nextElementSibling) kilometers.nextElementSibling.textContent = "剩余公里";
     if (progress) progress.style.width = `${Math.round(stageProgress * 100)}%`;
     renderTurnArrow(routeMeta?.maneuver || "straight");
+
+    const hudDistance = document.getElementById("auri-nav-next-distance");
+    const hudRoad = document.getElementById("auri-nav-next-road");
+    const hudTime = document.getElementById("auri-nav-remaining-time");
+    const hudRemaining = document.getElementById("auri-nav-remaining-distance");
+    const hudManeuver = document.getElementById("auri-nav-maneuver");
+    if (hudDistance) hudDistance.textContent = routeMeta?.nextDistance
+      ? `${routeMeta.nextDistance.value} ${routeMeta.nextDistance.unit}`
+      : vm.navigation.hasDestination ? "路线已接续" : "等待路线";
+    if (hudRoad) hudRoad.textContent = routeMeta?.instruction || (vm.navigation.hasDestination ? `前往 ${vm.navigation.destination}` : "手机同步目的地后开始导航");
+    if (hudTime) hudTime.textContent = remainingMinutes === null ? `ETA ${vm.navigation.etaLabel}` : `${remainingMinutes} 分钟`;
+    if (hudRemaining) hudRemaining.textContent = remainingKm === null ? vm.navigation.destination : `${remainingKm >= 10 ? Math.round(remainingKm) : remainingKm.toFixed(1)} 公里 · ${vm.navigation.etaLabel}`;
+    if (hudManeuver) {
+      hudManeuver.dataset.maneuver = routeMeta?.maneuver || "straight";
+      hudManeuver.innerHTML = maneuverSvg(routeMeta?.maneuver || "straight");
+    }
+  }
+
+  function maneuverSvg(maneuver) {
+    const paths = {
+      left: '<path d="M18 20v-7a5 5 0 0 0-5-5H5"/><path d="m9 4-4 4 4 4"/>',
+      right: '<path d="M6 20v-7a5 5 0 0 1 5-5h8"/><path d="m15 4 4 4-4 4"/>',
+      uturn: '<path d="M18 20V11a6 6 0 0 0-12 0v4"/><path d="m3 12 3 3 3-3"/>',
+      arrive: '<path d="M12 20V5"/><path d="m7 10 5-5 5 5"/>',
+      straight: '<path d="M12 20V5"/><path d="m7 10 5-5 5 5"/>'
+    };
+    return `<svg class="auri-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[maneuver] || paths.straight}</svg>`;
   }
 
   function renderTurnArrow(maneuver) {
@@ -1188,11 +1358,11 @@
     renderResponsibilityStrip();
     renderDrivingStatus();
     renderClimate();
+    renderDriverPanel();
     renderTakeover();
     renderDeviceNotice();
     renderStageNotice();
     announceCompletion();
-    updateRoutePOIs();
     animateStage();
     if (mapAdapter.getStatus() === "online") mapAdapter.update(navigationSnapshot());
     void ensureMapRoute();
@@ -1222,7 +1392,6 @@
     prepareTopBar();
     prepareClimateControls();
     replaceCarBranding();
-    replaceRoutePOIs();
     ensureTakeoverUi();
     bindDock();
     disableLegacyDemoShortcuts();
@@ -1256,7 +1425,7 @@
         worldState: client.getSnapshot(),
         viewModel,
         activeSection,
-        map: { status: mapAdapter.getStatus(), cameraMode: mapAdapter.getCameraMode(), usage: mapAdapter.getUsage(), routeMeta }
+        map: { status: mapAdapter.getStatus(), cameraMode: mapAdapter.getCameraMode(), cameraHeading: mapAdapter.getCameraHeading(), cameraRotation: mapAdapter.getCameraRotation(), usage: mapAdapter.getUsage(), routeMeta }
       };
     },
     openPanel,

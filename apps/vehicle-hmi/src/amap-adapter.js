@@ -49,6 +49,10 @@
     return Math.atan2(east, north) * 180 / Math.PI;
   }
 
+  function screenHeading(heading, mapRotation = 0) {
+    return ((Number(heading || 0) + Number(mapRotation || 0)) % 360 + 360) % 360;
+  }
+
   function distanceMeters(from, to) {
     const radius = 6371008.8;
     const lat1 = from[1] * Math.PI / 180;
@@ -413,7 +417,7 @@
       this.overlays.routeChevrons = [0, 1, 2].map((index) => {
         const chevron = root.document.createElement("div");
         chevron.className = `auri-amap-chevron is-${index + 1}`;
-        chevron.textContent = "↑";
+        chevron.setAttribute?.("aria-hidden", "true");
         const marker = new AMap.Marker({ position: this.routePath[0], content: chevron, anchor: "center", zIndex: 82 - index });
         marker.hide();
         return marker;
@@ -437,9 +441,9 @@
       if (!this.map || !this.overlays.routeShadow) return;
       this.cameraMode = "overview";
       this.mapWrap.dataset.cameraMode = "overview";
-      this.map.setPitch?.(28, false, 500);
-      this.map.setRotation?.(0, false, 500);
-      this.map.setFitView([this.overlays.originMarker, this.overlays.routeShadow, this.overlays.destinationMarker], false, [110, 130, 155, 105], 16);
+      this.map.setFitView([this.overlays.originMarker, this.overlays.routeShadow, this.overlays.destinationMarker], true, [110, 130, 155, 105], 16);
+      this.map.setPitch?.(20, true);
+      this.map.setRotation?.(0, true);
     }
 
     applyFollowCamera(snapshot, location, force = false) {
@@ -451,12 +455,12 @@
       const lookAhead = locationAtProgress(this.routeGeometry, Math.min(1, Number(snapshot.progress || 0) + 0.006));
       this.cameraMode = "follow";
       this.mapWrap.dataset.cameraMode = "follow";
-      this.map.setPitch?.(attention ? 58 : 54, false, 650);
+      this.map.setZoomAndCenter(attention ? 17.15 : 17.3, lookAhead.point, true);
+      this.map.setPitch?.(attention ? 46 : 42, true);
       if (force || delta >= 7) {
-        this.map.setRotation?.(((360 - heading) % 360 + 360) % 360, false, 650);
+        this.map.setRotation?.(((360 - heading) % 360 + 360) % 360, true);
         this.lastCameraHeading = heading;
       }
-      this.map.setZoomAndCenter(attention ? 17.15 : 17.3, lookAhead.point, false, 650);
     }
 
     updateChevrons(snapshot) {
@@ -466,7 +470,7 @@
         if (!visible) return marker.hide();
         const location = locationAtProgress(this.routeGeometry, Math.min(0.99, snapshot.progress + 0.008 + index * 0.008));
         marker.setPosition(location.point);
-        marker.setAngle?.(this.cameraMode === "follow" ? 0 : location.heading);
+        marker.setAngle?.(screenHeading(location.heading, this.map?.getRotation?.() || 0));
         marker.show();
       });
     }
@@ -506,7 +510,7 @@
 
       if (snapshot.showVehicle) {
         this.overlays.vehicleMarker.show();
-        this.overlays.vehicleMarker.setAngle?.(this.cameraMode === "follow" ? 0 : location.heading);
+        this.overlays.vehicleMarker.setAngle?.(screenHeading(location.heading, this.map?.getRotation?.() || 0));
         if (this.lastProgress !== null && typeof this.overlays.vehicleMarker.moveTo === "function") {
           this.overlays.vehicleMarker.stopMove?.();
           this.overlays.vehicleMarker.moveTo(location.point, { duration: 900, autoRotation: false });
@@ -556,6 +560,8 @@
     getStatus() { return this.status; }
     getUsage() { return readUsage(); }
     getCameraMode() { return this.cameraMode; }
+    getCameraHeading() { return this.lastCameraHeading; }
+    getCameraRotation() { return this.map?.getRotation?.() ?? null; }
   }
 
   return {
@@ -568,6 +574,7 @@
     flattenDrivingPath,
     locationAtProgress,
     pathBetweenProgress,
-    routeMeta
+    routeMeta,
+    screenHeading
   };
 });
