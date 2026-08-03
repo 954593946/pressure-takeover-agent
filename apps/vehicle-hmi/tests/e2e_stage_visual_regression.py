@@ -307,8 +307,15 @@ def capture(page: Page, state: dict, index: int, source: str) -> dict:
     assert quality["map"]["right"] <= quality["dock"]["right"] + 1, quality
     banned_icons = {"声", "腕", "表", "联", "刚", "弹", "信", "单", "路", "务", "返", "调", "距", "温"}
     assert not banned_icons.intersection(quality["iconTexts"]), quality
+    # Stage and device notifications share one visual lane. Showing both at
+    # once recreates the map occlusion this regression is intended to catch.
+    assert not (
+        quality["stageNoticeVisible"] and quality["deviceNoticeVisible"]
+    ), quality
     if state["stage"] in NOTICE_STAGES:
-        assert quality["stageNoticeVisible"] is True, quality
+        assert (
+            quality["stageNoticeVisible"] or quality["deviceNoticeVisible"]
+        ), quality
     occlusion = page.evaluate(
         """() => {
           const sample=(selector,xRatio=.5,yRatio=.5)=>{

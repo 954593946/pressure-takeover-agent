@@ -151,6 +151,7 @@ def main() -> None:
                 conclusionText: document.querySelector('.auri-takeover-conclusion').textContent.trim(),
                 conclusionFits: document.querySelector('.auri-takeover-conclusion').scrollHeight <= document.querySelector('.auri-takeover-conclusion').clientHeight + 1,
                 conclusionBox: {client:document.querySelector('.auri-takeover-conclusion').clientHeight,scroll:document.querySelector('.auri-takeover-conclusion').scrollHeight},
+                conclusionStyle: (()=>{const s=getComputedStyle(document.querySelector('.auri-takeover-conclusion'));return {display:s.display,overflow:s.overflow,lineClamp:s.webkitLineClamp,minHeight:s.minHeight,height:s.height,lineHeight:s.lineHeight,flexShrink:s.flexShrink}})(),
                 button: rect('#auri-takeover-confirm'),
                 card: rect('#auri-takeover-card'),
                 scene: rect('#scene3d'),

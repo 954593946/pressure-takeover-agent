@@ -85,6 +85,7 @@ class Event(StrictModel):
         "traffic.updated",
         "wearable.signal",
         "driving.signal",
+        "vehicle.control",
         "user.utterance",
         "service.mock.config",
         "confirmation.confirmed",

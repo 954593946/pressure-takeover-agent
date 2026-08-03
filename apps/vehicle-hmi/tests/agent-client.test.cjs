@@ -194,6 +194,22 @@ async function main() {
   await client.requestJson("/health", { withToken: false });
   assert.equal(requests[1].options.headers["X-Agent-Token"], undefined);
 
+  client.injectSnapshot({ ...baseState, session_id: "vehicle-session", revision: 7 });
+  const submitted = await client.submitEvent("vehicle.control", { ac_on: true, ac_target_temp: 23 }, {
+    eventId: "hmi_control_fixed",
+    timestamp: "2026-08-03T10:00:00+08:00"
+  });
+  const controlRequest = requests[2];
+  const controlEnvelope = JSON.parse(controlRequest.options.body);
+  assert.equal(controlRequest.url, "https://agent.example.test/v1/event");
+  assert.equal(controlRequest.options.method, "POST");
+  assert.equal(controlEnvelope.event_id, "hmi_control_fixed");
+  assert.equal(controlEnvelope.session_id, "vehicle-session");
+  assert.equal(controlEnvelope.type, "vehicle.control");
+  assert.equal(controlEnvelope.source, "vehicle_hmi");
+  assert.deepEqual(controlEnvelope.payload, { ac_on: true, ac_target_temp: 23 });
+  assert.equal(submitted.envelope.event_id, "hmi_control_fixed");
+
   let retryCalls = 0;
   const retryClient = agent.createClient({
     config: { apiBase: "https://agent.example.test" },

@@ -257,6 +257,8 @@ class AgentRuntime:
         elif event.type == "driving.signal":
             if payload.get("harsh_brake") is True:
                 add_auxiliary_signal(self._state, "DRIVING_HARSH_BRAKE")
+        elif event.type == "vehicle.control":
+            self._apply_vehicle_control(event)
         elif event.type == "service.mock.config":
             mode = payload.get("mode", "success")
             if mode not in {"success", "out_of_stock", "over_budget"}:
@@ -284,6 +286,41 @@ class AgentRuntime:
             self._state.risk.pressure_level = PressureLevel.RECOVERY
         elif event.type == "session.reset":
             raise RuntimeErrorWithCode("USE_RESET_ENDPOINT", "use POST /v1/session/reset")
+
+    def _apply_vehicle_control(self, event: Event) -> None:
+        if event.source != "vehicle_hmi":
+            raise RuntimeErrorWithCode("INVALID_EVENT_SOURCE", "vehicle.control must originate from vehicle_hmi")
+
+        payload = event.payload
+        allowed = {"ac_on", "ac_target_temp", "ac_mode", "fan_speed"}
+        unknown = set(payload) - allowed
+        if unknown:
+            raise RuntimeErrorWithCode("INVALID_VEHICLE_CONTROL", f"unsupported vehicle control fields: {', '.join(sorted(unknown))}")
+        if not payload:
+            raise RuntimeErrorWithCode("INVALID_VEHICLE_CONTROL", "vehicle.control requires at least one field")
+
+        if "ac_on" in payload and not isinstance(payload["ac_on"], bool):
+            raise RuntimeErrorWithCode("INVALID_VEHICLE_CONTROL", "ac_on must be a boolean")
+        if "ac_target_temp" in payload:
+            value = payload["ac_target_temp"]
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not 16 <= float(value) <= 30:
+                raise RuntimeErrorWithCode("INVALID_VEHICLE_CONTROL", "ac_target_temp must be between 16 and 30")
+        if "ac_mode" in payload and payload["ac_mode"] not in {"auto", "cool", "heat", "fan"}:
+            raise RuntimeErrorWithCode("INVALID_VEHICLE_CONTROL", "ac_mode must be auto, cool, heat, or fan")
+        if "fan_speed" in payload and payload["fan_speed"] not in {"low", "medium", "high"}:
+            raise RuntimeErrorWithCode("INVALID_VEHICLE_CONTROL", "fan_speed must be low, medium, or high")
+
+        vehicle = self._state.vehicle_state
+        if "ac_on" in payload:
+            vehicle.ac_on = payload["ac_on"]
+        if "ac_target_temp" in payload:
+            vehicle.ac_target_temp = float(payload["ac_target_temp"])
+        if "ac_mode" in payload:
+            vehicle.ac_mode = payload["ac_mode"]
+        if "fan_speed" in payload:
+            vehicle.fan_speed = payload["fan_speed"]
+        if vehicle.ac_on and self._state.scene == Scene.OFF_VEHICLE:
+            self._state.scene = Scene.APPROACHING_VEHICLE
 
     async def confirm(self, request: ConfirmationRequest) -> tuple[WorldState, bool]:
         return await self.confirm_for_session(request, session_id=None)

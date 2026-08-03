@@ -347,6 +347,7 @@
 - 当前 STAGE_VIEW 中硬编码的 ETA、消息、动作结果和导航数据改为真实字段，或明确标注视觉占位。
 - 不在 HMI 推演下一 stage，不自行创建 confirmation。
 - **验收**：相同快照渲染稳定；切换 Session 后不保留上一轮草稿。
+- **当前情况（2026-08-03）**：任务、ETA、风险、语音、动作、订单、腕表、座舱和可选导航对象均从 Agent 快照读取；任务支持 0-N 项。高德提供真实底图、路线、交通与道路信息，车辆位置仍由 `navigation.progress` 的 Demo 回放驱动，界面已明确标注，不冒充真实 GPS。
 
 ### HMI-P0-03：唯一主交互端
 
@@ -381,6 +382,15 @@
 ### HMI-P1-01：浏览器回归
 
 - 覆盖快照渲染、主端切换、pending confirm、401、SSE 中断、重复 revision 和 Session 切换。
+
+### HMI-P0-08：座舱控制与跨端同步
+
+- HMI 仅提供 AC 开关、温度、模式和风量，不把商品、长消息或复杂车辆设置搬入驾驶主屏。
+- 控件先形成本地待提交草稿；点击唯一主按钮后提交 `vehicle.control` 标准 Event，禁止浏览器直接改 World State。
+- Agent 校验 `source=vehicle_hmi`、允许字段、16-30°C 温度和枚举值，成功后统一写入 `vehicle_state` 并增加 revision。
+- 手机和 HMI 使用同一个 Session 的 SSE 快照显示相同状态；失败时保留上一版状态并给出低干扰错误。
+- 相同 `event_id` 重试必须返回 duplicate，不得重复增加 revision。
+- **当前情况（2026-08-03）**：Schema、Pydantic、Runtime、HMI Client、座舱 UI 和后端/浏览器自动化测试已完成；真实手机与目标车机同场同步仍需在部署新版 Agent 后验收。
 
 ## 9. Demo 控制台
 
@@ -456,6 +466,7 @@
 - 参与：Agent、手机 B、车机。
 - 手机创建任务；控制台和 HMI 同步相同 Session、revision 和 tasks。
 - 暂时不接语音和腕表，先证明共享状态闭环。
+- 座舱控制追加验收：HMI 设置 23.5°C、制冷、高风量后，手机和 HMI 必须在相同 revision 显示一致 `vehicle_state`。
 
 ### INTEGRATION-P0-02：主交互端交接
 

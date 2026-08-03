@@ -225,7 +225,7 @@
   function vehicleView(state) {
     const vehicle = state?.vehicle_state;
     if (!vehicle || typeof vehicle !== "object") {
-      return { available: false, acOn: null, temperature: null, temperatureLabel: "--", mode: "数据不可用", fan: "数据不可用", summary: "等待座舱状态同步" };
+      return { available: false, acOn: null, temperature: null, temperatureLabel: "--", rawMode: "auto", rawFan: "medium", mode: "数据不可用", fan: "数据不可用", summary: "等待座舱状态同步" };
     }
     const temperature = finiteNumber(vehicle.ac_target_temp);
     const mode = { auto: "自动", cool: "制冷", heat: "制热", fan: "送风" }[vehicle.ac_mode] || "数据不可用";
@@ -236,6 +236,8 @@
       acOn: vehicle.ac_on === true,
       temperature,
       temperatureLabel,
+      rawMode: vehicle.ac_mode,
+      rawFan: vehicle.fan_speed,
       mode,
       fan,
       summary: `AC ${vehicle.ac_on === true ? "已开启" : "已关闭"} · ${temperatureLabel} · ${mode} · ${fan}`

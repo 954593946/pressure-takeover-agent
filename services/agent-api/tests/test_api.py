@@ -151,6 +151,52 @@ async def test_mobile_voice_transcript_is_written_to_world_state() -> None:
     assert accepted.state.last_utterance.input_mode == "voice"
 
 
+@pytest.mark.asyncio
+async def test_vehicle_hmi_control_updates_shared_world_state_idempotently(client: AsyncClient) -> None:
+    payload = await event(
+        client,
+        "evt_vehicle_climate",
+        "vehicle.control",
+        {"ac_on": True, "ac_target_temp": 23, "ac_mode": "cool", "fan_speed": "high"},
+        "vehicle_hmi",
+    )
+    first = await client.post("/v1/event", json=payload)
+    retry = await client.post("/v1/event", json=payload)
+
+    assert first.status_code == 202
+    assert retry.status_code == 202
+    assert retry.json()["duplicate"] is True
+    assert retry.json()["revision"] == first.json()["revision"]
+    vehicle = first.json()["state"]["vehicle_state"]
+    assert vehicle == {
+        "ac_on": True,
+        "ac_target_temp": 23.0,
+        "ac_mode": "cool",
+        "fan_speed": "high",
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("source", "payload"),
+    [
+        ("mobile", {"ac_on": True}),
+        ("vehicle_hmi", {"ac_target_temp": 31}),
+        ("vehicle_hmi", {"ac_mode": "eco"}),
+        ("vehicle_hmi", {"fan_speed": "maximum"}),
+        ("vehicle_hmi", {"unknown": True}),
+        ("vehicle_hmi", {}),
+    ],
+)
+async def test_vehicle_control_rejects_invalid_source_and_payload(client: AsyncClient, source: str, payload: dict) -> None:
+    response = await client.post(
+        "/v1/event",
+        json=await event(client, f"evt_invalid_vehicle_{source}_{len(payload)}", "vehicle.control", payload, source),
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] in {"INVALID_EVENT_SOURCE", "INVALID_VEHICLE_CONTROL"}
+
+
 def test_geo_point_rejects_invalid_coordinate_ranges() -> None:
     with pytest.raises(ValueError):
         GeoPoint(name="invalid longitude", longitude=181, latitude=31)
@@ -480,3 +526,23 @@ def test_contract_examples_validate() -> None:
     event_example = json.loads((REPO_ROOT / "contracts" / "examples" / "confirmation-event.json").read_text(encoding="utf-8"))
     Draft202012Validator(world_schema, format_checker=Draft202012Validator.FORMAT_CHECKER).validate(world_example)
     Draft202012Validator(event_schema, format_checker=Draft202012Validator.FORMAT_CHECKER).validate(event_example)
+
+
+def test_vehicle_control_payload_is_frozen_in_event_schema() -> None:
+    schema = json.loads((REPO_ROOT / "contracts" / "event.schema.json").read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema, format_checker=Draft202012Validator.FORMAT_CHECKER)
+    base = {
+        "schema_version": "0.2.0",
+        "event_id": "evt_vehicle_schema",
+        "session_id": "schema_session",
+        "type": "vehicle.control",
+        "source": "vehicle_hmi",
+        "timestamp": "2026-08-03T14:30:00+08:00",
+        "payload": {"ac_on": True, "ac_target_temp": 23.5, "ac_mode": "cool", "fan_speed": "high"},
+    }
+
+    assert list(validator.iter_errors(base)) == []
+    assert list(validator.iter_errors({**base, "source": "mobile"}))
+    assert list(validator.iter_errors({**base, "payload": {"ac_target_temp": 31}}))
+    assert list(validator.iter_errors({**base, "payload": {"unknown": True}}))
+    assert list(validator.iter_errors({**base, "payload": {}}))

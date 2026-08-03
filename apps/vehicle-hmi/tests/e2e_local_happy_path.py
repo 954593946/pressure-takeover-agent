@@ -101,7 +101,7 @@ def main():
         assert "接孩子" in responsibility_text
         assert "超市" in responsibility_text
 
-        page.locator("#vd-nav-card").click(position={"x": 400, "y": 18})
+        page.locator("#vd-nav-card").click(position={"x": 180, "y": 18})
         assert "行程详情" in page.locator("#auri-detail-title").inner_text()
         assert "阳光小学" in page.locator("#auri-detail-body").inner_text()
         assert page.locator("#auri-driver-panel").evaluate("node => node.classList.contains('is-detail')")
@@ -120,9 +120,8 @@ def main():
         page.locator("#auri-driver-back").click()
 
         dock_details = {
-            "auri": "AURI",
             "tasks": "今日任务",
-            "messages": "消息与执行",
+            "messages": "处理进度",
             "vehicle": "座舱状态",
         }
         for section, expected_title in dock_details.items():
@@ -132,6 +131,9 @@ def main():
             assert page.locator("#left-panel").is_hidden()
             page.locator("#auri-driver-back").click()
             assert page.locator("#auri-driver-overview").is_visible()
+        page.locator('[data-auri-section="home"]').click()
+        assert page.locator("#auri-driver-detail").is_hidden()
+        assert page.locator("#auri-driver-overview").is_visible()
         page.locator('[data-auri-section="navigation"]').click()
         assert page.locator("#auri-driver-detail").is_hidden()
         assert page.locator("#auri-driver-overview").is_visible()
@@ -142,26 +144,26 @@ def main():
             arg=warning_state["revision"],
         )
         assert warning_state["stage"] == "pre_departure_warning"
-        page.wait_for_function("document.querySelector('#auri-stage-notice')?.classList.contains('is-visible')")
-        assert "出发窗口正在缩短" in page.locator("#auri-stage-notice").inner_text()
         page.wait_for_function("document.querySelector('#auri-device-notice')?.classList.contains('is-visible')")
         assert "腕表" in page.locator("#auri-device-notice").inner_text()
+        page.wait_for_function("document.querySelector('#auri-stage-notice')?.classList.contains('is-visible')")
+        assert "出发窗口正在缩短" in page.locator("#auri-stage-notice").inner_text()
 
         vehicle_state = submit("scene.vehicle_entered", {})
         page.wait_for_function(
             "window.AURI_HMI_NEXT.getState().viewModel.lifecycle.primarySurface === 'vehicle_hmi'"
         )
         assert vehicle_state["scene"] == "driving"
+        page.wait_for_function("document.querySelector('#auri-device-notice')?.classList.contains('is-visible')")
+        assert "腕表" in page.locator("#auri-device-notice").inner_text()
         page.wait_for_function("document.querySelector('#auri-stage-notice')?.classList.contains('is-visible')")
         stage_notice_text = page.locator("#auri-stage-notice").inner_text()
         assert any(text in stage_notice_text for text in ["路线正在同步到车机", "正在前往"])
-        page.wait_for_function("document.querySelector('#auri-device-notice')?.classList.contains('is-visible')")
-        assert "腕表" in page.locator("#auri-device-notice").inner_text()
 
-        page.locator('[data-auri-section="auri"]').click()
-        page.locator('#auri-detail-body [data-panel-target="sync"]').click()
+        page.locator('[data-auri-section="home"]').click()
+        page.locator('#auri-driver-overview [data-panel-target="sync"]').first.click()
         assert "设备同步" in page.locator("#auri-detail-title").inner_text()
-        assert all(label in page.locator("#auri-detail-body").inner_text() for label in ["手机", "腕表", "车机"])
+        assert all(label in page.locator("#auri-detail-body").inner_text() for label in ["手机", "腕上设备", "车机"])
         page.screenshot(path=SCREENSHOT_DIR / "auri-hmi-e2e-left-sync.png")
         page.locator("#auri-driver-back").click()
 
@@ -235,6 +237,9 @@ def main():
             "window.AURI_HMI_NEXT.getState().viewModel.lifecycle.stage === 'cooldown'"
         )
         assert page.locator("#vd-nav-card").is_visible()
+        page.wait_for_function(
+            "document.querySelector('#auri-stage-notice')?.classList.contains('is-visible')"
+        )
         assert page.locator("#auri-stage-notice").is_visible()
         assert "AURI 已降低打扰" in page.locator("#auri-stage-notice").inner_text()
 

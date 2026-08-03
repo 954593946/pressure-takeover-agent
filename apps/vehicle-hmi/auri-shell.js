@@ -48,7 +48,7 @@
     offline: ["离线导航", "offline"],
     loading: ["路线载入中", "loading"],
     map_ready: ["地图已连接", "loading"],
-    online: ["高德实时导航", "online"]
+    online: ["高德导航 · Demo 定位", "online"]
   };
   const TAKEOVER_STAGES = new Set([
     "takeover_L2", "takeover_L3", "planning", "service_prepared",
@@ -84,6 +84,10 @@
   let confirmInFlight = false;
   let confirmOutcomeUnknown = false;
   let confirmError = null;
+  let climateDraft = null;
+  let climateDraftDirty = false;
+  let climateRequest = null;
+  let climateError = null;
   let lastConfirmationId = null;
   let confirmationExpiryTimer = null;
   const notifiedDeviceCommands = new Set();
@@ -126,6 +130,10 @@
     flexible: '<path d="M4 8h10a4 4 0 0 1 4 4v5"/><path d="m15 14 3 3 3-3M4 16h7"/>',
     back: '<path d="m15 18-6-6 6-6"/>',
     add: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
+    minus: '<path d="M5 12h14"/>',
+    power: '<path d="M12 3v9"/><path d="M7.2 5.8a8 8 0 1 0 9.6 0"/>',
+    airflow: '<path d="M4 8h10.5a2.5 2.5 0 1 0-2.2-3.7"/><path d="M4 12h14a2 2 0 1 1-1.7 3"/><path d="M4 16h7"/>',
+    link: '<path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/>',
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10h.01"/>'
   };
 
@@ -241,7 +249,7 @@
     hud.setAttribute("aria-label", "下一步导航");
     hud.innerHTML = `
       <span class="auri-nav-maneuver" id="auri-nav-maneuver">${iconSvg("route")}</span>
-      <span class="auri-nav-next"><b id="auri-nav-next-distance">等待路线</b><small id="auri-nav-next-road">手机同步目的地后开始导航</small></span>
+      <span class="auri-nav-next"><b id="auri-nav-next-distance">等待路线</b><small id="auri-nav-next-road">手机同步目的地后开始导航</small><em id="auri-nav-source">离线导航</em></span>
       <span class="auri-nav-remaining"><b id="auri-nav-remaining-time">--</b><small id="auri-nav-remaining-distance">-- 公里</small></span>
     `;
     map.appendChild(hud);
@@ -545,7 +553,10 @@
     clearTimeout(noticeHideTimer);
     const notice = document.getElementById("auri-device-notice");
     notice?.classList.remove("is-visible");
-    if (notice) noticeHideTimer = setTimeout(() => { notice.hidden = true; }, 220);
+    if (notice) noticeHideTimer = setTimeout(() => {
+      notice.hidden = true;
+      renderStageNotice();
+    }, 220);
   }
 
   function renderDeviceNotice() {
@@ -560,6 +571,11 @@
     notifiedDeviceCommands.add(commandKey);
     const notice = document.getElementById("auri-device-notice");
     if (!notice) return;
+    // A device notice temporarily owns the single map notification lane. If
+    // the stage notice was scheduled in the same render pass, allow it to be
+    // shown after the device notice closes instead of losing it permanently.
+    notifiedStages.delete(`${viewModel.meta.sessionId}:${viewModel.lifecycle.stage}`);
+    hideStageNotice();
     const delivered = wearable.connected;
     const title = ["warning", "error"].includes(wearable.mode)
       ? delivered ? "腕表已发出风险提醒" : "腕表风险提醒已准备"
@@ -601,6 +617,8 @@
   }
 
   function renderStageNotice() {
+    const deviceNotice = document.getElementById("auri-device-notice");
+    if (deviceNotice && !deviceNotice.hidden) return;
     const view = stageNoticeView();
     if (!view || !viewModel.meta.sessionId) {
       const notice = document.getElementById("auri-stage-notice");
@@ -690,6 +708,111 @@
     }
   }
 
+  function ensureClimateDraft() {
+    if (climateDraft && climateDraftDirty) return climateDraft;
+    const climate = viewModel.vehicle;
+    climateDraft = {
+      ac_on: climate.acOn === true,
+      ac_target_temp: Number.isFinite(Number(climate.temperature)) ? Number(climate.temperature) : 24,
+      ac_mode: climate.rawMode || "auto",
+      fan_speed: climate.rawFan || "medium"
+    };
+    return climateDraft;
+  }
+
+  function taskBoardContent(vm) {
+    const groups = [
+      ["rigid", "刚性任务", "优先保护时间窗口", "calendar"],
+      ["flexible", "弹性任务", "可调整或转交 Agent", "flexible"]
+    ];
+    if (!vm.tasks.total) return `
+      <section class="auri-empty-state">
+        <span>${iconSvg("task")}</span><h3>等待手机创建任务</h3>
+        <p>手机语音创建后，任务会按刚性与弹性自动归组。</p>
+      </section>`;
+    return groups.map(([tone, title, subtitle, icon]) => {
+      const items = vm.tasks.items.filter((task) => task.tone === tone);
+      if (!items.length) return "";
+      return `<section class="auri-task-group is-${tone}">
+        <header><span>${iconSvg(icon)}</span><div><b>${title}</b><small>${subtitle}</small></div><em>${items.length}</em></header>
+        <div>${items.map((task) => `<button type="button" class="auri-task-card" data-panel-target="task:${escapeHtml(task.id)}">
+          <span><b>${escapeHtml(task.displayTitle)}</b><small>${escapeHtml(task.location || task.type)}</small></span>
+          <em>${escapeHtml(task.status)}</em>
+        </button>`).join("")}</div>
+      </section>`;
+    }).join("");
+  }
+
+  function actionBoardContent(vm) {
+    if (!vm.actions.items.length && !vm.serviceOrders.items.length) return `
+      <section class="auri-empty-state">
+        <span>${iconSvg("message")}</span><h3>等待 AURI 准备处理方案</h3>
+        <p>风险成立后，这里会显示消息、任务调整与生活服务的执行进度。</p>
+      </section>`;
+    const actions = vm.actions.items.map((action, index) => `
+      <button type="button" class="auri-action-step is-${escapeHtml(action.status)}" data-panel-target="action:${escapeHtml(action.id)}">
+        <span class="auri-action-index">${action.status === "completed" ? iconSvg("check") : index + 1}</span>
+        <span><b>${escapeHtml(action.target || "Agent 动作")}</b><small>${escapeHtml(action.summary)}</small></span>
+        <em>${escapeHtml(action.statusLabel)}</em>
+      </button>`).join("");
+    return `<section class="auri-action-board"><header><b>处理队列</b><span>${vm.actions.counts.completed}/${vm.actions.counts.total} 完成</span></header>${actions}</section>`;
+  }
+
+  function syncBoardContent(vm) {
+    const primary = vm.lifecycle.primarySurface;
+    const devices = [
+      ["phone", "手机", primary === "mobile" ? "当前主交互端" : vm.utterance.available ? "语音与任务已同步" : "任务与权限中心", primary === "mobile" || vm.utterance.available],
+      ["watch", "腕上设备", vm.wearable.connected ? `${vm.wearable.text} · ${vm.wearable.modeLabel}` : "尚未连接", vm.wearable.connected],
+      ["car", "车机", primary === "vehicle_hmi" ? "驾驶主交互端" : "导航与状态已就绪", connectionStatus.type === "streaming"]
+    ];
+    return `<section class="auri-sync-board">
+      <div class="auri-sync-line" aria-hidden="true"></div>
+      ${devices.map(([icon, title, copy, active]) => `<article class="${active ? "is-online" : "is-offline"}">
+        <span>${iconSvg(icon)}</span><b>${escapeHtml(title)}</b><small>${escapeHtml(copy)}</small><em>${active ? "已同步" : "等待"}</em>
+      </article>`).join("")}
+      <footer>${iconSvg("link")}<span><b>World State r${vm.meta.revision < 0 ? "--" : vm.meta.revision}</b><small>${connectionStatus.type === "streaming" ? "实时流已连接" : "正在恢复连接"}</small></span></footer>
+    </section>`;
+  }
+
+  function vehicleBoardContent(vm) {
+    const draft = ensureClimateDraft();
+    const modeLabels = { auto: "自动", cool: "制冷", heat: "制热", fan: "送风" };
+    const fanLabels = { low: "低", medium: "中", high: "高" };
+    return `<section class="auri-climate-board${draft.ac_on ? " is-on" : " is-off"}" data-climate-board>
+      <header>
+        <span class="auri-climate-symbol">${iconSvg("climate")}</span>
+        <span><small>车内舒适</small><b>${draft.ac_on ? "空调运行中" : "空调已关闭"}</b></span>
+        <button type="button" class="auri-power-toggle${draft.ac_on ? " is-on" : ""}" data-climate-control="power" aria-pressed="${draft.ac_on}">${iconSvg("power")}<span>${draft.ac_on ? "关闭" : "开启"}</span></button>
+      </header>
+      <div class="auri-temperature-control">
+        <button type="button" data-climate-control="temperature-down" aria-label="降低温度">${iconSvg("minus")}</button>
+        <div><strong data-climate-temperature>${Number(draft.ac_target_temp).toFixed(Number.isInteger(draft.ac_target_temp) ? 0 : 1)}</strong><span>°C</span><small>目标温度</small></div>
+        <button type="button" data-climate-control="temperature-up" aria-label="提高温度">${iconSvg("add")}</button>
+      </div>
+      <div class="auri-climate-setting"><label>运行模式</label><div class="auri-segmented" data-climate-group="mode">
+        ${Object.entries(modeLabels).map(([value, label]) => `<button type="button" data-climate-mode="${value}" class="${draft.ac_mode === value ? "is-active" : ""}">${label}</button>`).join("")}
+      </div></div>
+      <div class="auri-climate-setting"><label>风量</label><div class="auri-segmented" data-climate-group="fan">
+        ${Object.entries(fanLabels).map(([value, label]) => `<button type="button" data-climate-fan="${value}" class="${draft.fan_speed === value ? "is-active" : ""}">${label}风</button>`).join("")}
+      </div></div>
+      <div class="auri-climate-sync">
+        <span>${iconSvg("link")}</span><span><b>${climateRequest ? "正在同步设置" : climateError ? "同步未完成" : "手机与车机使用同一状态"}</b><small>${climateError ? escapeHtml(climateError) : `World State · revision ${vm.meta.revision < 0 ? "--" : vm.meta.revision}`}</small></span>
+      </div>
+      <button type="button" class="auri-climate-apply" data-climate-control="apply" ${climateRequest || !climateDraftDirty ? "disabled" : ""}>${climateRequest ? "正在同步…" : climateDraftDirty ? "应用到座舱" : "设置已同步"}</button>
+    </section>`;
+  }
+
+  function routeBoardContent(vm) {
+    const remainingMeters = Number(routeMeta?.remainingDistanceMeters);
+    const remaining = Number.isFinite(remainingMeters) ? (remainingMeters >= 1000 ? `${(remainingMeters / 1000).toFixed(1)} 公里` : `${Math.round(remainingMeters)} 米`) : "--";
+    return `<section class="auri-route-board">
+      <header><span>${iconSvg("route")}</span><div><small>当前目的地</small><h3>${escapeHtml(vm.navigation.destination)}</h3></div></header>
+      <div class="auri-route-metrics"><article><small>预计到达</small><b>${escapeHtml(vm.navigation.etaLabel)}</b></article><article><small>剩余距离</small><b>${escapeHtml(remaining)}</b></article><article><small>路况影响</small><b>${vm.risk.lateMinutes ? `晚 ${vm.risk.lateMinutes} 分钟` : "基本畅通"}</b></article></div>
+      <div class="auri-route-next"><span>${iconSvg("route")}</span><span><small>下一步</small><b>${escapeHtml(routeMeta?.instruction || "等待导航指引")}</b></span><em>${routeMeta?.nextDistance ? `${routeMeta.nextDistance.value} ${routeMeta.nextDistance.unit}` : "--"}</em></div>
+      <p>${mapStatus.mode === "online" ? "高德真实底图与路线 · 车辆位置为 Demo 状态回放" : "当前使用离线路线演示"}</p>
+    </section>`;
+  }
+
   function panelFor(section) {
     const vm = viewModel;
     if (section === "auri") {
@@ -731,6 +854,7 @@
           : "请在手机端通过语音创建任务，车机会在状态更新后自动接续。",
         status: vm.tasks.completed ? `${vm.tasks.completed}/${vm.tasks.total} 已完成` : `${vm.tasks.total} 项`,
         tone: vm.tasks.total ? "processing" : "idle",
+        content: taskBoardContent(vm),
         rows: taskRows.length
           ? [...taskRows, rowButton("路", "当前行程", `${vm.navigation.destination} · ETA ${vm.navigation.etaLabel}`, "查看", "route")]
           : [emptyRow("＋", "任务入口", "等待手机语音创建任务")]
@@ -779,7 +903,7 @@
           order.status === "submitted" ? "completed" : order.errorCode ? "error" : "processing"
         ));
       return {
-        title: "消息与执行",
+        title: "处理进度",
         subtitle: vm.actions.counts.total ? `${vm.actions.counts.completed}/${vm.actions.counts.total} 已完成` : "等待 Agent 方案",
         lead: vm.actions.counts.total ? `${vm.actions.counts.total} 项动作已准备或执行` : "暂无 Agent 动作",
         copy: vm.actions.counts.total
@@ -787,6 +911,7 @@
           : "AURI 会在需要时准备消息、任务调整和生活服务。",
         status: vm.actions.counts.failed || vm.actions.counts.blocked ? "需要注意" : vm.actions.counts.total ? "状态已同步" : "等待",
         tone: vm.actions.counts.failed || vm.actions.counts.blocked ? "critical" : vm.actions.counts.completed === vm.actions.counts.total && vm.actions.counts.total ? "success" : "processing",
+        content: actionBoardContent(vm),
         rows: actionRows.length || orderRows.length ? [...actionRows, ...orderRows] : [emptyRow("□", "消息与服务", "等待 Agent 生成处理方案")]
       };
     }
@@ -823,13 +948,14 @@
         : "等待路线数据";
       return {
         title: "行程详情",
-        subtitle: mapStatus.mode === "online" ? "高德实时导航" : "离线导航",
+        subtitle: mapStatus.mode === "online" ? "高德导航 · Demo 定位" : "离线导航",
         lead: vm.navigation.hasDestination ? vm.navigation.destination : "等待手机同步路线",
         copy: vm.risk.lateMinutes
           ? `当前预计晚到 ${vm.risk.lateMinutes} 分钟，请保持安全驾驶。`
           : vm.navigation.hasEta ? `预计 ${vm.navigation.etaLabel} 到达。` : "任务建立后会自动准备路线。",
         status: vm.risk.label,
         tone: vm.risk.tone,
+        content: routeBoardContent(vm),
         rows: [
           row("时", "预计到达", vm.navigation.taskTitle || "当前导航任务", vm.navigation.etaLabel, vm.risk.lateMinutes ? "warning" : "success"),
           row("路", "下一动作", routeMeta?.instruction || "等待导航指引", routeMeta?.nextDistance ? `${routeMeta.nextDistance.value}${routeMeta.nextDistance.unit}` : "--", "processing"),
@@ -852,6 +978,7 @@
           : "各端显示同一任务和处理结果，操作入口跟随当前场景切换。",
         status: connectionStatus.type === "streaming" ? "状态已同步" : "正在同步",
         tone: connectionStatus.type === "streaming" ? "success" : "processing",
+        content: syncBoardContent(vm),
         rows: [
           row("手", "手机", vm.utterance.available ? `最近语音：“${vm.utterance.preview}”` : "任务与权限中心", phoneState, primary === "mobile" ? "success" : "processing"),
           row("腕", "腕表", vm.wearable.connected ? `${vm.wearable.text} · ${HAPTIC_LABEL[vm.wearable.haptic] || "无触觉"}` : "连接状态待更新", vm.wearable.connected ? vm.wearable.modeLabel : "离线", vm.wearable.connected ? vm.wearable.mode : "idle"),
@@ -862,17 +989,16 @@
 
     if (section === "vehicle") {
       const climate = vm.vehicle;
-      const heartRate = vm.wearable.heartRate ? `${vm.wearable.heartRate} bpm` : "未提供";
       return {
         title: "座舱状态",
-        subtitle: "车辆与随行设备",
+        subtitle: "座舱舒适",
         lead: climate.available ? climate.summary : "等待座舱状态同步",
-        copy: "车内舒适设置与腕上提醒保持同步。",
+        copy: "车机控制经 Agent 校验后写入共享状态，手机同步显示结果。",
         status: climate.available ? "状态已同步" : "等待",
         tone: climate.available ? "success" : "idle",
+        content: vehicleBoardContent(vm),
         rows: [
-          row("温", "空调与温度", climate.available ? `${climate.mode} · ${climate.fan}` : "暂无有效车辆数据", climate.temperatureLabel, climate.acOn ? "processing" : "idle"),
-          row("腕", "腕上设备", vm.wearable.connected ? `${vm.wearable.text} · 心率 ${heartRate}` : "尚未连接", vm.wearable.connected ? vm.wearable.modeLabel : "离线", vm.wearable.mode)
+          row("温", "空调与温度", climate.available ? `${climate.mode} · ${climate.fan}` : "暂无有效车辆数据", climate.temperatureLabel, climate.acOn ? "processing" : "idle")
         ]
       };
     }
@@ -995,8 +1121,80 @@
     });
   }
 
+  function refreshClimatePanel() {
+    if (activeSection === "vehicle") openPanel("vehicle");
+  }
+
+  function updateClimateDraft(patch) {
+    const draft = ensureClimateDraft();
+    climateDraft = { ...draft, ...patch };
+    climateDraftDirty = true;
+    climateError = null;
+    climateRequest = null;
+    refreshClimatePanel();
+  }
+
+  async function submitClimateSettings() {
+    if (climateRequest?.inFlight) return;
+    const draft = ensureClimateDraft();
+    if (!climateDraftDirty) return;
+    if (!climateRequest) {
+      climateRequest = {
+        eventId: `hmi_climate_${Date.now()}_${Math.random().toString(16).slice(2, 9)}`,
+        timestamp: new Date().toISOString(),
+        payload: { ...draft }
+      };
+    }
+    climateRequest.inFlight = true;
+    climateError = null;
+    refreshClimatePanel();
+    try {
+      await client.submitEvent("vehicle.control", climateRequest.payload, {
+        eventId: climateRequest.eventId,
+        timestamp: climateRequest.timestamp,
+        source: "vehicle_hmi"
+      });
+      climateRequest = null;
+      climateDraftDirty = false;
+      climateDraft = null;
+      climateError = null;
+    } catch (error) {
+      climateRequest.inFlight = false;
+      climateError = error?.message || "Agent 未接受本次设置";
+      lastError = climateError;
+    }
+    refreshClimatePanel();
+  }
+
+  function bindPanelInteractions() {
+    const body = document.getElementById("auri-detail-body");
+    if (!body) return;
+    body.querySelectorAll("[data-panel-target]").forEach((button) => {
+      button.addEventListener("click", () => openPanel(button.dataset.panelTarget));
+    });
+    body.querySelector('[data-climate-control="power"]')?.addEventListener("click", () => {
+      const draft = ensureClimateDraft();
+      updateClimateDraft({ ac_on: !draft.ac_on });
+    });
+    body.querySelector('[data-climate-control="temperature-down"]')?.addEventListener("click", () => {
+      const draft = ensureClimateDraft();
+      updateClimateDraft({ ac_target_temp: Math.max(16, Number(draft.ac_target_temp) - 0.5), ac_on: true });
+    });
+    body.querySelector('[data-climate-control="temperature-up"]')?.addEventListener("click", () => {
+      const draft = ensureClimateDraft();
+      updateClimateDraft({ ac_target_temp: Math.min(30, Number(draft.ac_target_temp) + 0.5), ac_on: true });
+    });
+    body.querySelectorAll("[data-climate-mode]").forEach((button) => {
+      button.addEventListener("click", () => updateClimateDraft({ ac_mode: button.dataset.climateMode, ac_on: true }));
+    });
+    body.querySelectorAll("[data-climate-fan]").forEach((button) => {
+      button.addEventListener("click", () => updateClimateDraft({ fan_speed: button.dataset.climateFan, ac_on: true }));
+    });
+    body.querySelector('[data-climate-control="apply"]')?.addEventListener("click", () => void submitClimateSettings());
+  }
+
   function openPanel(section) {
-    if (section === "navigation") {
+    if (section === "navigation" || section === "home") {
       closePanel();
       return;
     }
@@ -1013,18 +1211,22 @@
     const body = document.getElementById("auri-detail-body");
     if (title) title.textContent = config.title;
     if (subtitle) subtitle.textContent = config.subtitle;
-    if (body) body.innerHTML = `
-      <div class="auri-shell-content">
-        <p class="auri-shell-lead">${escapeHtml(config.lead)}</p>
-        <p class="auri-shell-copy">${escapeHtml(config.copy)}</p>
-        <span class="auri-shell-status is-${escapeHtml(config.tone || "idle")}">${escapeHtml(config.status)}</span>
-        ${config.form || config.rows.join("")}
-      </div>
-    `;
+    if (body) {
+      body.classList.toggle("is-custom", Boolean(config.content));
+      body.innerHTML = config.content
+        ? `<div class="auri-shell-content is-custom">${config.content}</div>`
+        : `<div class="auri-shell-content">
+            <p class="auri-shell-lead">${escapeHtml(config.lead)}</p>
+            <p class="auri-shell-copy">${escapeHtml(config.copy)}</p>
+            <span class="auri-shell-status is-${escapeHtml(config.tone || "idle")}">${escapeHtml(config.status)}</span>
+            ${config.form || config.rows.join("")}
+          </div>`;
+    }
     document.querySelectorAll("[data-auri-section]").forEach((item) => {
       item.classList.toggle("active", item.dataset.auriSection === section);
     });
     bindConfigForm();
+    bindPanelInteractions();
   }
 
   function replaceCarBranding() {
@@ -1065,12 +1267,28 @@
   function prepareClimateControls() {
     document.querySelectorAll(".bb-arr").forEach((item) => {
       item.removeAttribute("onclick");
-      item.setAttribute("aria-disabled", "true");
-      item.title = "空调状态由 Agent 同步";
+      item.removeAttribute("aria-disabled");
+      item.setAttribute("role", "button");
+      item.setAttribute("tabindex", "0");
+      item.title = item.classList.contains("bb-arr-blue") ? "降低座舱温度" : "提高座舱温度";
+      const activate = () => {
+        const draft = ensureClimateDraft();
+        const delta = item.classList.contains("bb-arr-blue") ? -0.5 : 0.5;
+        updateClimateDraft({ ac_target_temp: Math.max(16, Math.min(30, Number(draft.ac_target_temp) + delta)), ac_on: true });
+        openPanel("vehicle");
+      };
+      item.addEventListener("click", activate);
+      item.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") activate();
+      });
     });
+    document.getElementById("bb-fan-awake")?.addEventListener("click", () => openPanel("vehicle"));
   }
 
   function bindDock() {
+    document.querySelectorAll(".bb-dock-icon[data-icon]").forEach((item) => {
+      item.innerHTML = iconSvg(item.dataset.icon);
+    });
     document.querySelectorAll("[data-auri-section]").forEach((item) => {
       item.setAttribute("role", "button");
       item.setAttribute("tabindex", "0");
@@ -1305,11 +1523,16 @@
     const previousMode = mapStatus.mode;
     mapStatus = next;
     const source = document.getElementById("auri-map-source");
+    const navSource = document.getElementById("auri-nav-source");
     const controls = document.getElementById("auri-map-controls");
     const [label, tone] = MAP_STATUS_VIEW[next.mode] || [next.message || "离线导航", "offline"];
     if (source) {
       source.textContent = next.message || label;
       source.dataset.mode = tone;
+    }
+    if (navSource) {
+      navSource.textContent = label;
+      navSource.dataset.mode = tone;
     }
     if (controls) controls.hidden = next.mode !== "online";
     if (next.mode === "online") {

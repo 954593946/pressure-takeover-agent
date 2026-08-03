@@ -132,10 +132,13 @@
       || instruction.match(/(?:进入|沿|驶入)([^，。]+?)(?:后|行驶|靠|左转|右转|$)/)?.[1]
       || "当前道路";
     const totalDurationSeconds = Number(route?.time || 0);
+    const trafficStatus = String(step?.tmcs?.find?.((item) => item?.status)?.status || "").trim() || "路况正常";
     return {
       instruction,
       maneuver,
       roadName,
+      trafficStatus,
+      nextDistanceMeters: remaining,
       nextDistance: remaining >= 1000
         ? { value: (remaining / 1000).toFixed(1), unit: "公里" }
         : { value: String(Math.max(50, Math.round(remaining / 10) * 10)), unit: "米" },
@@ -378,7 +381,7 @@
           const meta = routeMeta(this.drivingRoute, 0);
           this.lastRouteMetaKey = `${meta.stepIndex}:${meta.nextDistance.value}:${meta.nextDistance.unit}`;
           this.onRouteMeta(meta);
-          this.onStatus({ mode: "online", message: "高德实时导航", usage: readUsage() });
+          this.onStatus({ mode: "online", message: "高德导航 · Demo 定位", usage: readUsage() });
           if (this.lastSnapshot) this.update(this.lastSnapshot);
           return { mode: "online", planned: true };
         } catch (error) {
@@ -454,10 +457,12 @@
       const delta = Math.min(rawDelta, 360 - rawDelta);
       const attention = ["takeover_L2", "takeover_L3", "planning", "waiting_confirmation"].includes(snapshot.stage);
       const lookAhead = locationAtProgress(this.routeGeometry, Math.min(1, Number(snapshot.progress || 0) + 0.006));
+      const meta = routeMeta(this.drivingRoute, snapshot.progress);
+      const navigationZoom = meta.nextDistanceMeters <= 260 ? 17.8 : meta.nextDistanceMeters <= 900 ? 17.45 : 17.05;
       this.cameraMode = "follow";
       this.mapWrap.dataset.cameraMode = "follow";
-      this.map.setZoomAndCenter(attention ? 17.15 : 17.3, lookAhead.point, true);
-      this.map.setPitch?.(attention ? 46 : 42, true);
+      this.map.setZoomAndCenter(attention ? Math.min(navigationZoom, 17.3) : navigationZoom, lookAhead.point, true);
+      this.map.setPitch?.(attention ? 48 : 52, true);
       if (force || delta >= 7) {
         this.map.setRotation?.(((360 - heading) % 360 + 360) % 360, true);
         this.lastCameraHeading = heading;
@@ -516,7 +521,7 @@
         this.overlays.vehicleContent?.style?.setProperty("--auri-marker-counter-rotation", `${-markerAngle}deg`);
         if (this.lastProgress !== null && typeof this.overlays.vehicleMarker.moveTo === "function") {
           this.overlays.vehicleMarker.stopMove?.();
-          this.overlays.vehicleMarker.moveTo(location.point, { duration: 900, autoRotation: false });
+          this.overlays.vehicleMarker.moveTo(location.point, { duration: 1350, autoRotation: false });
         } else this.overlays.vehicleMarker.setPosition(location.point);
       } else this.overlays.vehicleMarker.hide();
       if (snapshot.overview) this.overlays.originMarker.show();

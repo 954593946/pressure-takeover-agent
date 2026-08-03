@@ -319,6 +319,32 @@
       }
     }
 
+    async function submitEvent(type, payload, options = {}) {
+      const snapshot = store.getSnapshot();
+      if (!snapshot?.session_id) {
+        const error = new Error("World State session is not ready");
+        error.code = "SESSION_NOT_READY";
+        throw error;
+      }
+      const eventId = options.eventId || `hmi_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
+      const envelope = {
+        schema_version: "0.2.0",
+        event_id: eventId,
+        session_id: snapshot.session_id,
+        type,
+        source: options.source || "vehicle_hmi",
+        timestamp: options.timestamp || new Date().toISOString(),
+        payload: payload || {}
+      };
+      const response = await requestJson("/v1/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(envelope)
+      });
+      if (response?.state) store.consume(response.state, { source: `event:${type}` });
+      return { response, envelope };
+    }
+
     async function preflight() {
       const currentEpoch = epoch;
       try {
@@ -450,6 +476,7 @@
       start,
       stop,
       refresh,
+      submitEvent,
       requestJson,
       reconfigure,
       getConfig: () => ({ ...config, token: config.token }),
