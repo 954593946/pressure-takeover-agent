@@ -131,7 +131,7 @@ class WearableCommandMapperTest {
     }
 
     @Test
-    fun mapsCompletedToGreenSoftShortAndRecoveryToSilentIdle() {
+    fun mapsCompletedAndCooldownToGreenSoftShortBeforeRecoveryIdle() {
         val completed = WearableCommandMapper.toWatchCommand(
             WorldState(
                 sessionId = "demo",
@@ -140,10 +140,18 @@ class WearableCommandMapperTest {
                 wearable = null,
             ),
         )
-        val parked = WearableCommandMapper.toWatchCommand(
+        val cooldown = WearableCommandMapper.toWatchCommand(
             WorldState(
                 sessionId = "demo",
                 revision = 21,
+                stage = Stage.COOLDOWN,
+                wearable = null,
+            ),
+        )
+        val parked = WearableCommandMapper.toWatchCommand(
+            WorldState(
+                sessionId = "demo",
+                revision = 22,
                 stage = Stage.PARKED_REVIEW,
                 wearable = null,
             ),
@@ -153,6 +161,12 @@ class WearableCommandMapperTest {
         assertEquals("completed", completed.mode)
         assertEquals("soft_short", completed.haptic)
         assertEquals(0x2e9d6f, completed.color)
+
+        assertNotNull(cooldown)
+        assertEquals("completed", cooldown.mode)
+        assertEquals("已处理", cooldown.text)
+        assertEquals("soft_short", cooldown.haptic)
+        assertEquals(0x2e9d6f, cooldown.color)
 
         assertNotNull(parked)
         assertEquals("idle", parked.mode)

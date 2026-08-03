@@ -108,7 +108,7 @@ class WearableGatewayTest {
             WorldState(
                 sessionId = "demo",
                 revision = 1,
-                stage = Stage.ACTION_COMPLETED,
+                stage = Stage.COOLDOWN,
             ),
         )
         val gateway = WearableGateway(repository, json)
