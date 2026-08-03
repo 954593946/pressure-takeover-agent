@@ -113,14 +113,42 @@ async function main() {
   assert.equal(sharedLoaded.streamUrl, "https://shared.example.test/v1/stream");
   assert.equal(sharedLoaded.token, "shared-token");
   assert.equal(sharedLoaded.mapProvider, "offline");
-  const globallyOverridden = agent.loadConfig({
+  const savedChoiceWinsOverRuntimeDefaults = agent.loadConfig({
     storage,
     search: "",
-    globalConfig: { apiBase: "https://override.example.test" }
+    globalConfig: { apiBase: "https://override.example.test", token: "" }
   });
-  assert.equal(globallyOverridden.apiBase, "https://override.example.test");
-  assert.equal(globallyOverridden.streamUrl, "https://override.example.test/v1/stream");
-  assert.equal(globallyOverridden.token, "", "a connection override must not inherit a token for another API");
+  assert.equal(savedChoiceWinsOverRuntimeDefaults.apiBase, "https://shared.example.test");
+  assert.equal(savedChoiceWinsOverRuntimeDefaults.streamUrl, "https://shared.example.test/v1/stream");
+  assert.equal(savedChoiceWinsOverRuntimeDefaults.token, "shared-token", "an empty env.js placeholder must not erase the saved token");
+
+  const queryOverride = agent.loadConfig({
+    storage,
+    search: "?apiBase=https%3A%2F%2Foverride.example.test",
+    globalConfig: { apiBase: "https://runtime-default.example.test", token: "runtime-token" }
+  });
+  assert.equal(queryOverride.apiBase, "https://override.example.test");
+  assert.equal(queryOverride.streamUrl, "https://override.example.test/v1/stream");
+  assert.equal(queryOverride.token, "", "a query connection override must not inherit a token for another API");
+
+  const localMapFallback = agent.loadConfig({
+    storage: { getItem: () => null, setItem: () => {} },
+    search: "",
+    globalConfig: { apiBase: "https://runtime-default.example.test", token: "" },
+    localConfig: { mapProvider: "amap", amapKey: "local-map-key", amapSecurityJsCode: "local-security" }
+  });
+  assert.equal(localMapFallback.mapProvider, "amap");
+  assert.equal(localMapFallback.amapKey, "local-map-key");
+  assert.equal(localMapFallback.amapSecurityJsCode, "local-security");
+
+  const explicitOfflineBeatsLocalMap = agent.loadConfig({
+    storage: { getItem: () => null, setItem: () => {} },
+    search: "",
+    globalConfig: { mapProvider: "offline" },
+    localConfig: { mapProvider: "amap", amapKey: "local-map-key", amapSecurityJsCode: "local-security" }
+  });
+  assert.equal(explicitOfflineBeatsLocalMap.mapProvider, "offline");
+  assert.equal(explicitOfflineBeatsLocalMap.amapKey, "");
 
   const hostileStreamOverride = agent.loadConfig({
     storage,
@@ -198,6 +226,35 @@ async function main() {
     (error) => error.code === "INVALID_JSON"
   );
 
+  const authStatuses = [];
+  const authRaceClient = agent.createClient({
+    config: { apiBase: "https://agent.example.test", token: "wrong", stream: false },
+    onStatus: (status) => authStatuses.push(status.type),
+    fetchImpl: async (url) => {
+      if (url.endsWith("/health")) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => "application/json" },
+          text: async () => JSON.stringify({ status: "ok" })
+        };
+      }
+      return {
+        ok: false,
+        status: 401,
+        statusText: "Unauthorized",
+        headers: { get: () => "application/json" },
+        text: async () => JSON.stringify({ detail: { code: "UNAUTHORIZED", message: "invalid token" } })
+      };
+    }
+  });
+  await authRaceClient.start();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(authRaceClient.getSyncMode(), "auth_required");
+  assert.equal(authStatuses.at(-1), "auth_required", "public health must not overwrite an authenticated 401");
+  authRaceClient.stop();
+
   let streamRequests = 0;
   let streamAborts = 0;
   const lifecycleClient = agent.createClient({
@@ -261,7 +318,7 @@ async function main() {
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(streamAborts, 2);
 
-  console.log("vehicle-hmi-next agent-client tests passed");
+  console.log("vehicle-hmi agent-client tests passed");
 }
 
 main().catch((error) => {

@@ -26,8 +26,13 @@ py -3.11 -m venv .venv
 - `GET http://127.0.0.1:8000/v1/state`
 - `GET http://127.0.0.1:8000/v1/stream`（SSE）
 - `WS  ws://127.0.0.1:8000/v1/ws`
+- `POST http://127.0.0.1:8000/v1/chat`（手机 Chat SSE，要求 `clientEventId`）
+- `POST http://127.0.0.1:8000/v1/chat/sync`（断流同步兜底，复用同一 `clientEventId`）
+- `POST http://127.0.0.1:8000/v1/chat/confirm`（复用标准确认 Ledger）
 
 `GET /health` 中的 `llm_framework=langchain` 表示本构建使用 LangChain。`llm_last_mode=langchain_agent` 表示最近一次完整走过模型；`deterministic_tool` 表示“打开/关闭/调节空调”等明确低风险指令直接走受控工具，不受历史消息或模型网络波动影响；`langchain_agent_fallback_reply` 表示模型已选择并执行工具、但最终文案超时后使用了状态兜底；`fallback` 表示模型调用前失败。`agent_last_tools` 会列出最近实际调用的工具名。
+
+Health 还提供 `llm_last_success_at`、`llm_last_fallback_reason` 和 `llm_last_error_code`。错误码只使用 `UPSTREAM_AUTH`、`UPSTREAM_RATE_LIMIT`、`UPSTREAM_5XX`、`UPSTREAM_TIMEOUT`、`UPSTREAM_ERROR` 或 `LLM_NOT_CONFIGURED`，不会返回供应商响应正文、Key 或用户文本。
 
 完整工具、确认和 Event 边界见 [`contracts/tool-calling-spec.md`](../../contracts/tool-calling-spec.md)。
 
@@ -54,7 +59,7 @@ DEMO_MODE=true
 AMAP_JS_API_KEY=<Web端 JS API Key>
 AMAP_SECURITY_JS_CODE=<安全密钥>
 AMAP_PUBLIC_BASE_URL=https://auri-langchain-agent-api.onrender.com
-AMAP_ALLOWED_ORIGINS=https://wangwang20.github.io,http://127.0.0.1:5174,http://localhost:5174
+AMAP_ALLOWED_ORIGINS=https://954593946.github.io,https://wangwang20.github.io,http://127.0.0.1:5174,http://localhost:5174
 ```
 
 接口职责：

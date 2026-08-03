@@ -28,7 +28,7 @@ from playwright.sync_api import BrowserContext, CDPSession, Page, sync_playwrigh
 REPO_ROOT = Path(__file__).resolve().parents[3]
 AGENT = os.getenv("AURI_AGENT_URL", "http://127.0.0.1:8795").rstrip("/")
 HMI = os.getenv(
-    "AURI_HMI_URL", "http://127.0.0.1:5174/apps/vehicle-hmi-next/"
+    "AURI_HMI_URL", "http://127.0.0.1:5174/apps/vehicle-hmi/"
 )
 TOKEN = os.getenv("AURI_AGENT_TOKEN", "")
 AGENT_PYTHON = os.getenv(
@@ -742,7 +742,7 @@ def write_report(report: dict) -> None:
 def main() -> None:
     agent_host, agent_port = validate_configuration()
     report = {
-        "test": "AURI candidate HMI resilience and soak",
+        "test": "AURI official HMI resilience and soak",
         "status": "running",
         "started_at": datetime.now(TZ).isoformat(),
         "configuration": {

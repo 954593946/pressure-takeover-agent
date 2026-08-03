@@ -69,7 +69,7 @@ Agent 是导航状态唯一写入者。HMI 只读消费，不把高德结果反�
 消费优先级：
 
 1. 有效的 `WorldState.navigation.origin/destination`。
-2. 旧服务没有 `navigation` 时，候选 HMI 临时使用原冻结 Demo 映射。
+2. 旧服务没有 `navigation` 时，HMI 临时使用原冻结 Demo 映射。
 3. 未知地点、无坐标、地图 Key/网络/额度异常时使用 Bosch 离线地图。
 
 兼容映射只用于迁移，不是正式位置解析能力。后续所有新增路线应由 Agent、车辆 API 或受控位置服务写入 `navigation`。

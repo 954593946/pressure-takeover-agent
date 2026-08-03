@@ -182,6 +182,25 @@ ws://127.0.0.1:8000/v1/ws
 
 示例：控制台通知 Agent 已进入车辆。
 
+### 手机自然语言 Chat
+
+手机 Chat 使用 `POST /v1/chat`，请求体必须包含客户端生成的 `clientEventId`：
+
+```json
+{
+  "message": "今天18:10接孩子，之后去超市",
+  "inputMode": "voice",
+  "sessionId": "从 GET /v1/state 读取",
+  "clientEventId": "evt_chat_由客户端生成且重试复用"
+}
+```
+
+正常响应是 SSE，依次可能出现 `text_delta`、`tool_call`、`tool_result`、`confirmation_required`，并以唯一 `done` 结束。Chat frame 只负责对话过程；任务、风险、动作和确认状态仍以 `/v1/state`、`/v1/stream` 为唯一真相。
+
+如果 SSE 断流，客户端调用 `POST /v1/chat/sync` 获取完整回复，必须复用原请求的 `clientEventId`。不得为网络重试生成新 ID；同一 ID 携带不同消息会返回 `409 IDEMPOTENCY_KEY_REUSED`。Session 不匹配返回 409，Agent 在提交 World State 前失败返回 503，不会伪造成功 `done`。
+
+手机确认使用 `POST /v1/chat/confirm`，携带当前 `sessionId`、同一个 `confirmationId` 和 `decision`。它与 `/v1/confirm` 共用确认 Ledger；错误端确认、过期、Session 不匹配和不存在的确认分别保留正式 404/409 错误码。
+
 ```json
 {
   "schema_version": "0.2.0",

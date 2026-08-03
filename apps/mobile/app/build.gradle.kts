@@ -126,4 +126,5 @@ dependencies {
     implementation(fileTree("libs") { include("*.aar") })
 
     testImplementation(kotlin("test-junit"))
+    testImplementation(libs.kotlinx.coroutines.test)
 }

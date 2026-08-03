@@ -190,4 +190,4 @@ const incompatible = model.buildVehicleHmiViewModel({ ...fixture, schema_version
 assert.equal(incompatible.meta.isCompatible, false);
 assert.equal(incompatible.interaction.canConfirm, false);
 
-console.log("vehicle-hmi-next world-state-model tests passed");
+console.log("vehicle-hmi world-state-model tests passed");

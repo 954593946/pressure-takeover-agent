@@ -98,6 +98,32 @@ class Event(StrictModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class ChatRequest(StrictModel):
+    message: str = Field(min_length=1, max_length=4000)
+    inputMode: Literal["voice", "text"] = "text"
+    sessionId: str | None = None
+    clientEventId: str = Field(min_length=8, max_length=128)
+
+
+class ChatConfirmRequest(StrictModel):
+    sessionId: str = Field(min_length=1)
+    confirmationId: str = Field(min_length=1)
+    decision: Literal["accept", "reject", "accepted", "rejected"]
+
+
+class ChatResponse(StrictModel):
+    sessionId: str
+    responseText: str
+    revision: int
+    duplicate: bool = False
+
+
+class ChatConfirmResponse(StrictModel):
+    accepted: bool
+    revision: int
+    duplicate: bool = False
+
+
 class Risk(StrictModel):
     pressure_level: PressureLevel = PressureLevel.L0
     late_minutes: int = 0

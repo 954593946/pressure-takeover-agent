@@ -83,6 +83,10 @@ class FakeMap {
   zoomOut() {
     calls.push(["zoom-out"]);
   }
+
+  resize() {
+    calls.push(["resize"]);
+  }
 }
 
 class FakeTrafficLayer {
@@ -365,6 +369,11 @@ async function main() {
   assert.equal(online.adapter.getStatus(), "offline");
   assert.equal(online.adapter.routePath.length, 0);
   assert.equal(online.mapWrap.classList.contains("is-amap-online"), false);
+  assert.equal(online.container.hidden, true);
+  const resumedPlan = await online.adapter.setRoute(routeConfig, "session-b:task-school");
+  assert.deepEqual(resumedPlan, { mode: "online", planned: true });
+  assert.equal(online.container.hidden, false, "a route created after the empty-task state must reveal the real map again");
+  assert.equal(calls.some(([name]) => name === "resize"), true);
 
   resetRuntime();
   const mapGuard = createAdapter();
@@ -482,7 +491,7 @@ async function main() {
 
   if (timeoutFailures.length) throw new AggregateError(timeoutFailures, "AMap timeout fallback tests failed");
 
-  console.log("vehicle-hmi-next amap-adapter tests passed");
+  console.log("vehicle-hmi amap-adapter tests passed");
 }
 
 main().catch((error) => {

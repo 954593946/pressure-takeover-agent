@@ -132,7 +132,7 @@ class ProfileViewModel @Inject constructor(
             try {
                 val updated = api.updateProfile(newProfile)
                 // Backend confirmed — apply server response
-                _uiState.update { it.copy(profile = updated, isSyncing = false) }
+                _uiState.update { it.copy(profile = updated.profile, isSyncing = false) }
                 // Refresh world state so other screens pick up the change
                 repository.refresh()
                 AppLogger.i("ProfileVM", "Profile switched to ${preset.label}")

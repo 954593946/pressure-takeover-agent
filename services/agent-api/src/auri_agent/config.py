@@ -10,6 +10,9 @@ SERVICE_ROOT = Path(__file__).resolve().parents[2]
 
 class Settings(BaseSettings):
     app_name: str = "AURI Agent API"
+    service_name: str = "auri-agent-api"
+    build_sha: str = ""
+    render_git_commit: str = ""
     environment: str = "development"
     log_level: str = "INFO"
     demo_mode: bool = True
@@ -36,6 +39,7 @@ class Settings(BaseSettings):
     amap_allowed_origins: str = (
         "http://localhost:5174,"
         "http://127.0.0.1:5174,"
+        "https://954593946.github.io,"
         "https://wangwang20.github.io"
     )
     amap_proxy_timeout_seconds: float = 12.0
@@ -57,6 +61,10 @@ class Settings(BaseSettings):
     @property
     def amap_configured(self) -> bool:
         return bool(self.amap_js_api_key and self.amap_security_js_code)
+
+    @property
+    def deployment_build_sha(self) -> str:
+        return self.build_sha or self.render_git_commit or "local"
 
     @property
     def cors_origin_list(self) -> list[str]:

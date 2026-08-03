@@ -12,6 +12,7 @@ from auri_agent.app import create_app, world_state_event_stream
 from auri_agent.config import Settings
 from auri_agent.llm import ExtractedTask, TaskExtraction, TaskParser
 from auri_agent.models import ConfirmationRequest, Event, GeoPoint, initial_state, now
+from auri_agent.observability import classify_provider_error
 from auri_agent.prompts import TASK_RIGIDITY_POLICY, build_agent_prompt
 from auri_agent.runtime import AgentRuntime
 
@@ -72,12 +73,47 @@ async def prepare_confirmation(client: AsyncClient) -> dict:
 @pytest.mark.asyncio
 async def test_health_never_exposes_key(client: AsyncClient) -> None:
     response = await client.get("/health")
+    body = response.json()
+    assert body["service_name"] == "auri-agent-api"
+    assert body["build_sha"]
+    assert body["started_at"].endswith("+00:00")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     assert response.json()["llm_framework"] == "langchain"
     assert response.json()["agent_tools_enabled"] is False
     assert response.json()["agent_last_tools"] == []
+    assert response.json()["llm_last_success_at"] is None
+    assert response.json()["llm_last_fallback_reason"] == "not_configured"
+    assert response.json()["llm_last_error_code"] == "LLM_NOT_CONFIGURED"
     assert "api_key" not in response.text.lower()
+
+
+def test_provider_error_classification_is_stable_and_non_sensitive() -> None:
+    class Response:
+        def __init__(self, status_code: int):
+            self.status_code = status_code
+
+    class ProviderError(RuntimeError):
+        def __init__(self, status_code: int, secret_message: str):
+            super().__init__(secret_message)
+            self.response = Response(status_code)
+
+    assert classify_provider_error(TimeoutError("secret timeout payload")) == (
+        "UPSTREAM_TIMEOUT",
+        "timeout",
+    )
+    assert classify_provider_error(ProviderError(401, "private credential")) == (
+        "UPSTREAM_AUTH",
+        "http_401",
+    )
+    assert classify_provider_error(ProviderError(429, "private quota")) == (
+        "UPSTREAM_RATE_LIMIT",
+        "http_429",
+    )
+    assert classify_provider_error(ProviderError(503, "private upstream body")) == (
+        "UPSTREAM_5XX",
+        "http_5xx",
+    )
 
 
 def test_task_rigidity_policy_is_shared_by_both_real_agent_paths() -> None:
@@ -218,6 +254,9 @@ async def test_langchain_agent_output_is_normalised_to_public_task_contract() ->
     tasks = await parser.parse("今晚二十点去机场接从北京回来的同事")
 
     assert parser.last_mode == "langchain_agent"
+    assert parser.last_success_at is not None
+    assert parser.last_fallback_reason is None
+    assert parser.last_error_code is None
     assert [task.title for task in tasks] == ["去机场接同事"]
     assert tasks[0].task_id == "task_agent_1"
     assert tasks[0].status == "pending"
@@ -363,8 +402,39 @@ async def test_over_budget_order_is_not_confirmable(client: AsyncClient) -> None
     )).json()["state"]
     order_action = next(action for action in state["actions"] if action["type"] == "service_order")
     assert order_action["status"] == "blocked"
-    assert order_action["action_id"] not in state["confirmation"]["action_ids"]
+    assert state["confirmation"] is None or order_action["action_id"] not in state["confirmation"]["action_ids"]
     assert state["service_orders"][0]["error_code"] == "OVER_BUDGET"
+
+
+@pytest.mark.asyncio
+async def test_out_of_stock_order_is_not_confirmable_or_reported_as_executed(client: AsyncClient) -> None:
+    await client.post(
+        "/v1/event",
+        json=await event(client, "evt_stock_task", "task.created", {"text": "之后去超市采购"}, "mobile"),
+    )
+    await client.post(
+        "/v1/event",
+        json=await event(client, "evt_stock_mock", "service.mock.config", {"mode": "out_of_stock"}),
+    )
+    state = (
+        await client.post(
+            "/v1/event",
+            json=await event(
+                client,
+                "evt_stock_help",
+                "user.utterance",
+                {"text": "帮我处理，先准备方案"},
+                "mobile",
+            ),
+        )
+    ).json()["state"]
+
+    order_action = next(action for action in state["actions"] if action["type"] == "service_order")
+    assert order_action["status"] == "blocked"
+    assert state["confirmation"] is None or order_action["action_id"] not in state["confirmation"]["action_ids"]
+    assert state["service_orders"][0]["error_code"] == "OUT_OF_STOCK"
+    assert state["service_orders"][0]["status"] == "blocked"
+    assert "已下单" not in state["output"]["conclusion"]
 
 
 @pytest.mark.asyncio

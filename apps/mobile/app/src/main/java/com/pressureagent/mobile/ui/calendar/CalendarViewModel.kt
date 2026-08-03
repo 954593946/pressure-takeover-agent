@@ -2,14 +2,12 @@ package com.pressureagent.mobile.ui.calendar
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.pressureagent.mobile.data.local.LocalTaskStore
 import com.pressureagent.mobile.data.repository.WorldStateRepository
 import com.pressureagent.mobile.domain.model.Task
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -29,7 +27,6 @@ data class CalendarUiState(
 @HiltViewModel
 class CalendarViewModel @Inject constructor(
     private val repository: WorldStateRepository,
-    private val localTasks: LocalTaskStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -45,19 +42,13 @@ class CalendarViewModel @Inject constructor(
     private fun observeTasks() {
         viewModelScope.launch {
             try {
-                combine(
-                    repository.worldState,
-                    localTasks.tasks,
-                ) { ws, locals ->
-                    // Merge backend + local tasks, dedup by ID
-                    val merged = (ws.tasks + locals).distinctBy { it.taskId }
-                    merged
-                }.collect { merged ->
+                repository.worldState.collect { worldState ->
+                    val authoritativeTasks = worldState.tasks
                     _uiState.update {
                         it.copy(
-                            tasks = merged,
-                            tasksOnSelectedDate = filterTasksForDate(merged, it.selectedDate),
-                            unscheduledTasks = merged.filter { t -> t.scheduledAt == null },
+                            tasks = authoritativeTasks,
+                            tasksOnSelectedDate = filterTasksForDate(authoritativeTasks, it.selectedDate),
+                            unscheduledTasks = authoritativeTasks.filter { task -> task.scheduledAt == null },
                         )
                     }
                 }
@@ -91,8 +82,6 @@ class CalendarViewModel @Inject constructor(
             )
         }
     }
-
-    fun removeTask(taskId: String) { localTasks.removeTask(taskId) }
 
     fun goToToday() {
         val today = LocalDate.now()

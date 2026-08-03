@@ -12,16 +12,13 @@ import com.pressureagent.mobile.domain.voice.VoiceInputEvent
 import com.pressureagent.mobile.domain.voice.VoiceInputProvider
 import com.pressureagent.mobile.domain.voice.VoiceOutputProvider
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
 import java.util.UUID
 import javax.inject.Inject
 
@@ -71,7 +68,6 @@ class ChatViewModel @Inject constructor(
     private var currentSessionId: String = ""
     private var voiceJob: Job? = null
     private var chatJob: Job? = null
-    private var chatConfirmationId: String? = null
     // Tracks whether the current chat SSE already delivered a response.
     // Prevents WorldState conclusion from creating a duplicate chat item.
     private var sseResponseReceived = false
@@ -153,6 +149,8 @@ class ChatViewModel @Inject constructor(
                     )
                 }
             }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppLogger.e("ChatVM", "WorldState collection error", e)
             }
@@ -163,6 +161,7 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             try { repository.refresh() }
+            catch (e: CancellationException) { throw e }
             catch (e: Exception) { _uiState.update { it.copy(isLoading = false, error = e.message) } }
         }
     }
@@ -242,7 +241,8 @@ class ChatViewModel @Inject constructor(
             _uiState.update { it.copy(chatMessages = it.chatMessages + aiPlaceholder) }
 
             try {
-                var receivedContent = false
+                var receivedDone = false
+                var streamError: String? = null
                 AppLogger.i("ChatVM", "sendMessage via ChatRepository: '${text.take(50)}'")
                 chatRepository.sendMessage(
                     message = text,
@@ -252,7 +252,6 @@ class ChatViewModel @Inject constructor(
                     AppLogger.d("ChatVM", "ChatStreamEvent: ${event::class.simpleName}")
                     when (event) {
                         is ChatStreamEvent.TextDelta -> {
-                            receivedContent = true
                             sseResponseReceived = true
                             _uiState.update { state ->
                             val msgs = state.chatMessages.toMutableList()
@@ -262,7 +261,6 @@ class ChatViewModel @Inject constructor(
                         }
                         }
                         is ChatStreamEvent.ToolCallStarted -> {
-                            receivedContent = true
                             _uiState.update { state ->
                             val msgs = state.chatMessages.toMutableList()
                             val idx = msgs.indexOfLast { it.id == aiId }
@@ -271,7 +269,6 @@ class ChatViewModel @Inject constructor(
                         }
                         }
                         is ChatStreamEvent.ToolCallResult -> {
-                            receivedContent = true
                             sseResponseReceived = true
                             _uiState.update { state ->
                             val msgs = state.chatMessages.toMutableList()
@@ -281,9 +278,7 @@ class ChatViewModel @Inject constructor(
                         }
                         }
                         is ChatStreamEvent.ConfirmationRequired -> {
-                            receivedContent = true
                             sseResponseReceived = true
-                            chatConfirmationId = event.confirmationId
                             _uiState.update { state ->
                                 state.copy(
                                     pendingConfirmation = Confirmation(
@@ -298,61 +293,65 @@ class ChatViewModel @Inject constructor(
                         }
                         is ChatStreamEvent.Done -> {
                             sseResponseReceived = true
+                            receivedDone = true
                             if (event.sessionId.isNotBlank()) currentSessionId = event.sessionId
-                            _uiState.update { it.copy(isLoading = false) }
+                            _uiState.update { state ->
+                                state.copy(
+                                    chatMessages = state.chatMessages.filterNot {
+                                        it.id == aiId && it.text.isBlank()
+                                    },
+                                    isLoading = false,
+                                )
+                            }
                         }
                         is ChatStreamEvent.Error -> {
-                            _uiState.update { it.copy(isLoading = false) }
-                            submitEventFallback(text)
+                            streamError = if (event.retryable) {
+                                "${event.message}（可稍后重试，错误码 ${event.code}）"
+                            } else {
+                                "${event.message}（错误码 ${event.code}）"
+                            }
                         }
                     }
                 }
-                // If flow completed without any content or Done, fall back to Event API
-                if (!receivedContent) {
-                    AppLogger.w("ChatVM", "Chat stream returned no content, falling back to Event API")
+                // A stream without done has an unknown commit result: refresh state, never resubmit.
+                if (!receivedDone) {
+                    AppLogger.w("ChatVM", "Chat stream ended without done; refreshing World State")
                     _uiState.update { it.copy(isLoading = false) }
-                    // Remove the empty AI placeholder
                     _uiState.update { state ->
-                        state.copy(chatMessages = state.chatMessages.filter { it.id != aiId })
+                        state.copy(chatMessages = state.chatMessages.filterNot {
+                            it.id == aiId && it.text.isBlank()
+                        })
                     }
-                    submitEventFallback(text)
+                    reconcileUnknownChatResult(
+                        streamError ?: "连接中断，已重新同步当前状态，请确认结果后再重试"
+                    )
                 }
+            } catch (e: CancellationException) {
+                _uiState.update { state ->
+                    state.copy(chatMessages = state.chatMessages.filter { it.id != aiId })
+                }
+                throw e
             } catch (e: Exception) {
-                AppLogger.e("ChatVM", "Chat stream exception, falling back to Event API", e)
-                _uiState.update { it.copy(isLoading = false) }
-                submitEventFallback(text)
+                AppLogger.e("ChatVM", "Chat stream exception; refreshing World State", e)
+                _uiState.update { state ->
+                    state.copy(chatMessages = state.chatMessages.filterNot {
+                        it.id == aiId && it.text.isBlank()
+                    })
+                }
+                reconcileUnknownChatResult(e.message ?: "连接中断，已重新同步当前状态")
             }
         }
     }
 
-    private fun submitEventFallback(text: String) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            try {
-                AppLogger.i("ChatVM", "submitEvent USER_UTTERANCE via Event API")
-                repository.submitEvent(
-                    Event(
-                        eventId = UUID.randomUUID().toString(),
-                        sessionId = currentSessionId,
-                        type = EventType.USER_UTTERANCE,
-                        source = EventSource.MOBILE,
-                        timestamp = ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
-                        payload = buildJsonObject { put("text", text) },
-                    )
-                )
-                AppLogger.i("ChatVM", "Event submitted OK, listening for world state update")
-                // Loading will be cleared by observeWorldState when the response arrives.
-                // Set a safety timeout to clear loading if no response within 15s.
-                kotlinx.coroutines.delay(15_000L)
-                if (_uiState.value.isLoading) {
-                    AppLogger.w("ChatVM", "No world state update within 15s of event submit")
-                    _uiState.update { it.copy(isLoading = false, error = "响应超时，请重试") }
-                }
-            } catch (e: Exception) {
-                AppLogger.e("ChatVM", "submitEvent failed", e)
-                _uiState.update { it.copy(isLoading = false, error = e.message) }
-            }
+    private suspend fun reconcileUnknownChatResult(message: String) {
+        try {
+            repository.refresh()
+        } catch (refreshError: CancellationException) {
+            throw refreshError
+        } catch (refreshError: Exception) {
+            AppLogger.e("ChatVM", "World State refresh after chat failure also failed", refreshError)
         }
+        _uiState.update { it.copy(isLoading = false, error = message) }
     }
 
     // ─── Confirmation ──────────────────────────────────────────────────────
@@ -369,11 +368,7 @@ class ChatViewModel @Inject constructor(
             _uiState.update { it.copy(error = _uiState.value.blockedReason ?: "订单状态异常，无法确认") }
             return
         }
-        if (chatConfirmationId != null) {
-            submitChatConfirmation(c.confirmationId, "accept")
-        } else {
-            submitConfirmation(c.confirmationId, "accepted")
-        }
+        submitChatConfirmation(c.confirmationId, "accept")
     }
 
     fun reject() {
@@ -383,41 +378,16 @@ class ChatViewModel @Inject constructor(
             _uiState.update { it.copy(error = "当前由车机主控，请在车机屏幕操作") }
             return
         }
-        if (chatConfirmationId != null) {
-            submitChatConfirmation(c.confirmationId, "reject")
-        } else {
-            submitConfirmation(c.confirmationId, "rejected")
-        }
+        submitChatConfirmation(c.confirmationId, "reject")
     }
 
     private fun submitChatConfirmation(confirmationId: String, decision: String) {
         viewModelScope.launch {
             try {
                 chatRepository.confirmAction(currentSessionId, confirmationId, decision)
-                chatConfirmationId = null
                 _uiState.update { it.copy(pendingConfirmation = null) }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(error = e.message) }
-            }
-        }
-    }
-
-    private fun submitConfirmation(confirmationId: String, decision: String) {
-        viewModelScope.launch {
-            try {
-                repository.submitEvent(
-                    Event(
-                        eventId = UUID.randomUUID().toString(),
-                        sessionId = currentSessionId,
-                        type = EventType.CONFIRMATION_CONFIRMED,
-                        source = EventSource.MOBILE,
-                        timestamp = ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
-                        payload = buildJsonObject {
-                            put("confirmationId", confirmationId)
-                            put("decision", decision)
-                        },
-                    )
-                )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = e.message) }
             }

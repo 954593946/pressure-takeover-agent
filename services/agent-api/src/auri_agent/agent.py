@@ -13,9 +13,10 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 
 from .config import Settings
-from .engine import build_execution_receipt, build_preparation_receipt
+from .engine import build_execution_receipt, build_preparation_receipt, format_local_time
 from .llm import fallback_tasks
 from .models import InteractionOutput, Scene, Surface, WorldState, output_expiry
+from .observability import classify_provider_error, utc_timestamp
 from .prompts import build_agent_prompt, build_completion_prompt
 from .tools import AURI_TOOLS, AgentToolContext, AgentToolbox, TaskDraft
 
@@ -48,6 +49,9 @@ class AuriAgent:
         self.graph = None
         self.last_mode = "fallback"
         self.last_tools: list[str] = []
+        self.last_success_at: str | None = None
+        self.last_fallback_reason: str | None = None
+        self.last_error_code: str | None = None
         self._model_lock = asyncio.Lock()
         if settings.llm_configured:
             self.model = ChatOpenAI(
@@ -66,6 +70,9 @@ class AuriAgent:
                 checkpointer=InMemorySaver(),
                 name="auri_orchestrator",
             )
+        else:
+            self.last_fallback_reason = "not_configured"
+            self.last_error_code = "LLM_NOT_CONFIGURED"
 
     @property
     def configured(self) -> bool:
@@ -123,6 +130,9 @@ class AuriAgent:
                 self._apply_reply(toolbox.state, reply)
                 self.last_mode = "langchain_agent"
                 self.last_tools = list(toolbox.called_tools)
+                self.last_success_at = utc_timestamp()
+                self.last_fallback_reason = None
+                self.last_error_code = None
                 return AgentRunResult(
                     state=toolbox.state,
                     reply=reply,
@@ -131,6 +141,7 @@ class AuriAgent:
                 )
             except Exception as exc:  # provider/tool failures must preserve the demo path
                 logger.warning("AURI agent fell back after %s", type(exc).__name__)
+                self.last_error_code, self.last_fallback_reason = classify_provider_error(exc)
                 if toolbox.called_tools:
                     reply = self._state_reply(toolbox.state, toolbox.called_tools)
                     reply = self._ground_reply(reply, toolbox.state, toolbox.called_tools)
@@ -239,9 +250,13 @@ class AuriAgent:
                 if reply:
                     self.last_mode = "langchain_agent"
                     self.last_tools = ["confirm_current_actions"]
+                    self.last_success_at = utc_timestamp()
+                    self.last_fallback_reason = None
+                    self.last_error_code = None
                     return reply
             except Exception as exc:
                 logger.warning("AURI completion reply fell back after %s", type(exc).__name__)
+                self.last_error_code, self.last_fallback_reason = classify_provider_error(exc)
         self.last_mode = "fallback_reply"
         self.last_tools = ["confirm_current_actions"]
         return self._state_reply(state, self.last_tools)
@@ -375,7 +390,7 @@ class AuriAgent:
             return False
         if completed_messages:
             timing_detail = (
-                state.eta.strftime("%H:%M")
+                format_local_time(state.eta)
                 if state.eta is not None
                 else f"{state.risk.late_minutes}分钟" if state.risk.late_minutes > 0 else "到达时间"
             )

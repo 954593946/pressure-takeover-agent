@@ -1,4 +1,4 @@
-"""Verify Console, mobile chat and candidate HMI share one Agent World State.
+"""Verify Console, mobile chat and the official HMI share one Agent World State.
 
 Run against a dedicated local Agent only. The test resets the active session and
 must never be pointed at the shared public deployment.
@@ -6,6 +6,7 @@ must never be pointed at the shared public deployment.
 
 import json
 import os
+import uuid
 from pathlib import Path
 from urllib import error, request
 
@@ -15,7 +16,7 @@ from playwright.sync_api import Page, sync_playwright
 AGENT = os.getenv("AURI_AGENT_URL", "http://127.0.0.1:8795").rstrip("/")
 WEB_ROOT = os.getenv("AURI_WEB_ROOT", "http://127.0.0.1:5174").rstrip("/")
 CONSOLE = f"{WEB_ROOT}/apps/demo-console/"
-HMI = f"{WEB_ROOT}/apps/vehicle-hmi-next/"
+HMI = f"{WEB_ROOT}/apps/vehicle-hmi/"
 TOKEN = os.getenv("AURI_AGENT_TOKEN", "")
 CHROME = os.getenv(
     "PLAYWRIGHT_CHROMIUM_EXECUTABLE",
@@ -40,7 +41,12 @@ def api(path: str, method: str = "GET", payload: dict | None = None) -> dict:
 
 def mobile_chat(message: str, session_id: str, input_mode: str = "voice") -> list[dict]:
     payload = json.dumps(
-        {"message": message, "inputMode": input_mode, "sessionId": session_id},
+        {
+            "message": message,
+            "inputMode": input_mode,
+            "sessionId": session_id,
+            "clientEventId": f"evt_chat_{uuid.uuid4()}",
+        },
         ensure_ascii=False,
     ).encode("utf-8")
     headers = {"Accept": "text/event-stream", "Content-Type": "application/json"}
@@ -126,6 +132,11 @@ def main() -> None:
         hmi.goto(HMI, wait_until="domcontentloaded", timeout=30000)
         console.wait_for_function("document.querySelector('#syncMode')?.textContent === 'SSE 实时'", timeout=20000)
         hmi.wait_for_function("window.AURI_HMI_NEXT?.getState().syncMode === 'streaming'", timeout=20000)
+        console.locator("#preflightBtn").click()
+        console.wait_for_function(
+            "Array.from(document.querySelectorAll('#eventLog .log-row')).some(row => row.textContent.includes('preflight') && row.textContent.includes('SSE connected'))",
+            timeout=20000,
+        )
         wait_same_revision(console, hmi, initial["revision"])
         assert console.locator("#sessionId").inner_text() == initial["session_id"]
         assert hmi.evaluate("window.AURI_HMI_NEXT.getState().viewModel.meta.sessionId") == initial["session_id"]
@@ -144,6 +155,8 @@ def main() -> None:
 
         state = click_console_action(console, "meeting", "pre_departure_warning")
         wait_same_revision(console, hmi, state["revision"])
+        assert console.locator('button[data-action="vehicle"]').is_disabled()
+        assert console.locator("#riskReasons").inner_text().strip()
         state = click_console_action(console, "approach", "handover_to_vehicle")
         wait_same_revision(console, hmi, state["revision"])
         state = click_console_action(console, "vehicle", "vehicle_observation")
@@ -152,13 +165,26 @@ def main() -> None:
         state = click_console_action(console, "traffic", "takeover_L2")
         wait_same_revision(console, hmi, state["revision"])
         assert state["risk"]["late_minutes"] == 18
+        assert "压力辅助信号" in console.locator("#nextStepHint").inner_text()
+        assert console.locator('button[data-action="utterance"]').is_disabled()
         state = click_console_action(console, "stress", "takeover_L2")
         wait_same_revision(console, hmi, state["revision"])
         assert state["wearable"]["heart_rate"] == 120
+        assert "手机语音求助" in console.locator("#nextStepHint").inner_text()
+        assert console.locator('button[data-action="utterance"]').is_enabled()
         state = click_console_action(console, "utterance", "waiting_confirmation")
         wait_same_revision(console, hmi, state["revision"])
         assert "我还来得及吗" in hmi.locator("#auri-takeover-risk").inner_text()
         assert hmi.locator("#auri-takeover-confirm").is_enabled()
+        assert state["confirmation"]["confirmation_id"] in console.locator("#confirmationDetails").inner_text()
+        assert "186" in console.locator("#serviceOrders").inner_text()
+        assert "9 件" in console.locator("#serviceOrders").inner_text()
+        if hmi.evaluate("window.AURI_HMI_NEXT.getState().map.status") == "online":
+            hmi.wait_for_function(
+                "Array.from(document.querySelectorAll('#auri-amap-canvas img'))"
+                ".filter(image => image.complete && image.naturalWidth > 0).length >= 10",
+                timeout=20000,
+            )
         hmi.screenshot(path=SCREENSHOT_DIR / "waiting-confirmation-1920x720.png")
 
         hmi.locator("#auri-takeover-confirm").click()

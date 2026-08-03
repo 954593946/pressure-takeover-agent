@@ -368,7 +368,9 @@
           this.failedRouteReason = null;
           this.drawRoute(AMap, routeConfig);
           this.status = "online";
+          this.container.hidden = false;
           this.mapWrap.classList.add("is-amap-online");
+          this.map.resize?.();
           const meta = routeMeta(this.drivingRoute, 0);
           this.lastRouteMetaKey = `${meta.stepIndex}:${meta.nextDistance.value}:${meta.nextDistance.unit}`;
           this.onRouteMeta(meta);

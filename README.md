@@ -206,10 +206,10 @@ wss://auri-agent-api.onrender.com/v1/ws?access_token=<AGENT_SHARED_TOKEN>
 
 ## 当前实现状态
 
-- `apps/vehicle-hmi/`：已有连接 World State、SSE/轮询和确认的横屏 HMI；尚需统一正式后端、减少硬编码展示、分离 Debug 控件并完成目标屏幕回归。
+- `apps/vehicle-hmi/`：正式横屏 HMI，已接入统一 World State、SSE/轮询、动态任务与 ETA、手机语音转写、腕上状态、高德真实导航和车机确认；仍需完成目标车机实机性能与真实腕表联调。
 - `apps/watch/active2-pressure-watch/`：已有六状态 UI、真实触觉/传感器、ACK 与去重；Side Service 当前仍发送本地 Mock 状态，手机到真表的端到端链路尚未完成。
 - `apps/mobile/`：已有 Android 业务 UI、网络状态、Chat SSE、语音、复盘、调试和日志；尚需解决任务本地/远端双真相、启动自动 reset、Profile 写入和跨端真机回归。
-- `apps/demo-console/`：已有标准事件、服务异常、确认、状态流和重置；尚需增加正式后端预检、引导顺序、前置条件、导演模式和脱敏日志。
+- `apps/demo-console/`：已有正式后端预检、十步引导顺序、严格前置条件、标准事件、服务异常、确认、状态流、重置和脱敏日志；仍需在正式公网部署后完成目标设备联调与现场演练。
 - `services/agent-api/`：已有 FastAPI v0.2 和 LangChain 受控工具编排。标准 Event/Confirm 的风险、权限和幂等基础可用；Chat 仍需通过公开 Runtime 路径提交并补契约、错误语义和测试。进程内存存储只适合冻结的单实例 Demo。
 - `contracts/`：已有 v0.2 候选 Schema、OpenAPI、样例和标准事件序列；Chat SSE 与 Chat Confirm 尚未完整纳入接口基线。
 
@@ -239,7 +239,8 @@ wss://auri-agent-api.onrender.com/v1/ws?access_token=<AGENT_SHARED_TOKEN>
 ```text
 apps/
   mobile/                         手机端业务 UI 与连接/腕上网关
-  vehicle-hmi/                    车机横屏 HMI（已有原型）
+  vehicle-hmi/                    正式车机横屏 HMI
+  vehicle-hmi-legacy/             旧版车机原型（仅回溯）
   demo-console/                   场景与故障控制台
   watch/active2-pressure-watch/   Amazfit Active 2 工程（已有框架）
 services/agent-api/               Agent 后端、状态机和服务适配器

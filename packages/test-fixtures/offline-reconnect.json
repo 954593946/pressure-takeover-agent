@@ -1,0 +1,10 @@
+{
+  "scenario": "offline-reconnect",
+  "purpose": "客户端断线期间不假更新，重连后以完整 World State 快照追平。",
+  "steps": [
+    {"kind": "disconnect", "surface": "vehicle_hmi"},
+    {"kind": "event", "type": "meeting.overrun", "source": "demo_console", "payload": {"delay_minutes": 20}},
+    {"kind": "reconnect", "surface": "vehicle_hmi", "snapshot_endpoint": "/v1/state"}
+  ],
+  "expected": {"stale_revision_while_offline": true, "snapshot_catchup": true, "duplicate_streams": 0}
+}

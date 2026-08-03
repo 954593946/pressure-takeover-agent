@@ -15,7 +15,7 @@ from playwright.sync_api import sync_playwright
 
 
 AGENT = os.getenv("AURI_AGENT_URL", "http://127.0.0.1:8795").rstrip("/")
-HMI = os.getenv("AURI_HMI_URL", "http://127.0.0.1:5174/apps/vehicle-hmi-next/")
+HMI = os.getenv("AURI_HMI_URL", "http://127.0.0.1:5174/apps/vehicle-hmi/")
 TOKEN = os.getenv("AURI_AGENT_TOKEN", "")
 CHROME = os.getenv(
     "PLAYWRIGHT_CHROMIUM_EXECUTABLE",

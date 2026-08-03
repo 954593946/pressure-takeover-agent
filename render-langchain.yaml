@@ -40,6 +40,6 @@ services:
       - key: AMAP_PUBLIC_BASE_URL
         value: https://auri-langchain-agent-api.onrender.com
       - key: AMAP_ALLOWED_ORIGINS
-        value: https://wangwang20.github.io,http://localhost:5174,http://127.0.0.1:5174
+        value: https://954593946.github.io,https://wangwang20.github.io,http://localhost:5174,http://127.0.0.1:5174
       - key: CORS_ORIGINS
         value: "*"

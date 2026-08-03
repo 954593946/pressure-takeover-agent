@@ -104,6 +104,7 @@
     const stored = safeStorageGet(storage, STORAGE_KEY);
     const shared = safeStorageGet(storage, SHARED_STORAGE_KEY);
     const globalConfig = environment.globalConfig || (typeof window !== "undefined" ? window.AURI_HMI_CONFIG : {}) || {};
+    const localConfig = environment.localConfig || (typeof window !== "undefined" ? window.AURI_HMI_LOCAL_CONFIG : {}) || {};
     const search = environment.search ?? (typeof location !== "undefined" ? location.search : "");
     const query = new URLSearchParams(search || "");
     const queryConfig = {};
@@ -112,15 +113,32 @@
     const sharedConnection = shared.apiBase
       ? { apiBase: shared.apiBase, token: shared.token || "", streamUrl: `${String(shared.apiBase).replace(/\/$/, "")}/v1/stream` }
       : {};
-    const merged = { ...DEFAULT_CONFIG, ...stored, ...sharedConnection, ...globalConfig, ...queryConfig };
-    const connectionOverride = queryConfig.apiBase || globalConfig.apiBase;
-    if (connectionOverride && !queryConfig.streamUrl && !globalConfig.streamUrl) {
+    // Runtime config provides deploy-time defaults. Explicit browser settings
+    // and the shared Console connection are user choices and must survive a
+    // reload, even when env.js contains an empty placeholder token.
+    const useLocalMapFallback = Boolean(localConfig.amapKey)
+      && !stored.amapKey
+      && !globalConfig.amapKey
+      && stored.mapProvider !== "offline"
+      && globalConfig.mapProvider !== "offline";
+    const localMapFallback = useLocalMapFallback ? {
+      mapProvider: localConfig.mapProvider || "amap",
+      amapKey: localConfig.amapKey,
+      amapSecurityJsCode: localConfig.amapSecurityJsCode || "",
+      amapServiceHost: localConfig.amapServiceHost || "",
+      amapStyle: localConfig.amapStyle || DEFAULT_CONFIG.amapStyle
+    } : {};
+    const merged = { ...DEFAULT_CONFIG, ...globalConfig, ...stored, ...localMapFallback, ...sharedConnection, ...queryConfig };
+    const connectionOverride = queryConfig.apiBase;
+    if (connectionOverride && !queryConfig.streamUrl) {
       merged.streamUrl = `${String(connectionOverride).replace(/\/$/, "")}/v1/stream`;
     }
-    const inheritedApiBase = normalizeUrl(sharedConnection.apiBase || stored.apiBase, DEFAULT_CONFIG.apiBase);
+    const inheritedApiBase = normalizeUrl(
+      sharedConnection.apiBase || stored.apiBase || globalConfig.apiBase,
+      DEFAULT_CONFIG.apiBase
+    );
     const overrideApiBase = connectionOverride ? normalizeUrl(connectionOverride, DEFAULT_CONFIG.apiBase) : inheritedApiBase;
-    const overrideProvidesToken = Object.prototype.hasOwnProperty.call(globalConfig, "token");
-    if (connectionOverride && overrideApiBase !== inheritedApiBase && !overrideProvidesToken) merged.token = "";
+    if (connectionOverride && overrideApiBase !== inheritedApiBase) merged.token = "";
     return normalizeConfig(merged);
   }
 
@@ -305,7 +323,11 @@
       const currentEpoch = epoch;
       try {
         const health = await requestJson("/health", { withToken: false });
-        if (running && currentEpoch === epoch) onStatus({ type: "healthy", health });
+        // Health is public and may resolve after an authenticated state request
+        // has already failed. Never let it mask a 401 or schema failure.
+        if (running && currentEpoch === epoch && !["auth_required", "schema_incompatible"].includes(syncMode)) {
+          onStatus({ type: "healthy", health });
+        }
         return health;
       } catch (error) {
         onError(error, { source: "health" });

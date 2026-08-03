@@ -10,6 +10,7 @@ import com.pressureagent.mobile.domain.model.ContentType
 import com.pressureagent.mobile.domain.model.MessageRole
 import com.pressureagent.mobile.domain.model.ToolCallInfo
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -151,12 +152,18 @@ class VoiceChatViewModel @Inject constructor(
                                 it.copy(
                                     isProcessing = false,
                                     partialResponse = "",
-                                    error = event.message,
+                                    error = if (event.retryable) {
+                                        "${event.message}（可稍后重试，${event.code}）"
+                                    } else {
+                                        "${event.message}（${event.code}）"
+                                    },
                                 )
                             }
                         }
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
@@ -191,6 +198,8 @@ class VoiceChatViewModel @Inject constructor(
                         pendingConfirmation = null,
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = e.message) }
             }
@@ -218,6 +227,8 @@ class VoiceChatViewModel @Inject constructor(
                         pendingConfirmation = null,
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = e.message) }
             }

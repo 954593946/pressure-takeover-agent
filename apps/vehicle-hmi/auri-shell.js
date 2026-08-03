@@ -262,11 +262,24 @@
       ? "车辆已停稳 · 完整明细已同步"
       : `${viewModel.risk.label}${utteranceLine}`;
     riskLine.title = viewModel.utterance.available ? viewModel.utterance.text : viewModel.risk.label;
+    const messageCount = viewModel.actions.items.filter((action) => action.type === "message").length;
+    const hasServicePlan = viewModel.actions.items.some((action) => action.type === "service_order");
+    const preparedParts = [
+      messageCount ? "消息" : "",
+      hasServicePlan ? "生活服务" : ""
+    ].filter(Boolean).join("与");
+    const concisePlan = viewModel.risk.lateMinutes > 0 && preparedParts
+      ? `预计晚到${viewModel.risk.lateMinutes}分钟，${preparedParts}已备好。`
+      : preparedParts ? `${preparedParts}已备好。` : fallback;
     document.getElementById("auri-takeover-conclusion").textContent = stage === "parked_review"
       ? fallback
       : viewModel.serviceOrders.hasFailure
         ? "生活服务暂不可用，消息和任务调整方案仍保留。"
-      : viewModel.agentOutput.available ? viewModel.agentOutput.preview : fallback;
+        : ["service_prepared", "waiting_confirmation"].includes(stage)
+          ? concisePlan
+          : viewModel.agentOutput.available && viewModel.agentOutput.fullText.length <= 42
+            ? viewModel.agentOutput.fullText
+            : fallback;
 
     const actions = takeoverActions();
     document.getElementById("auri-takeover-actions").innerHTML = actions.map((action) => `
@@ -484,7 +497,7 @@
         lead: conclusion,
         copy: vm.utterance.available
           ? `来自${vm.utterance.sourceLabel}：“${vm.utterance.preview}”`
-          : "手机语音会随 Agent World State 自动同步到车机。",
+          : "手机语音已同步到当前行程。",
         status: vm.risk.label,
         tone: vm.risk.tone,
         rows: [
@@ -511,7 +524,7 @@
         subtitle: vm.tasks.total ? `${vm.tasks.rigid} 项刚性 · ${vm.tasks.flexible} 项弹性` : "来自手机与 Agent",
         lead: vm.tasks.total ? `${vm.tasks.total} 项任务已同步` : "目前没有已同步任务",
         copy: vm.tasks.total
-          ? "任务顺序、类型、时间和状态均来自当前 Agent World State。"
+          ? "任务已按当前责任优先级排列。"
           : "请在手机端通过语音创建任务，车机会在状态更新后自动接续。",
         status: vm.tasks.completed ? `${vm.tasks.completed}/${vm.tasks.total} 已完成` : `${vm.tasks.total} 项`,
         tone: vm.tasks.total ? "processing" : "idle",
@@ -531,7 +544,7 @@
         lead: task.displayTitle,
         copy: task.location
           ? `地点：${task.location}${task.waitingParty.length ? ` · 关联：${task.waitingParty.join("、")}` : ""}`
-          : task.waitingParty.length ? `关联：${task.waitingParty.join("、")}` : "任务详情随 Agent World State 更新。",
+          : task.waitingParty.length ? `关联：${task.waitingParty.join("、")}` : "暂无更多任务说明。",
         status: task.status,
         tone: task.tone === "rigid" ? "warning" : "processing",
         rows: [
@@ -566,7 +579,7 @@
         title: "消息与执行",
         subtitle: vm.actions.counts.total ? `${vm.actions.counts.completed}/${vm.actions.counts.total} 已完成` : "等待 Agent 方案",
         lead: vm.actions.counts.total ? `${vm.actions.counts.total} 项动作已准备或执行` : "暂无 Agent 动作",
-        copy: vm.agentOutput.available ? vm.agentOutput.fullText : "消息、任务调整和生活服务均以 Agent 返回的执行事实为准。",
+        copy: vm.agentOutput.available ? vm.agentOutput.fullText : "AURI 会在需要时准备消息、任务调整和生活服务。",
         status: vm.actions.counts.failed || vm.actions.counts.blocked ? "需要注意" : vm.actions.counts.total ? "状态已同步" : "等待",
         tone: vm.actions.counts.failed || vm.actions.counts.blocked ? "critical" : vm.actions.counts.completed === vm.actions.counts.total && vm.actions.counts.total ? "success" : "processing",
         rows: actionRows.length || orderRows.length ? [...actionRows, ...orderRows] : [emptyRow("□", "消息与服务", "等待 Agent 生成处理方案")]
@@ -589,7 +602,7 @@
         title: action.type === "message" ? `给${action.target || "联系人"}的消息` : action.type === "service_order" ? "生活服务方案" : "任务调整详情",
         subtitle: action.statusLabel,
         lead: action.summary,
-        copy: action.requiresConfirmation ? "该动作需要由当前授权端确认后执行。" : "该动作状态由 Agent 执行结果同步更新。",
+        copy: action.requiresConfirmation ? "确认后，AURI 将执行这项处理。" : "处理结果已同步到车机。",
         status: action.statusLabel,
         tone: action.status === "completed" ? "success" : action.status === "failed" || action.status === "blocked" ? "critical" : "processing",
         rows: detailRows
@@ -616,7 +629,7 @@
           row("时", "预计到达", vm.navigation.taskTitle || "当前导航任务", vm.navigation.etaLabel, vm.risk.lateMinutes ? "warning" : "success"),
           row("路", "下一动作", routeMeta?.instruction || "等待导航指引", routeMeta?.nextDistance ? `${routeMeta.nextDistance.value}${routeMeta.nextDistance.unit}` : "--", "processing"),
           row("距", "剩余距离", mapStatus.mode === "online" ? "路线随车辆位置更新" : "离线演示路线", remaining, mapStatus.mode === "online" ? "success" : "idle"),
-          rowButton("务", "沿途任务", vm.tasks.total ? `${vm.tasks.total} 项任务随 World State 动态更新` : "当前无任务", "查看", "tasks")
+          rowButton("务", "沿途任务", vm.tasks.total ? `${vm.tasks.total} 项任务待处理` : "当前无任务", "查看", "tasks")
         ]
       };
     }
@@ -636,7 +649,7 @@
         tone: connectionStatus.type === "streaming" ? "success" : "processing",
         rows: [
           row("手", "手机", vm.utterance.available ? `最近语音：“${vm.utterance.preview}”` : "任务与权限中心", phoneState, primary === "mobile" ? "success" : "processing"),
-          row("腕", "腕表", vm.wearable.connected ? `${vm.wearable.text} · ${HAPTIC_LABEL[vm.wearable.haptic] || "无触觉"}` : "未连接时不阻断主流程", vm.wearable.connected ? vm.wearable.modeLabel : "离线", vm.wearable.connected ? vm.wearable.mode : "idle"),
+          row("腕", "腕表", vm.wearable.connected ? `${vm.wearable.text} · ${HAPTIC_LABEL[vm.wearable.haptic] || "无触觉"}` : "连接状态待更新", vm.wearable.connected ? vm.wearable.modeLabel : "离线", vm.wearable.connected ? vm.wearable.mode : "idle"),
           row("车", "车机", vm.navigation.hasDestination ? `导航至 ${vm.navigation.destination}` : "等待路线", carState, primary === "vehicle_hmi" ? "success" : "processing")
         ]
       };
@@ -649,7 +662,7 @@
         title: "座舱状态",
         subtitle: "车辆与随行设备",
         lead: climate.available ? climate.summary : "等待座舱状态同步",
-        copy: "座舱能力与腕上设备状态均随当前 Agent World State 只读更新。",
+        copy: "车内舒适设置与腕上提醒保持同步。",
         status: climate.available ? "状态已同步" : "等待",
         tone: climate.available ? "success" : "idle",
         rows: [
@@ -672,18 +685,18 @@
       title: "连接 Agent",
       subtitle: statusLabel,
       lead: "选择本地或公网 Agent 服务",
-      copy: lastError ? `最近一次连接未成功：${lastError}` : "配置只保存在当前浏览器，不会写入项目代码或显示在演示界面。",
+      copy: lastError ? `最近一次连接未成功：${lastError}` : "连接后，任务、路线和处理状态将自动同步。",
       status: statusLabel,
       tone: STATUS_VIEW[connectionStatus.type]?.[1] || "idle",
       form: `
         <form class="auri-config-form" id="auri-config-form">
           <div class="auri-connection-summary">
-            <span><small>同步方式</small><b>${escapeHtml(connectionStatus.type === "streaming" ? "实时流" : connectionStatus.type === "polling_fallback" ? "轮询恢复" : statusLabel)}</b></span>
-            <span><small>Session</small><b>${escapeHtml(session)}</b></span>
-            <span><small>Revision</small><b>${escapeHtml(revision)}</b></span>
-            <span><small>Schema</small><b>${escapeHtml(schema)}</b></span>
-            <span><small>Agent Health</small><b>${escapeHtml(lastHealth?.status === "ok" ? "正常" : lastHealth ? "异常" : "等待预检")}</b></span>
-            <span><small>LLM</small><b>${escapeHtml(lastHealth?.llm_model ? `${lastHealth.llm_model} · ${lastHealth.llm_last_mode || "待调用"}` : "状态未提供")}</b></span>
+            <span><small>同步方式</small><b data-connection-metric="sync">${escapeHtml(connectionStatus.type === "streaming" ? "实时流" : connectionStatus.type === "polling_fallback" ? "轮询恢复" : statusLabel)}</b></span>
+            <span><small>Session</small><b data-connection-metric="session">${escapeHtml(session)}</b></span>
+            <span><small>Revision</small><b data-connection-metric="revision">${escapeHtml(revision)}</b></span>
+            <span><small>Schema</small><b data-connection-metric="schema">${escapeHtml(schema)}</b></span>
+            <span><small>Agent Health</small><b data-connection-metric="health">${escapeHtml(lastHealth?.status === "ok" ? "正常" : lastHealth ? "异常" : "等待预检")}</b></span>
+            <span><small>LLM</small><b data-connection-metric="llm">${escapeHtml(lastHealth?.llm_model ? `${lastHealth.llm_model} · ${lastHealth.llm_last_mode || "待调用"}` : "状态未提供")}</b></span>
           </div>
           <label><span>Agent API</span><input id="auri-config-api" type="url" spellcheck="false" value="${escapeHtml(config.apiBase)}" required></label>
           <label><span>Team Token</span><input id="auri-config-token" type="password" autocomplete="off" value="${escapeHtml(config.token)}" placeholder="仅保存在当前浏览器"></label>
@@ -693,20 +706,51 @@
             <button type="button" data-api="http://127.0.0.1:8000">本地服务</button>
           </div>
           <details class="auri-map-config">
-            <summary>地图连接设置 <span>${escapeHtml(MAP_STATUS_VIEW[mapStatus.mode]?.[0] || "离线导航")}</span></summary>
+            <summary>地图连接设置 <span data-connection-map-status>${escapeHtml(MAP_STATUS_VIEW[mapStatus.mode]?.[0] || "离线导航")}</span></summary>
             <label><span>地图模式</span><select id="auri-config-map-provider">
               <option value="auto"${config.mapProvider === "auto" ? " selected" : ""}>自动读取 Agent 配置</option>
               <option value="amap"${config.mapProvider === "amap" ? " selected" : ""}>高德 Web JS API</option>
               <option value="offline"${config.mapProvider === "offline" ? " selected" : ""}>Bosch 离线地图</option>
             </select></label>
             <label><span>高德 Web Key</span><input id="auri-config-amap-key" type="password" autocomplete="off" value="${escapeHtml(config.amapKey)}" placeholder="仅保存在当前浏览器"></label>
-            <label><span>高德安全码（本机诊断）</span><input id="auri-config-amap-security" type="password" autocomplete="off" value="${escapeHtml(config.amapSecurityJsCode)}" placeholder="生产环境请使用 Agent 安全代理"></label>
+            <label><span>高德安全码（可选）</span><input id="auri-config-amap-security" type="password" autocomplete="off" value="${escapeHtml(config.amapSecurityJsCode)}" placeholder="本机地图连接时填写"></label>
             <label><span>安全代理地址</span><input id="auri-config-amap-host" type="url" spellcheck="false" value="${escapeHtml(config.amapServiceHost)}" placeholder="由 /v1/map-config 自动提供"></label>
           </details>
           <button class="auri-config-submit" type="submit">保存并连接</button>
         </form>
       `
     };
+  }
+
+  function refreshConnectionPanel() {
+    if (activeSection !== "connection") return;
+    const panel = connectionPanel();
+    const body = document.getElementById("body-a");
+    if (!body?.querySelector("#auri-config-form")) return;
+    const subtitle = document.getElementById("sub-a");
+    const copy = body.querySelector(".auri-shell-copy");
+    const status = body.querySelector(".auri-shell-status");
+    if (subtitle) subtitle.textContent = panel.subtitle;
+    if (copy) copy.textContent = panel.copy;
+    if (status) {
+      status.textContent = panel.status;
+      status.className = `auri-shell-status is-${panel.tone || "idle"}`;
+    }
+    const statusLabel = STATUS_VIEW[connectionStatus.type]?.[0] || "等待连接";
+    const values = {
+      sync: connectionStatus.type === "streaming" ? "实时流" : connectionStatus.type === "polling_fallback" ? "轮询恢复" : statusLabel,
+      session: viewModel.meta.sessionId ? `…${viewModel.meta.sessionId.slice(-8)}` : "--",
+      revision: viewModel.meta.revision >= 0 ? String(viewModel.meta.revision) : "--",
+      schema: lastHealth?.schema_version || viewModel.meta.schemaVersion || "--",
+      health: lastHealth?.status === "ok" ? "正常" : lastHealth ? "异常" : "等待预检",
+      llm: lastHealth?.llm_model ? `${lastHealth.llm_model} · ${lastHealth.llm_last_mode || "待调用"}` : "状态未提供"
+    };
+    Object.entries(values).forEach(([key, value]) => {
+      const node = body.querySelector(`[data-connection-metric="${key}"]`);
+      if (node) node.textContent = value;
+    });
+    const map = body.querySelector("[data-connection-map-status]");
+    if (map) map.textContent = MAP_STATUS_VIEW[mapStatus.mode]?.[0] || "离线导航";
   }
 
   function closePanel() {
@@ -898,6 +942,7 @@
   function renderConnectionStatus(next) {
     connectionStatus = next;
     if (next.health) lastHealth = next.health;
+    if (next.type === "streaming") lastError = null;
     const [label, tone] = STATUS_VIEW[next.type] || STATUS_VIEW.idle;
     const chip = document.getElementById("tb-offline");
     if (chip) {
@@ -905,7 +950,7 @@
       chip.dataset.tone = tone;
       chip.title = `${label} · 点击配置 Agent`;
     }
-    if (activeSection === "connection") openPanel("connection");
+    refreshConnectionPanel();
   }
 
   function renderNavigation() {
@@ -1085,7 +1130,7 @@
       lastAnimatedStage = null;
       animateStage();
     }
-    if (activeSection === "connection") openPanel("connection");
+    refreshConnectionPanel();
   }
 
   const mapAdapter = amapModule.create({
@@ -1151,7 +1196,8 @@
     animateStage();
     if (mapAdapter.getStatus() === "online") mapAdapter.update(navigationSnapshot());
     void ensureMapRoute();
-    if (activeSection && activeSection !== "connection") openPanel(activeSection);
+    if (activeSection === "connection") refreshConnectionPanel();
+    else if (activeSection) openPanel(activeSection);
   }
 
   const client = agentModule.createClient({
@@ -1167,6 +1213,7 @@
           : error?.name === "TypeError"
             ? "网络不可达，请检查服务地址或浏览器网络"
             : "无法连接 Agent 服务";
+      refreshConnectionPanel();
     }
   });
   client.subscribe((state) => renderWorldState(state));

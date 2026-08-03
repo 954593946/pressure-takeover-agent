@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.Flow
  */
 interface ChatRepository {
 
-    /** Send a message and receive a streaming response. Never completes — errors are emitted then recovered. */
+    /** Send a message and receive a finite stream ending in Done or Error. */
     fun sendMessage(
         message: String,
         inputMode: String = "text",
@@ -58,6 +58,10 @@ sealed class ChatStreamEvent {
         val revision: Int,
     ) : ChatStreamEvent()
 
-    /** An error occurred during processing. */
-    data class Error(val message: String) : ChatStreamEvent()
+    /** A frozen SSE error frame. retryable tells the UI whether a later user retry is meaningful. */
+    data class Error(
+        val code: String,
+        val message: String,
+        val retryable: Boolean,
+    ) : ChatStreamEvent()
 }

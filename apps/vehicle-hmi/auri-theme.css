@@ -191,7 +191,7 @@ body {
 }
 
 .auri-responsibility-strip {
-  min-height: 54px;
+  min-height: 64px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
   gap: 7px;
@@ -202,7 +202,7 @@ body {
 .auri-responsibility-item,
 .auri-responsibility-more {
   min-width: 0;
-  height: 54px;
+  height: 64px;
   box-sizing: border-box;
   border: 1px solid rgba(126, 183, 255, 0.13);
   border-radius: 11px;
@@ -214,10 +214,10 @@ body {
 }
 
 .auri-responsibility-item {
-  padding: 6px 9px;
+  padding: 7px 10px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: 16px 21px;
+  grid-template-rows: 20px 27px;
   column-gap: 6px;
   text-align: left;
 }
@@ -228,8 +228,8 @@ body {
   min-width: 0;
   overflow: hidden;
   color: rgba(245, 242, 236, 0.46);
-  font-size: 10px;
-  line-height: 16px;
+  font-size: 13px;
+  line-height: 20px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -240,8 +240,8 @@ body {
   min-width: 0;
   overflow: hidden;
   color: rgba(245, 242, 236, 0.91);
-  font-size: 14px;
-  line-height: 21px;
+  font-size: 18px;
+  line-height: 27px;
   font-weight: 620;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -251,9 +251,9 @@ body {
   grid-row: 1;
   grid-column: 2;
   color: rgba(245, 242, 236, 0.52);
-  font-size: 10px;
+  font-size: 13px;
   font-style: normal;
-  line-height: 16px;
+  line-height: 20px;
   white-space: nowrap;
 }
 
@@ -314,9 +314,17 @@ body {
   display: none !important;
 }
 
+.vd-panel:has(.vd-half-bot.is-auri-takeover) .vd-half-top {
+  flex-basis: 440px !important;
+}
+
+.vd-half-bot.is-auri-takeover .vd-status-icons {
+  display: none !important;
+}
+
 .auri-takeover-card {
-  height: 366px;
-  min-height: 366px;
+  height: 440px;
+  min-height: 440px;
   margin: 10px 24px 12px;
   padding: 14px 18px;
   display: flex;
@@ -354,7 +362,7 @@ body {
 .auri-takeover-head small { display: block; }
 
 .auri-takeover-head b {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 680;
 }
 
@@ -363,7 +371,7 @@ body {
   max-width: 350px;
   overflow: hidden;
   color: rgba(245, 242, 236, 0.5);
-  font-size: 12px;
+  font-size: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -387,14 +395,14 @@ body {
 
 .auri-takeover-conclusion {
   margin: 0;
-  min-height: 44px;
+  min-height: 80px;
   flex-shrink: 0;
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   color: var(--auri-ivory);
-  font-size: 25px;
+  font-size: 32px;
   line-height: 1.22;
   font-weight: 610;
 }
@@ -403,13 +411,13 @@ body {
   display: grid;
   gap: 4px;
   min-height: 30px;
-  max-height: 108px;
+  max-height: 138px;
   flex-shrink: 0;
   overflow: hidden;
 }
 
 .auri-takeover-action {
-  min-height: 34px;
+  min-height: 44px;
   padding: 0 9px;
   display: grid;
   grid-template-columns: 25px minmax(0, 1fr) auto;
@@ -438,14 +446,14 @@ body {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   color: rgba(245, 242, 236, 0.86);
-  font-size: 14px;
+  font-size: 18px;
   line-height: 1.22;
   font-weight: 540;
 }
 
 .auri-takeover-action small {
   color: rgba(245, 242, 236, 0.44);
-  font-size: 11px;
+  font-size: 14px;
   white-space: nowrap;
 }
 
@@ -495,8 +503,8 @@ body {
   white-space: nowrap;
 }
 
-.auri-takeover-devices b { font-size: 11px; font-weight: 650; }
-.auri-takeover-devices small { margin-top: 1px; color: rgba(245, 242, 236, 0.4); font-size: 9px; }
+.auri-takeover-devices b { font-size: 14px; font-weight: 650; }
+.auri-takeover-devices small { margin-top: 1px; color: rgba(245, 242, 236, 0.4); font-size: 12px; }
 
 .auri-takeover-confirm {
   min-height: 56px;
@@ -1431,3 +1439,144 @@ body {
     transition: none !important;
   }
 }
+
+/* 1920x720 class cockpit displays: preserve physical type size and give the
+   additional horizontal area to navigation instead of letterboxing. */
+.hmi.is-ultrawide {
+  --top: 96px;
+  --bot: 132px;
+  --vd: 720px;
+}
+
+.hmi.is-ultrawide .top-bar {
+  padding-inline: 28px;
+}
+
+.hmi.is-ultrawide .auri-wordmark-icon {
+  width: 51px;
+  height: 51px;
+  border-radius: 15px;
+}
+
+.hmi.is-ultrawide .auri-wordmark strong,
+.hmi.is-ultrawide .tb-stat-time {
+  font-size: 27px !important;
+}
+
+.hmi.is-ultrawide .tb-offline,
+.hmi.is-ultrawide .tb-np-txt {
+  font-size: 18px !important;
+}
+
+.hmi.is-ultrawide .vd-half-top {
+  flex-basis: 220px !important;
+}
+
+.hmi.is-ultrawide .vd-panel:has(.vd-half-bot.is-auri-takeover) .vd-half-top {
+  flex-basis: 220px !important;
+}
+
+.hmi.is-ultrawide .vd-hud-overlay .vh-speed .vh-num {
+  font-size: 92px;
+}
+
+.hmi.is-ultrawide .vd-hud-overlay .vh-speed .vh-unit {
+  font-size: 20px;
+}
+
+.hmi.is-ultrawide .auri-car-mark--badge,
+.hmi.is-ultrawide .auri-car-mark--plate {
+  transform: translateX(-50%) scale(1.35);
+}
+
+.hmi.is-ultrawide .auri-takeover-card {
+  height: 580px;
+  min-height: 580px;
+  margin: 12px 36px 18px;
+  padding: 8px 26px;
+  gap: 4px;
+  border-radius: 22px;
+}
+
+.hmi.is-ultrawide .auri-takeover-head {
+  min-height: 42px;
+}
+
+.hmi.is-ultrawide .auri-takeover-head b { font-size: 27px; }
+.hmi.is-ultrawide .auri-takeover-head small { max-width: 560px; font-size: 18px; }
+.hmi.is-ultrawide .auri-takeover-orbit { width: 48px; height: 48px; }
+.hmi.is-ultrawide .auri-takeover-orbit i { font-size: 27px; }
+
+.hmi.is-ultrawide .auri-takeover-conclusion {
+  min-height: 120px;
+  font-size: 48px;
+  line-height: 1.18;
+}
+
+.hmi.is-ultrawide .auri-takeover-actions {
+  max-height: 180px;
+  gap: 6px;
+}
+
+.hmi.is-ultrawide .auri-takeover-action {
+  min-height: 54px;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  gap: 12px;
+  border-radius: 15px;
+}
+
+.hmi.is-ultrawide .auri-takeover-action > span {
+  width: 34px;
+  height: 34px;
+  font-size: 17px;
+}
+
+.hmi.is-ultrawide .auri-takeover-action b { font-size: 27px; }
+.hmi.is-ultrawide .auri-takeover-action small { font-size: 17px; }
+
+.hmi.is-ultrawide .auri-takeover-devices {
+  min-height: 36px;
+  gap: 9px;
+}
+
+.hmi.is-ultrawide .auri-takeover-devices b { font-size: 17px; }
+.hmi.is-ultrawide .auri-takeover-devices small { font-size: 14px; }
+
+.hmi.is-ultrawide .auri-takeover-confirm {
+  min-height: 84px;
+  border-radius: 18px;
+  font-size: 24px;
+}
+
+.hmi.is-ultrawide .auri-responsibility-strip { min-height: 84px; gap: 10px; }
+.hmi.is-ultrawide .auri-responsibility-item,
+.hmi.is-ultrawide .auri-responsibility-more { height: 84px; }
+.hmi.is-ultrawide .auri-responsibility-item { grid-template-rows: 27px 36px; padding: 10px 14px; }
+.hmi.is-ultrawide .auri-responsibility-item span,
+.hmi.is-ultrawide .auri-responsibility-item em { font-size: 18px; line-height: 27px; }
+.hmi.is-ultrawide .auri-responsibility-item b { font-size: 27px; line-height: 36px; }
+
+.hmi.is-ultrawide .left-panel {
+  top: 75px;
+  right: 75px;
+  width: 810px !important;
+  max-height: calc(100% - 150px);
+}
+
+.hmi.is-ultrawide .left-panel.auri-shell-panel .lp-hdr-title { font-size: 32px !important; }
+.hmi.is-ultrawide .left-panel.auri-shell-panel .lp-hdr-sub { font-size: 22px !important; }
+.hmi.is-ultrawide .auri-shell-lead { font-size: 45px; }
+.hmi.is-ultrawide .auri-shell-copy { font-size: 27px; }
+.hmi.is-ultrawide .auri-shell-row { min-height: 94px; }
+.hmi.is-ultrawide .auri-shell-row-copy strong { font-size: 27px; }
+.hmi.is-ultrawide .auri-shell-row-copy span { font-size: 24px; }
+.hmi.is-ultrawide .auri-shell-row-state,
+.hmi.is-ultrawide .auri-shell-status { font-size: 22px; }
+
+.hmi.is-ultrawide .bottom-bar {
+  padding-inline: 42px;
+}
+
+.hmi.is-ultrawide .bb-temp { font-size: 27px; }
+.hmi.is-ultrawide .bb-ic { width: 54px; height: 54px; }
+.hmi.is-ultrawide .bb-ic svg { width: 30px; height: 30px; }

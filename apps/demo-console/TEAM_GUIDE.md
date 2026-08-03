@@ -37,7 +37,7 @@ https://954593946.github.io/pressure-takeover-agent/apps/demo-console/
 
 第一次使用需填写团队 Agent API 和负责人单独提供的 Team Token。公网静态页面不包含 Token、OpenAI API Key 或后端环境变量。
 
-在同一个 GitHub Pages 域名下，Console 点击“保存配置”“连接 Agent”或“载入演示预置任务”后，正式 HMI 与候选 HMI 会复用同一浏览器连接配置。建议先配置 Console，再打开 HMI；两端应显示同一个 Session 和 revision。若 Console 与 HMI 分别运行在不同端口或域名，浏览器不会共享 `localStorage`，需要分别填写一次。
+在同一个 GitHub Pages 域名下，Console 点击“保存配置”“连接 Agent”或“载入演示预置任务”后，正式 HMI 会复用同一浏览器连接配置。建议先配置 Console，再打开 HMI；两端应显示同一个 Session 和 revision。若 Console 与 HMI 分别运行在不同端口或域名，浏览器不会共享 `localStorage`，需要分别填写一次。
 
 ### 本机访问
 
@@ -105,7 +105,7 @@ http://127.0.0.1:5174/apps/demo-console/
 http://127.0.0.1:5174/apps/vehicle-hmi/
 ```
 
-两端必须显示相同 Session、revision 和 stage。候选重构页面的本地地址为 `apps/vehicle-hmi-next/`，未完成团队发布切换前不要把其测试结果当作正式 GitHub Pages 验收结果。
+两端必须显示相同 Session、revision 和 stage。`apps/vehicle-hmi/` 是唯一正式 HMI；旧版仅保留在 `apps/vehicle-hmi-legacy/` 用于回溯。
 
 ## 连接团队公网 Agent
 

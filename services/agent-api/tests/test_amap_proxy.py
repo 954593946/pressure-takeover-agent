@@ -1,9 +1,14 @@
+from pathlib import Path
+
 import httpx
 import pytest
 
 import auri_agent.app as app_module
 from auri_agent.app import create_app
 from auri_agent.config import Settings
+
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 @pytest.mark.asyncio
@@ -71,3 +76,23 @@ async def test_amap_proxy_injects_server_security_code_and_rejects_other_origins
     assert "attacker-value" not in str(captured["url"])
     assert captured["timeout"] == 12.0
     assert denied.status_code == 403
+
+
+def test_default_and_render_amap_origins_include_team_personal_and_local_pages() -> None:
+    required_origins = {
+        "https://954593946.github.io",
+        "https://wangwang20.github.io",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    }
+
+    assert required_origins <= set(Settings().amap_allowed_origin_list)
+    for manifest_name in ("render.yaml", "render-langchain.yaml"):
+        manifest = (REPO_ROOT / manifest_name).read_text(encoding="utf-8")
+        allowed_origins_line = next(
+            line.strip()
+            for line in manifest.splitlines()
+            if line.strip().startswith("value: https://954593946.github.io")
+        )
+        for origin in required_origins:
+            assert origin in allowed_origins_line, f"{origin} missing from {manifest_name}"

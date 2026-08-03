@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - apps/vehicle-hmi/**
+      - apps/vehicle-hmi-legacy/**
       - apps/demo-console/**
       - apps/web-portal/**
       - icon.png
@@ -40,6 +41,7 @@ jobs:
           mkdir -p _site/apps
           cp icon.png _site/icon.png
           cp -R apps/vehicle-hmi _site/apps/vehicle-hmi
+          cp -R apps/vehicle-hmi-legacy _site/apps/vehicle-hmi-legacy
           cp -R apps/demo-console _site/apps/demo-console
           cp -R apps/web-portal _site/apps/web-portal
           cp apps/web-portal/root-index.html _site/index.html

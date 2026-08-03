@@ -1,4 +1,4 @@
-"""Capture candidate HMI visuals across real and read-only fixture stages.
+"""Capture official HMI visuals across real and read-only fixture stages.
 
 The test is intentionally destructive to the configured Agent session, so it
 only accepts the dedicated local Agent at 127.0.0.1:8795. Nine stable stages
@@ -22,7 +22,7 @@ from playwright.sync_api import Page, sync_playwright
 
 AGENT = os.getenv("AURI_AGENT_URL", "http://127.0.0.1:8795").rstrip("/")
 HMI = os.getenv(
-    "AURI_HMI_URL", "http://127.0.0.1:5174/apps/vehicle-hmi-next/"
+    "AURI_HMI_URL", "http://127.0.0.1:5174/apps/vehicle-hmi/"
 )
 TOKEN = os.getenv("AURI_AGENT_TOKEN", "")
 CHROME = os.getenv(
@@ -248,6 +248,31 @@ def capture(page: Page, state: dict, index: int, source: str) -> dict:
     freeze_visuals(page)
     transform = route_transform(page)
     audit = audit_layout(page)
+    occlusion = page.evaluate(
+        """() => {
+          const sample=(selector,xRatio=.5,yRatio=.5)=>{
+            const target=document.querySelector(selector);
+            if(!target) return {selector,missing:true};
+            const rect=target.getBoundingClientRect();
+            const x=rect.left+rect.width*xRatio;
+            const y=rect.top+rect.height*yRatio;
+            const stack=document.elementsFromPoint(x,y).slice(0,6).map(node=>({
+              tag:node.tagName,
+              id:node.id||'',
+              className:typeof node.className==='string'?node.className:''
+            }));
+            const visible=stack.some(node=>node.id===target.id || String(node.className).split(/\\s+/).some(name=>target.classList.contains(name)));
+            return {selector,x,y,visible,stack};
+          };
+          const takeover=document.querySelector('#auri-takeover-card:not([hidden])');
+          return [
+            sample('.auri-wordmark'),
+            sample('.vd-half-top'),
+            sample(takeover ? '#auri-takeover-card' : '#vd-nav-card')
+          ];
+        }"""
+    )
+    assert all(item.get("visible") for item in occlusion), occlusion
     filename = f"{index:02d}-{source}-{state['stage']}-r{state['revision']}.png"
     destination = OUTPUT_DIR / filename
     page.screenshot(path=destination, full_page=False)
@@ -267,6 +292,7 @@ def capture(page: Page, state: dict, index: int, source: str) -> dict:
             "internal_overflow": len(audit["internalOverflow"]),
             "broken_images": len(audit["brokenImages"]),
         },
+        "occlusion": occlusion,
     }
 
 

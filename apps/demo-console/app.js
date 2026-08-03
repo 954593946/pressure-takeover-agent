@@ -150,9 +150,14 @@ const ui = {
   syncMode: $("#syncMode"),
   syncDetail: $("#syncDetail"),
   tasks: $("#tasks"),
+  riskReasons: $("#riskReasons"),
   actions: $("#actions"),
+  confirmationDetails: $("#confirmationDetails"),
+  serviceOrders: $("#serviceOrders"),
   eventLog: $("#eventLog")
 };
+
+ui.presetStatus = $("#presetStatus");
 
 let worldState = null;
 let lastRevision = -1;
@@ -163,19 +168,25 @@ let pollTimer = null;
 let lastHealth = null;
 let syncMode = "disconnected";
 let mobileTaskSyncAcknowledged = false;
+let presetLoading = false;
+let presetFeedback = {
+  tone: "idle",
+  text: "尚未载入，手机端可用时无需操作。"
+};
 const stableEventIds = new Map();
+const completedStepKeys = new Set();
 
 const SCRIPT_STEPS = [
-  { key: "waitTask", stage: "同步手机任务", cue: "先展示空任务状态，再由手机语音创建任务并同步到共享 World State。" },
-  { key: "meeting", stage: "会议延迟", cue: "会议延迟压缩出发窗口，腕上进入黄色提醒。" },
-  { key: "approach", stage: "接近车辆", cue: "用户离开办公室靠近车辆，准备交接到车机。" },
-  { key: "vehicle", stage: "进入车辆", cue: "主交互端切到车机，手机进入只读 Companion。" },
-  { key: "traffic", stage: "拥堵加剧", cue: "按当前刚性任务时间计算 ETA，并展示预计晚到分钟数。" },
-  { key: "stress", stage: "压力辅助信号", cue: "辅助信号只提升解释性，不直接决定情绪。" },
-  { key: "utterance", stage: "手机语音求助", cue: "用户在手机端说我还来得及吗，转写同步到车机后 Agent 准备动作组。" },
-  { key: "confirm", stage: "确认发送", cue: "车机一次确认，消息和模拟订单幂等执行。" },
-  { key: "cooldown", stage: "低干扰恢复", cue: "处理完成后降低打扰。" },
-  { key: "parked", stage: "停车复盘", cue: "停车后主端回到手机查看完整复盘。" }
+  { key: "waitTask", stage: "同步手机任务", time: "0:00–0:25", cue: "先展示空任务状态，再由手机语音创建任务并同步到共享 World State。" },
+  { key: "meeting", stage: "会议延迟", time: "0:25–0:55", cue: "会议延迟压缩出发窗口，腕上进入黄色提醒。" },
+  { key: "approach", stage: "接近车辆", time: "0:55–1:10", cue: "用户离开办公室靠近车辆，准备交接到车机。" },
+  { key: "vehicle", stage: "进入车辆", time: "1:10–1:25", cue: "主交互端切到车机，手机进入只读 Companion。" },
+  { key: "traffic", stage: "拥堵加剧", time: "1:25–2:05", cue: "按当前刚性任务时间计算 ETA，并展示预计晚到分钟数。" },
+  { key: "stress", stage: "压力辅助信号", time: "2:05–2:15", cue: "辅助信号只提升解释性，不直接决定情绪。" },
+  { key: "utterance", stage: "手机语音求助", time: "2:15–3:05", cue: "用户在手机端说我还来得及吗，转写同步到车机后 Agent 准备动作组。" },
+  { key: "confirm", stage: "确认发送", time: "3:05–3:25", cue: "车机一次确认，消息和模拟订单幂等执行。" },
+  { key: "cooldown", stage: "低干扰恢复", time: "3:25–3:50", cue: "处理完成后降低打扰。" },
+  { key: "parked", stage: "停车复盘", time: "3:50–4:20", cue: "停车后主端回到手机查看完整复盘。" }
 ];
 
 function initConfig() {
@@ -331,7 +342,11 @@ async function loadState(reason = "load") {
 function consumeState(next, reason = "state") {
   if (!next || next.schema_version !== "0.2.0") return;
   if (worldState && next.session_id === worldState.session_id && next.revision <= lastRevision) return false;
-  if (worldState && next.session_id !== worldState.session_id) stableEventIds.clear();
+  if (worldState && next.session_id !== worldState.session_id) {
+    stableEventIds.clear();
+    completedStepKeys.clear();
+    mobileTaskSyncAcknowledged = false;
+  }
   worldState = next;
   lastRevision = next.revision;
   render();
@@ -344,7 +359,7 @@ async function submitEvent(actionKey) {
   const blockReason = blockedReason(actionKey);
   if (blockReason) {
     log("blocked", actionKey, blockReason);
-    return;
+    return null;
   }
   const [type, source, payload] = eventDefinition(actionKey);
   const stableId = stableEventId(actionKey, type);
@@ -362,12 +377,14 @@ async function submitEvent(actionKey) {
     })
   });
   const accepted = response.data;
+  if (SCRIPT_STEPS.some((step) => step.key === actionKey)) completedStepKeys.add(actionKey);
   consumeState(accepted.state, accepted.duplicate ? "duplicate" : type);
   log(
     "event",
     type,
     `event_id ${stableId} · HTTP ${response.status} · duplicate ${Boolean(accepted.duplicate)} · r${accepted.state?.revision ?? "--"} · ${response.elapsedMs}ms`
   );
+  return accepted.state;
 }
 
 async function confirm(inputMode = "button") {
@@ -409,6 +426,7 @@ async function reset() {
     return;
   }
   stableEventIds.clear();
+  completedStepKeys.clear();
   mobileTaskSyncAcknowledged = false;
   const state = await apiFetch("/v1/session/reset", {
     method: "POST",
@@ -420,12 +438,40 @@ async function reset() {
 async function preflight() {
   saveConfig();
   const started = performance.now();
+  const parsedTarget = new URL(CONFIG.apiBase);
+  const isCanonical = CONFIG.apiBase === PUBLIC_AGENT_API;
+  const isLocal = parsedTarget.protocol === "http:"
+    && ["127.0.0.1", "localhost"].includes(parsedTarget.hostname);
+  if (!isCanonical && !isLocal) {
+    throw new Error(`Agent API 不是团队 canonical 地址：${CONFIG.apiBase}`);
+  }
+  log("check", "target", isCanonical ? "canonical" : "local development");
+
   const health = await loadHealth("preflight.health");
+  if (health?.status !== "ok") throw new Error(`Health 检查失败：${health?.status || "missing status"}`);
+  log("check", "health", "ok");
+
+  const build = health?.build_sha || health?.git_sha || health?.revision;
+  if (!build || (isCanonical && build === "local")) {
+    throw new Error("Agent 未提供有效 build SHA，无法确认部署版本");
+  }
+  log("check", "build", String(build));
+
+  if (health?.shared_access_enabled && !CONFIG.token) {
+    throw new Error("Agent 已启用共享访问，但 Team Token 为空");
+  }
   await loadState("preflight.state");
-  connectStream();
+  if (!worldState?.session_id || !Number.isInteger(worldState?.revision)) {
+    throw new Error("鉴权成功但 World State 缺少 Session 或 revision");
+  }
+  log("check", "auth", health?.shared_access_enabled ? "Team Token valid" : "not required");
+  log("check", "state", `${worldState.session_id} · r${worldState.revision}`);
+
+  void connectStream();
+  await waitForSyncMode("sse", 10_000);
+  log("check", "stream", "SSE connected");
   const elapsed = Math.round(performance.now() - started);
-  const auth = CONFIG.token ? "token configured" : "no token";
-  log("preflight", "ok", `${health?.status || "health"} · ${auth} · ${elapsed}ms`);
+  log("preflight", "ok", `${isCanonical ? "canonical" : "local"} · ${build} · r${worldState.revision} · SSE connected · ${elapsed}ms`);
 }
 
 function render() {
@@ -445,11 +491,30 @@ function render() {
   }
   renderSyncMode();
   renderTasks();
+  renderRiskReasons();
   renderActions();
+  renderConfirmationDetails();
+  renderServiceOrders();
   renderVehicleState();
   renderLedger();
+  renderPresetStatus();
   renderDirector();
   updateButtonStates();
+}
+
+function setPresetFeedback(tone, text) {
+  presetFeedback = { tone, text };
+  renderPresetStatus();
+}
+
+function renderPresetStatus() {
+  if (!ui.presetStatus) return;
+  const tasks = worldState?.tasks || [];
+  const feedback = tasks.length && !presetLoading
+    ? { tone: "success", text: `已载入 ${tasks.length} 项任务，下一步：会议延迟。` }
+    : presetFeedback;
+  ui.presetStatus.dataset.tone = feedback.tone;
+  ui.presetStatus.textContent = feedback.text;
 }
 
 function pressureLabel(level) {
@@ -474,6 +539,38 @@ function renderActions() {
     title: action.target,
     detail: `${action.type} · ${action.status} · ${action.summary}`
   })), "等待 Agent 生成动作组");
+}
+
+function renderRiskReasons() {
+  const risk = worldState?.risk;
+  const reasons = risk?.reason_codes || [];
+  const auxiliaries = risk?.auxiliary_signals || [];
+  const items = [
+    ...reasons.map((reason) => ({ title: "风险原因", detail: reason })),
+    ...auxiliaries.map((signal) => ({ title: "辅助信号", detail: signal }))
+  ];
+  renderStateList(ui.riskReasons, items, "当前无风险原因");
+}
+
+function renderConfirmationDetails() {
+  const confirmation = worldState?.confirmation;
+  if (!confirmation) {
+    renderStateList(ui.confirmationDetails, [], "当前无待确认动作组");
+    return;
+  }
+  const expires = confirmation.expires_at ? new Date(confirmation.expires_at).toLocaleTimeString("zh-CN", { hour12: false }) : "--";
+  renderStateList(ui.confirmationDetails, [{
+    title: `${confirmation.owner_surface} · ${confirmation.status}`,
+    detail: `${confirmation.confirmation_id} · ${confirmation.action_ids?.length || 0} 个动作 · 有效至 ${expires}`
+  }], "");
+}
+
+function renderServiceOrders() {
+  const orders = worldState?.service_orders || [];
+  renderStateList(ui.serviceOrders, orders.map((order) => ({
+    title: order.status || "订单方案",
+    detail: `${(order.items || []).reduce((total, item) => total + Number(item.quantity || 0), 0)} 件 · ${order.total ?? "--"} 元 · 预算 ${order.budget_status || "--"} · ${order.delivery_window || "配送待定"}`
+  })), "等待 Agent 生成服务方案");
 }
 
 function renderVehicleState() {
@@ -517,7 +614,7 @@ function nextStepIndex() {
   if (worldState.stage === "pre_departure_warning") return 2;
   if (worldState.stage === "handover_to_vehicle") return 3;
   if (worldState.stage === "vehicle_observation") return 4;
-  if (worldState.stage === "takeover_L2" || worldState.stage === "takeover_L3") return 6;
+  if (worldState.stage === "takeover_L2" || worldState.stage === "takeover_L3") return hasStressSignal() ? 6 : 5;
   if (worldState.stage === "planning" || worldState.stage === "service_prepared") return 7;
   if (worldState.stage === "waiting_confirmation") return 7;
   if (worldState.stage === "action_completed") return 8;
@@ -530,7 +627,7 @@ function renderDirector() {
   const index = Math.min(nextStepIndex(), SCRIPT_STEPS.length);
   const step = SCRIPT_STEPS[index] || { stage: "主线完成", cue: "可进入技术证明或复盘。" };
   const waitingForMobileTask = mobileTaskSyncAcknowledged && !worldState?.tasks?.length;
-  ui.directorStage.textContent = `阶段 ${waitingForMobileTask ? 1 : index} / ${SCRIPT_STEPS.length}`;
+  ui.directorStage.textContent = `阶段 ${waitingForMobileTask ? 1 : index} / ${SCRIPT_STEPS.length} · ${step.time || "约 4:20 完成"}`;
   ui.nextStepHint.textContent = waitingForMobileTask
     ? "等待手机语音创建任务"
     : step.stage === "主线完成" ? "主线完成" : `下一步：${step.stage}`;
@@ -551,10 +648,21 @@ function blockedReason(actionKey) {
   const hasConfirmation = worldState?.confirmation?.status === "pending";
   if (!worldState && !["refresh", "waitTask", "presetTask"].includes(actionKey)) return "未连接 Agent";
   if (actionKey === "presetTask" && hasTasks) return "当前已有手机任务，无需载入演示预置";
+  if (actionKey === "waitTask" && mobileTaskSyncAcknowledged) return "手机任务同步阶段已确认";
   if (["serviceSuccess", "serviceStock", "serviceBudget"].includes(actionKey) && hasTasks) return "主故事已开始，服务模拟配置已锁定";
   if (["meeting", "approach", "vehicle", "traffic", "stress", "utterance"].includes(actionKey) && !hasTasks) return "需要先创建任务";
-  if (actionKey === "traffic" && !["vehicle_observation", "handover_to_vehicle", "takeover_L2", "takeover_L3"].includes(stage)) return "需要先进入车辆或完成交接";
-  if (["stress", "hardBrake", "utterance"].includes(actionKey) && !["takeover_L2", "takeover_L3"].includes(stage)) return "需要先进入车辆并触发拥堵风险";
+  const expectedStages = {
+    meeting: ["off_vehicle_idle"],
+    approach: ["pre_departure_warning"],
+    vehicle: ["handover_to_vehicle"],
+    traffic: ["vehicle_observation"],
+    stress: ["takeover_L2", "takeover_L3"],
+    utterance: ["takeover_L2", "takeover_L3"]
+  };
+  if (expectedStages[actionKey] && !expectedStages[actionKey].includes(stage)) return `当前阶段 ${stage || "--"}，请按导演顺序执行`;
+  if (actionKey === "stress" && hasStressSignal()) return "压力辅助信号已注入";
+  if (actionKey === "utterance" && !hasStressSignal()) return "需要先注入压力辅助信号";
+  if (actionKey === "hardBrake" && !["takeover_L2", "takeover_L3"].includes(stage)) return "需要先进入车辆并触发拥堵风险";
   if (actionKey === "confirm" || actionKey === "voiceConfirm") {
     if (!hasConfirmation) return "当前没有 pending confirmation";
     if (worldState.confirmation.owner_surface !== "vehicle_hmi") return "确认 owner 不在车机";
@@ -570,8 +678,28 @@ function updateButtonStates() {
     const reason = blockedReason(action);
     button.disabled = Boolean(reason);
     button.title = reason || "";
+    if (action === "presetTask") {
+      if (presetLoading) {
+        button.disabled = true;
+        button.textContent = "连接并载入中…";
+      } else if (worldState?.tasks?.length) {
+        button.textContent = "已载入";
+      } else if (presetFeedback.tone === "error") {
+        button.textContent = "重新载入";
+      } else {
+        button.textContent = "载入";
+      }
+    }
   });
-  ui.runCurrentStep.disabled = nextStepIndex() >= SCRIPT_STEPS.length;
+  const step = SCRIPT_STEPS[nextStepIndex()];
+  const reason = step ? blockedReason(step.key) : "主线已完成";
+  ui.runCurrentStep.disabled = !step || Boolean(reason);
+  ui.runCurrentStep.title = reason || "";
+}
+
+function hasStressSignal() {
+  const auxiliary = worldState?.risk?.auxiliary_signals || [];
+  return auxiliary.length > 0 || Number(worldState?.wearable?.heart_rate || 0) >= 110 || completedStepKeys.has("stress");
 }
 
 function renderSyncMode(detail = "") {
@@ -640,6 +768,18 @@ async function connectStream() {
   }
 }
 
+function waitForSyncMode(expected, timeoutMs) {
+  const started = performance.now();
+  return new Promise((resolve, reject) => {
+    const check = () => {
+      if (syncMode === expected) return resolve();
+      if (performance.now() - started >= timeoutMs) return reject(new Error(`SSE 连接超时，当前模式：${syncMode}`));
+      window.setTimeout(check, 80);
+    };
+    check();
+  });
+}
+
 function parseStreamChunk(chunk) {
   const dataLine = chunk.split("\n").find((line) => line.startsWith("data: "));
   if (!dataLine) return;
@@ -682,6 +822,8 @@ document.addEventListener("click", async (event) => {
     if (action === "confirm") await confirm("button");
     else if (action === "voiceConfirm") await confirm("voice");
     else if (action === "presetTask") {
+      presetLoading = true;
+      setPresetFeedback("loading", `正在连接 ${ui.apiBase.value.trim() || CONFIG.apiBase} 并创建任务…`);
       actionButton.textContent = "连接并载入中…";
       saveConfig();
       syncMode = "connecting";
@@ -690,7 +832,12 @@ document.addEventListener("click", async (event) => {
       await loadState("preset.state");
       connectStream();
       loadHealth("preset.health").catch((error) => log("error", "preset health", friendlyError(error)));
-      await submitEvent(action);
+      const state = await submitEvent(action);
+      if (!state?.tasks?.length) throw new Error("Agent 未返回预置任务，请检查当前 Session 状态");
+      mobileTaskSyncAcknowledged = true;
+      presetLoading = false;
+      setPresetFeedback("success", `已载入 ${state.tasks.length} 项任务，下一步：会议延迟。`);
+      render();
     }
     else if (["refresh", "waitTask"].includes(action)) {
       if (action === "waitTask") {
@@ -702,8 +849,13 @@ document.addEventListener("click", async (event) => {
     else await submitEvent(action);
   } catch (error) {
     log("error", actionButton.dataset.action, friendlyError(error));
+    if (action === "presetTask") {
+      presetLoading = false;
+      setPresetFeedback("error", `载入失败：${friendlyError(error)}`);
+    }
   } finally {
-    if (action === "presetTask") actionButton.textContent = originalLabel;
+    if (action === "presetTask" && presetLoading) presetLoading = false;
+    if (action === "presetTask" && presetFeedback.tone === "idle") actionButton.textContent = originalLabel;
     actionButton.disabled = false;
     updateButtonStates();
   }

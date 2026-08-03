@@ -2,7 +2,6 @@ package com.pressureagent.mobile.ui.task
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.pressureagent.mobile.data.local.LocalTaskStore
 import com.pressureagent.mobile.data.repository.WorldStateRepository
 import com.pressureagent.mobile.domain.model.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -30,7 +29,6 @@ data class CreateTaskUiState(
 
 @HiltViewModel
 class CreateTaskViewModel @Inject constructor(
-    private val localTasks: LocalTaskStore,
     private val repository: WorldStateRepository,
 ) : ViewModel() {
 
@@ -38,6 +36,7 @@ class CreateTaskViewModel @Inject constructor(
     val uiState: StateFlow<CreateTaskUiState> = _uiState.asStateFlow()
 
     private var currentSessionId: String = ""
+    private var pendingSubmission: Event? = null
 
     init {
         // Observe WorldState to keep current sessionId
@@ -54,90 +53,95 @@ class CreateTaskViewModel @Inject constructor(
         }
     }
 
-    fun onQuickTitleChange(title: String) { _uiState.update { it.copy(quickTitle = title, error = null) } }
+    fun onQuickTitleChange(title: String) {
+        if (_uiState.value.syncStatus == SyncStatus.SYNCING) return
+        invalidatePendingSubmission()
+        _uiState.update { it.copy(quickTitle = title, error = null) }
+    }
 
     fun onQuickTimeSelected(iso: String, display: String) {
-        _uiState.update { it.copy(quickTimeIso = iso, quickTimeDisplay = display) }
+        if (_uiState.value.syncStatus == SyncStatus.SYNCING) return
+        invalidatePendingSubmission()
+        _uiState.update {
+            it.copy(quickTimeIso = iso, quickTimeDisplay = display, error = null)
+        }
     }
 
     fun onQuickCreate() {
+        if (_uiState.value.syncStatus == SyncStatus.SYNCING) return
+
         val title = _uiState.value.quickTitle.trim()
         if (title.isBlank()) {
             _uiState.update { it.copy(error = "请输入任务标题") }
             return
         }
-        val time = _uiState.value.quickTimeIso.ifBlank { null }
-
-        // 1. Save locally for instant calendar display
-        val localId = localTasks.addTask(title, time)
-
-        // 2. Submit to backend with proper session_id
-        _uiState.update { it.copy(syncStatus = SyncStatus.SYNCING, error = null) }
-
-        val text = buildString {
-            append("创建任务：$title")
-            if (time != null) append("，时间：$time")
-        }
-
-        viewModelScope.launch {
-            try {
-                repository.submitEvent(
-                    Event(
-                        eventId = UUID.randomUUID().toString(),
-                        sessionId = currentSessionId,
-                        type = EventType.TASK_CREATED,
-                        source = EventSource.MOBILE,
-                        timestamp = ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
-                        payload = buildJsonObject {
-                            put("title", title)
-                            if (time != null) put("scheduled_at", time)
-                            put("task_type", "flexible")
-                        },
-                    )
-                )
-                // Backend accepted — remove local copy since WorldState will provide the authoritative task
-                localTasks.removeTask(localId)
-                _uiState.update { it.copy(syncStatus = SyncStatus.SYNCED) }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(syncStatus = SyncStatus.FAILED, error = "同步失败: ${e.message}") }
+        if (currentSessionId.isBlank()) {
+            _uiState.update {
+                it.copy(syncStatus = SyncStatus.FAILED, error = "Agent 状态尚未同步，请稍后重试")
             }
+            return
         }
+
+        val event = pendingSubmission ?: buildTaskCreatedEvent(
+            title = title,
+            scheduledAt = _uiState.value.quickTimeIso.ifBlank { null },
+        ).also { pendingSubmission = it }
+        submitPending(event, failurePrefix = "同步失败")
     }
 
-    /** Retry a previously failed sync — reuses event payload */
+    /** Retry the exact failed event so backend event_id deduplication remains effective. */
     fun retrySync() {
-        val title = _uiState.value.quickTitle.trim()
-        if (title.isBlank()) return
-        val time = _uiState.value.quickTimeIso.ifBlank { null }
-
-        _uiState.update { it.copy(syncStatus = SyncStatus.SYNCING, error = null) }
-
-        viewModelScope.launch {
-            try {
-                val localId = localTasks.addTask(title, time)
-                repository.submitEvent(
-                    Event(
-                        eventId = UUID.randomUUID().toString(),
-                        sessionId = currentSessionId,
-                        type = EventType.TASK_CREATED,
-                        source = EventSource.MOBILE,
-                        timestamp = ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
-                        payload = buildJsonObject {
-                            put("title", title)
-                            if (time != null) put("scheduled_at", time)
-                            put("task_type", "flexible")
-                        },
-                    )
-                )
-                localTasks.removeTask(localId)
-                _uiState.update { it.copy(syncStatus = SyncStatus.SYNCED) }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(syncStatus = SyncStatus.FAILED, error = "重试失败: ${e.message}") }
-            }
+        if (_uiState.value.syncStatus == SyncStatus.SYNCING) return
+        val pending = pendingSubmission
+        if (pending != null) {
+            submitPending(pending, failurePrefix = "重试失败")
+        } else {
+            onQuickCreate()
         }
     }
 
     fun onNavigatedAfterSuccess() { _uiState.update { it.copy(syncStatus = SyncStatus.IDLE) } }
 
     fun dismissError() { _uiState.update { it.copy(error = null) } }
+
+    private fun submitPending(event: Event, failurePrefix: String) {
+        _uiState.update { it.copy(syncStatus = SyncStatus.SYNCING, error = null) }
+        viewModelScope.launch {
+            try {
+                val response = repository.submitEvent(event)
+                check(response.accepted) { "Agent 未接受任务事件" }
+                pendingSubmission = null
+                _uiState.update { it.copy(syncStatus = SyncStatus.SYNCED, error = null) }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(syncStatus = SyncStatus.FAILED, error = "$failurePrefix: ${e.message}")
+                }
+            }
+        }
+    }
+
+    private fun buildTaskCreatedEvent(title: String, scheduledAt: String?): Event {
+        val eventId = UUID.randomUUID().toString()
+        val naturalLanguageText = buildString {
+            append(title)
+            if (scheduledAt != null) append("，计划时间 $scheduledAt")
+        }
+        return Event(
+            eventId = eventId,
+            sessionId = currentSessionId,
+            type = EventType.TASK_CREATED,
+            source = EventSource.MOBILE,
+            timestamp = ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+            payload = buildJsonObject {
+                put("text", naturalLanguageText)
+            },
+        )
+    }
+
+    private fun invalidatePendingSubmission() {
+        pendingSubmission = null
+        if (_uiState.value.syncStatus != SyncStatus.SYNCING) {
+            _uiState.update { it.copy(syncStatus = SyncStatus.IDLE, error = null) }
+        }
+    }
 }

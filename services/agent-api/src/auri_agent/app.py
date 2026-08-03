@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import secrets
+from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request as UrlRequest, urlopen
@@ -10,10 +11,19 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Security, WebSocke
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from fastapi.security import APIKeyHeader
-from pydantic import BaseModel
-
 from .config import Settings
-from .models import ConfirmationRequest, Event, EventAccepted, Profile, ResetRequest, WorldState
+from .models import (
+    ChatConfirmRequest,
+    ChatConfirmResponse,
+    ChatRequest,
+    ChatResponse,
+    ConfirmationRequest,
+    Event,
+    EventAccepted,
+    Profile,
+    ResetRequest,
+    WorldState,
+)
 from .runtime import AgentRuntime, RuntimeErrorWithCode
 from .chat import ChatAgent
 
@@ -56,6 +66,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.runtime = AgentRuntime(settings)
     app.state.chat_agent = ChatAgent(app.state.runtime)
     app.state.settings = settings
+    app.state.started_at = datetime.now(timezone.utc).isoformat()
 
     def runtime(request: Request) -> AgentRuntime:
         return request.app.state.runtime
@@ -77,12 +88,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         current_runtime: AgentRuntime = request.app.state.runtime
         return {
             "status": "ok",
+            "service_name": current_settings.service_name,
+            "build_sha": current_settings.deployment_build_sha,
+            "started_at": request.app.state.started_at,
             "schema_version": "0.2.0",
             "demo_mode": current_settings.demo_mode,
             "llm_configured": current_settings.llm_configured,
             "llm_framework": current_runtime.task_parser.framework,
             "llm_model": current_settings.openai_model,
             "llm_last_mode": current_runtime.llm_last_mode,
+            "llm_last_success_at": current_runtime.llm_last_success_at,
+            "llm_last_fallback_reason": current_runtime.llm_last_fallback_reason,
+            "llm_last_error_code": current_runtime.llm_last_error_code,
             "agent_tools_enabled": current_runtime.conversation_agent.configured,
             "agent_last_tools": current_runtime.conversation_agent.last_tools,
             "shared_access_enabled": current_settings.shared_access_enabled,
@@ -194,24 +211,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # ── Chat endpoints (SSE streaming for mobile ChatRepository) ──────────
 
-    class ChatRequest(BaseModel):
-        message: str
-        inputMode: str = "text"
-        sessionId: str | None = None
-
-    class ChatConfirmRequest(BaseModel):
-        sessionId: str
-        confirmationId: str
-        decision: str
-
     @app.post("/v1/chat", dependencies=[Depends(require_shared_access)])
     async def chat(body: ChatRequest, request: Request) -> StreamingResponse:
         chat_agent: ChatAgent = request.app.state.chat_agent
         current_runtime: AgentRuntime = request.app.state.runtime
-        session_id = body.sessionId or current_runtime._state.session_id
+        try:
+            result, _duplicate = await current_runtime.submit_chat(
+                message=body.message,
+                session_id=body.sessionId,
+                input_mode=body.inputMode,
+                client_event_id=body.clientEventId,
+            )
+        except RuntimeErrorWithCode as exc:
+            raise _http_error(exc) from exc
 
         async def sse_stream():
-            async for event in chat_agent.chat_stream(body.message, session_id, body.inputMode):
+            async for event in chat_agent.stream_result(result, body.clientEventId):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
         return StreamingResponse(
@@ -220,20 +235,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    @app.post("/v1/chat/confirm", dependencies=[Depends(require_shared_access)])
-    async def chat_confirm(body: ChatConfirmRequest, request: Request) -> dict:
+    @app.post("/v1/chat/sync", response_model=ChatResponse, dependencies=[Depends(require_shared_access)])
+    async def chat_sync(body: ChatRequest, request: Request) -> ChatResponse:
+        try:
+            result, duplicate = await runtime(request).submit_chat(
+                message=body.message,
+                session_id=body.sessionId,
+                input_mode=body.inputMode,
+                client_event_id=body.clientEventId,
+            )
+        except RuntimeErrorWithCode as exc:
+            raise _http_error(exc) from exc
+        return ChatResponse(
+            sessionId=result.state.session_id,
+            responseText=result.reply,
+            revision=result.state.revision,
+            duplicate=duplicate,
+        )
+
+    @app.post("/v1/chat/confirm", response_model=ChatConfirmResponse, dependencies=[Depends(require_shared_access)])
+    async def chat_confirm(body: ChatConfirmRequest, request: Request) -> ChatConfirmResponse:
         current_runtime: AgentRuntime = request.app.state.runtime
         try:
             req = ConfirmationRequest(
                 confirmation_id=body.confirmationId,
-                decision="accept" if body.decision == "accept" else "reject",
+                decision="accept" if body.decision in {"accept", "accepted"} else "reject",
                 confirmed_by="mobile",
                 input_mode="button",
             )
-            state, _ = await current_runtime.confirm(req)
-            return {"accepted": True, "revision": state.revision}
-        except Exception:
-            return {"accepted": False, "revision": 0}
+            state, duplicate = await current_runtime.confirm_for_session(req, session_id=body.sessionId)
+            return ChatConfirmResponse(accepted=True, revision=state.revision, duplicate=duplicate)
+        except RuntimeErrorWithCode as exc:
+            raise _http_error(exc) from exc
 
     return app
 
@@ -253,6 +286,10 @@ def _http_error(exc: RuntimeErrorWithCode) -> HTTPException:
         "WRONG_SURFACE": 409,
         "USE_RESET_ENDPOINT": 409,
         "INVALID_MOCK_MODE": 400,
+        "EMPTY_MESSAGE": 400,
+        "INVALID_EVENT_ID": 400,
+        "IDEMPOTENCY_KEY_REUSED": 409,
+        "AGENT_EXECUTION_FAILED": 503,
     }.get(exc.code, 400)
     return HTTPException(status_code=status_code, detail={"code": exc.code, "message": str(exc)})
 

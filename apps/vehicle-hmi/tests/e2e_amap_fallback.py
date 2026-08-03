@@ -12,7 +12,7 @@ from playwright.sync_api import sync_playwright
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HMI = os.getenv(
-    "AURI_HMI_URL", "http://127.0.0.1:5174/apps/vehicle-hmi-next/"
+    "AURI_HMI_URL", "http://127.0.0.1:5174/apps/vehicle-hmi/"
 )
 CHROME = os.getenv(
     "PLAYWRIGHT_CHROMIUM_EXECUTABLE",

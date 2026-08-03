@@ -1,0 +1,9 @@
+{
+  "scenario": "new-session",
+  "purpose": "客户端不得用旧 Session 覆盖当前演示。",
+  "steps": [
+    {"kind": "reset", "scenario_id": "fixture-new-session"},
+    {"kind": "event", "session_id": "$previous_session_id", "type": "meeting.overrun", "source": "demo_console", "payload": {"delay_minutes": 20}}
+  ],
+  "expected": {"http_status": 409, "error_code": "SESSION_MISMATCH", "revision_delta": 0}
+}

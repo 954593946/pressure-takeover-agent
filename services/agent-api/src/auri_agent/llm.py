@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from .config import Settings
 from .models import Task
+from .observability import classify_provider_error, utc_timestamp
 from .prompts import TASK_RIGIDITY_POLICY
 
 
@@ -64,15 +65,22 @@ class TaskParser:
                 name="auri_task_parser",
             )
         self.last_mode = "fallback"
+        self.last_success_at: str | None = None
+        self.last_fallback_reason: str | None = None if self.agent is not None else "not_configured"
+        self.last_error_code: str | None = None if self.agent is not None else "LLM_NOT_CONFIGURED"
 
     async def parse(self, text: str) -> list[Task]:
         if self.agent is not None:
             try:
                 tasks = await self._parse_with_agent(text)
                 self.last_mode = "langchain_agent"
+                self.last_success_at = utc_timestamp()
+                self.last_fallback_reason = None
+                self.last_error_code = None
                 return tasks
             except Exception as exc:  # network/provider failures must not break the demo
                 logger.warning("LangChain task parsing fell back after %s", type(exc).__name__)
+                self.last_error_code, self.last_fallback_reason = classify_provider_error(exc)
         self.last_mode = "fallback"
         return self._fallback(text)
 

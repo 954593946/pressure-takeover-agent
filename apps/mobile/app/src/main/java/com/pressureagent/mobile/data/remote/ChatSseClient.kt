@@ -14,6 +14,7 @@ import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.isActive
@@ -35,6 +36,7 @@ private data class ChatStreamRequest(
     val message: String,
     val inputMode: String = "text",
     val sessionId: String? = null,
+    val clientEventId: String,
 )
 
 /**
@@ -77,6 +79,7 @@ class ChatSseClient(
         message: String,
         inputMode: String = "text",
         sessionId: String? = null,
+        clientEventId: String,
     ): Flow<ChatStreamEvent> = callbackFlow {
         AppLogger.i("ChatSSE", "POST /v1/chat msg='${message.take(50)}' session=$sessionId token=${if (token.isNotBlank()) "yes" else "no"}")
         try {
@@ -84,6 +87,7 @@ class ChatSseClient(
                 message = message,
                 inputMode = inputMode,
                 sessionId = sessionId,
+                clientEventId = clientEventId,
             )
             client.post("$baseUrl/v1/chat") {
                 contentType(ContentType.Application.Json)
@@ -98,8 +102,7 @@ class ChatSseClient(
                 AppLogger.i("ChatSSE", "Response status=${response.status.value}")
                 if (response.status.value !in 200..299) {
                     AppLogger.e("ChatSSE", "Non-2xx status: ${response.status.value}")
-                    trySend(ChatStreamEvent.Error("Chat endpoint returned ${response.status.value}"))
-                    return@callbackFlow
+                    error("Chat endpoint returned ${response.status.value}")
                 }
                 val channel = response.bodyAsChannel()
                 var eventCount = 0
@@ -117,10 +120,13 @@ class ChatSseClient(
                     }
                 }
                 AppLogger.i("ChatSSE", "Stream ended, events=$eventCount")
+                close()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             AppLogger.e("ChatSSE", "Connection failed", e)
-            trySend(ChatStreamEvent.Error(e.message ?: "Connection error"))
+            close(e)
         }
         awaitClose { AppLogger.d("ChatSSE", "Flow closed") }
     }
@@ -158,8 +164,10 @@ class ChatSseClient(
                     ChatStreamEvent.Done(sessionId, revision)
                 }
                 "error" -> {
+                    val code = obj["code"]?.jsonPrimitive?.content ?: "CHAT_STREAM_ERROR"
                     val message = obj["message"]?.jsonPrimitive?.content ?: "Unknown error"
-                    ChatStreamEvent.Error(message)
+                    val retryable = obj["retryable"]?.jsonPrimitive?.boolean ?: false
+                    ChatStreamEvent.Error(code, message, retryable)
                 }
                 else -> null
             }

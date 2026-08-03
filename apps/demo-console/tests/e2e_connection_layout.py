@@ -102,12 +102,27 @@ def main() -> None:
             )
             page.goto(f"{WEB_ROOT}/apps/demo-console/", wait_until="domcontentloaded")
             page.wait_for_function("document.querySelector('#sessionId').textContent !== '未连接'", timeout=15000)
+
+            if width == VIEWPORTS[0][0]:
+                page.locator("#apiBase").fill("https://example.invalid")
+                page.locator("#preflightBtn").click()
+                page.wait_for_function(
+                    "Array.from(document.querySelectorAll('#eventLog .log-row')).some(row => row.dataset.raw.includes('不是团队 canonical 地址'))",
+                    timeout=5000,
+                )
+                page.locator("#apiBase").fill(AGENT)
+                page.locator("#token").fill(TOKEN)
+
+            page.locator("#preflightBtn").click()
+            page.wait_for_function(
+                "Array.from(document.querySelectorAll('#eventLog .log-row')).some(row => row.dataset.raw.includes('preflight ok'))",
+                timeout=15000,
+            )
             initial = audit(page)
 
             page.locator('button[data-action="presetTask"]').click()
             page.wait_for_function("document.querySelectorAll('#tasks li').length === 2", timeout=15000)
-            page.locator('button[data-action="waitTask"]').click()
-            page.wait_for_timeout(150)
+            page.wait_for_function("document.querySelector('#nextStepHint').textContent.includes('会议延迟')", timeout=15000)
             step1 = audit(page)
             page.locator('button[data-action="meeting"]').click()
             page.wait_for_function("document.querySelector('#stage').textContent === 'pre_departure_warning'", timeout=15000)
@@ -119,46 +134,35 @@ def main() -> None:
                 assert abs(step1["mainHeight"] - step2["mainHeight"]) <= 1, (step1, step2)
             page.screenshot(path=OUTPUT / f"console-step2-{width}x{height}.png", full_page=True)
 
-            candidate = context.new_page()
-            candidate_errors: list[str] = []
-            candidate.on("pageerror", lambda error: candidate_errors.append(str(error)))
-            candidate.goto(f"{WEB_ROOT}/apps/vehicle-hmi-next/", wait_until="load", timeout=30000)
-            candidate.wait_for_function(
+            hmi = context.new_page()
+            hmi_errors: list[str] = []
+            hmi.on("pageerror", lambda error: hmi_errors.append(str(error)))
+            hmi.goto(f"{WEB_ROOT}/apps/vehicle-hmi/", wait_until="load", timeout=30000)
+            hmi.wait_for_function(
                 "window.AURI_HMI_NEXT?.getState().syncMode === 'streaming'"
                 " && window.AURI_HMI_NEXT?.getState().worldState?.revision === 2",
                 timeout=20000,
             )
-            candidate_state = candidate.evaluate("window.AURI_HMI_NEXT.getState()")
-            assert candidate_state["config"]["apiBase"] == AGENT
-            assert candidate_state["config"]["streamUrl"] == f"{AGENT}/v1/stream"
-            assert candidate_state["config"]["token"] == "***"
-            assert not candidate_errors, candidate_errors
-
-            formal = context.new_page()
-            formal_errors: list[str] = []
-            formal.on("pageerror", lambda error: formal_errors.append(str(error)))
-            if width == VIEWPORTS[0][0]:
-                formal.route(f"{AGENT}/v1/map-config", lambda route: route.abort("timedout"))
-            formal.goto(f"{WEB_ROOT}/apps/vehicle-hmi/", wait_until="domcontentloaded", timeout=30000)
-            formal.wait_for_function("window.AURI_HMI?.getState()?.revision === 2", timeout=20000)
-            assert formal.evaluate("window.AURI_HMI.getState().session_id") == candidate_state["worldState"]["session_id"]
-            formal_navigation = formal.evaluate("window.AURI_HMI.getViewState().navigation")
-            assert formal_navigation and formal_navigation["routeId"], formal_navigation
+            hmi_state = hmi.evaluate("window.AURI_HMI_NEXT.getState()")
+            assert hmi_state["config"]["apiBase"] == AGENT
+            assert hmi_state["config"]["streamUrl"] == f"{AGENT}/v1/stream"
+            assert hmi_state["config"]["token"] == "***"
+            navigation = hmi_state["viewModel"]["navigation"]
+            assert navigation and navigation["route"]["id"], navigation
             heartbeat_idle_seconds = 0
             if width == VIEWPORTS[0][0]:
                 heartbeat_idle_seconds = 17
                 page.wait_for_timeout(heartbeat_idle_seconds * 1000)
-                assert candidate.evaluate("window.AURI_HMI_NEXT.getState().syncMode") == "streaming"
-                assert formal.locator("#connectionState").inner_text() == "已连接"
-            assert not formal_errors, formal_errors
+                assert hmi.evaluate("window.AURI_HMI_NEXT.getState().syncMode") == "streaming"
+            assert not hmi_errors, hmi_errors
             assert not errors, errors
             reports.append({
                 "viewport": f"{width}x{height}",
                 "main_height": step2["mainHeight"],
                 "script_height": step2["scriptHeight"],
-                "session_id": candidate_state["worldState"]["session_id"],
-                "revision": candidate_state["worldState"]["revision"],
-                "route_id": formal_navigation["routeId"],
+                "session_id": hmi_state["worldState"]["session_id"],
+                "revision": hmi_state["worldState"]["revision"],
+                "route_id": navigation["route"]["id"],
                 "page_errors": 0,
                 "heartbeat_idle_seconds": heartbeat_idle_seconds,
             })

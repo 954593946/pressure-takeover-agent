@@ -17,8 +17,8 @@
 代码位置：
 
 ```text
-apps/vehicle-hmi/amap-adapter.js
-apps/vehicle-hmi/amap-adapter.test.cjs
+apps/vehicle-hmi/src/amap-adapter.js
+apps/vehicle-hmi/tests/amap-adapter.test.cjs
 ```
 
 已实现：
@@ -65,12 +65,12 @@ HMI 默认配置 `mapProvider=auto`。页面启动顺序：
 
 ```text
 读取当前浏览器保存的 Agent API 与 Team Token
--> GET /v1/map-config
+-> 并行启动 /v1/state、/v1/stream 与 GET /v1/map-config
 -> 获得 Web JS Key、/_AMapService 地址和 normal 样式
 -> 设置 window._AMapSecurityConfig.serviceHost
 -> 加载高德 JS API 2.0
 -> 创建 2D 地图并规划一次驾车路线
--> 再连接 /v1/state 与 /v1/stream
+-> 地图失败不阻塞 World State 和车机交互
 ```
 
 `/v1/map-config` 不返回 Security JS Code。高德服务请求由 Agent `/_AMapService` 代理注入安全密钥，并限制允许的 HMI Origin。
@@ -97,15 +97,19 @@ AMAP_ALLOWED_ORIGINS=http://127.0.0.1:5174,http://localhost:5174
 成功时：
 
 ```text
-window.AURI_HMI.getMapStatus()
+window.AURI_HMI_NEXT.getState().map
 ```
 
 应返回：
 
 ```json
 {
-  "mode": "online",
-  "message": "高德在线地图已连接"
+  "status": "online",
+  "cameraMode": "follow",
+  "usage": {
+    "mapInitializations": 1,
+    "routePlans": 1
+  }
 }
 ```
 
@@ -113,8 +117,8 @@ window.AURI_HMI.getMapStatus()
 
 ```json
 {
-  "mode": "offline",
-  "message": "具体失败原因"
+  "status": "offline",
+  "cameraMode": "overview"
 }
 ```
 
@@ -125,13 +129,13 @@ window.AURI_HMI.getMapStatus()
 公网页面：
 
 ```text
-https://wangwang20.github.io/auri-pressure-takeover-web/apps/vehicle-hmi/
+https://954593946.github.io/pressure-takeover-agent/apps/vehicle-hmi/
 ```
 
 高德控制台需要允许对应公网域名。至少检查：
 
 ```text
-wangwang20.github.io
+954593946.github.io
 ```
 
 如果后续迁移到团队域名或其他静态托管，需要同步更新高德 Key 的域名限制。
@@ -221,15 +225,15 @@ HMI map status = online
 离线和适配器逻辑：
 
 ```bash
-node --check apps/vehicle-hmi/amap-adapter.js
-node --check apps/vehicle-hmi/app.js
-node apps/vehicle-hmi/amap-adapter.test.cjs
+node --check apps/vehicle-hmi/src/amap-adapter.js
+node --check apps/vehicle-hmi/auri-shell.js
+node apps/vehicle-hmi/tests/amap-adapter.test.cjs
 ```
 
 浏览器无 Key 回归标准：
 
 ```text
-map.mode = offline
+map.status = offline
 amapCanvas.hidden = true
 SVG 导航继续显示
 body.scrollWidth = body.clientWidth

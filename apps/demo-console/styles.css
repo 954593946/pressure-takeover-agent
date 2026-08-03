@@ -487,6 +487,34 @@ button:disabled {
   border: 1px solid rgba(212, 175, 122, 0.48);
 }
 
+.preset-status {
+  grid-column: 1 / -1;
+  min-height: 34px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 9px;
+  color: #526176;
+  background: rgba(11, 27, 51, 0.05);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.preset-status[data-tone="loading"] {
+  color: #1e55cc;
+  background: rgba(47, 107, 255, 0.1);
+}
+
+.preset-status[data-tone="success"] {
+  color: #1f7655;
+  background: rgba(46, 157, 111, 0.11);
+}
+
+.preset-status[data-tone="error"] {
+  color: #a12d3e;
+  background: rgba(209, 73, 91, 0.11);
+}
+
 #technicalActions {
   display: grid;
   gap: 10px;
