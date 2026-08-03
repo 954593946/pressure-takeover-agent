@@ -155,7 +155,7 @@ object WearableCommandMapper {
                 mode = WearableMode.HANDOVER,
                 text = wearableState.text.ifBlank { "车机负责确认" },
                 color = WearableColor.BLUE,
-                haptic = HapticPattern.NONE,
+                haptic = HapticPattern.SINGLE_PULSE,
             )
             Stage.TAKEOVER_L2,
             Stage.TAKEOVER_L3,
@@ -166,7 +166,7 @@ object WearableCommandMapper {
                 mode = WearableMode.PROCESSING,
                 text = wearableState.text.ifBlank { "AURI 正在协调" },
                 color = WearableColor.BLUE,
-                haptic = HapticPattern.NONE,
+                haptic = HapticPattern.THREE_BEAT,
             )
             Stage.SERVICE_EXECUTED,
             Stage.ACTION_COMPLETED -> DemoWatchState(

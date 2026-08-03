@@ -100,12 +100,14 @@ class WearableCommandMapperTest {
     }
 
     @Test
-    fun mapsDrivingAndPlanningStagesToSilentBlueProcessing() {
+    fun mapsDrivingAndPlanningStagesToAgentDrivenHaptics() {
         listOf(
-            Stage.TAKEOVER_L2,
-            Stage.PLANNING,
-            Stage.WAITING_CONFIRMATION,
-        ).forEachIndexed { index, stage ->
+            Triple(Stage.HANDOVER_TO_VEHICLE, "handover", "single_pulse"),
+            Triple(Stage.VEHICLE_OBSERVATION, "handover", "single_pulse"),
+            Triple(Stage.TAKEOVER_L2, "processing", "three_beat"),
+            Triple(Stage.PLANNING, "processing", "three_beat"),
+            Triple(Stage.WAITING_CONFIRMATION, "processing", "three_beat"),
+        ).forEachIndexed { index, (stage, expectedMode, expectedHaptic) ->
             val command = WearableCommandMapper.toWatchCommand(
                 WorldState(
                     sessionId = "demo",
@@ -122,8 +124,8 @@ class WearableCommandMapperTest {
             )
 
             assertNotNull(command)
-            assertEquals("processing", command.mode)
-            assertEquals("none", command.haptic)
+            assertEquals(expectedMode, command.mode)
+            assertEquals(expectedHaptic, command.haptic)
             assertEquals(0x2f6bff, command.color)
         }
     }

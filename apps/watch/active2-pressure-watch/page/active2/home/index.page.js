@@ -48,6 +48,7 @@ let processedCommandIds = [];
 let offlineTimer = null;
 let visualEffectTimer = null;
 let completedResetTimer = null;
+let deferredIdleCommand = null;
 let offlineShown = false;
 
 function getGlobalData() {
@@ -107,10 +108,13 @@ function clearVisualEffect() {
   }
 }
 
-function cancelCompletedAutoIdle() {
+function cancelCompletedAutoIdle(options = {}) {
   if (completedResetTimer) {
     clearTimeout(completedResetTimer);
     completedResetTimer = null;
+  }
+  if (options.clearDeferred !== false) {
+    deferredIdleCommand = null;
   }
 }
 
@@ -234,12 +238,27 @@ function scheduleCompletedAutoIdle(command) {
       return;
     }
 
-    executeStateChange({
+    const nextIdleCommand = deferredIdleCommand || {
       ...INITIAL_STATE,
       command_id: `auto-idle-${Date.now()}`,
       source: "local-auto-idle"
+    };
+    deferredIdleCommand = null;
+    executeStateChange({
+      ...nextIdleCommand,
+      haptic: "none"
     }, { playFeedback: false });
   }, COMPLETED_AUTO_IDLE_MS);
+}
+
+function shouldDeferIdleAfterCompleted(command) {
+  const currentState = getGlobalData().currentState || {};
+  return Boolean(
+    completedResetTimer &&
+    currentState.mode === "completed" &&
+    command &&
+    command.mode === "idle"
+  );
 }
 
 function handleRemoteSetState(rawCommand) {
@@ -265,6 +284,12 @@ function handleRemoteSetState(rawCommand) {
     ...rawCommand,
     source: "remote"
   });
+
+  if (shouldDeferIdleAfterCompleted(command)) {
+    rememberCommand(command.command_id);
+    deferredIdleCommand = command;
+    return { ack: sendAck(command.command_id, "ok") };
+  }
 
   cancelCompletedAutoIdle();
   rememberCommand(command.command_id);
