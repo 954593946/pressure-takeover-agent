@@ -23,7 +23,6 @@ import com.pressureagent.mobile.ui.log.LogViewerScreen
 import com.pressureagent.mobile.ui.profile.ProfileScreen
 import com.pressureagent.mobile.ui.review.ReviewScreen
 import com.pressureagent.mobile.ui.splash.SplashScreen
-import com.pressureagent.mobile.ui.task.CreateTaskScreen
 import com.pressureagent.mobile.ui.vehicle.VehicleScreen
 import com.pressureagent.mobile.ui.wearable.WearableScreen
 
@@ -85,9 +84,7 @@ fun AppNavigation() {
                 ChatScreen()
             }
             composable(Screen.Calendar.route) {
-                CalendarScreen(
-                    onNavigateToCreate = { navController.navigate(Screen.TaskCreate.route) },
-                )
+                CalendarScreen()
             }
             composable(Screen.Vehicle.route) {
                 VehicleScreen()
@@ -102,9 +99,6 @@ fun AppNavigation() {
             }
 
             // ─── 二级页面 ──────────────────────────────────────────────────
-            composable(Screen.TaskCreate.route) {
-                CreateTaskScreen(onNavigateBack = { navController.popBackStack() })
-            }
             composable(Screen.Review.route) {
                 ReviewScreen()
             }

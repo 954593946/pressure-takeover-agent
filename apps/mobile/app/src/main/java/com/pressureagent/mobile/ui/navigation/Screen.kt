@@ -2,7 +2,6 @@ package com.pressureagent.mobile.ui.navigation
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Home
@@ -19,7 +18,6 @@ sealed class Screen(val route: String, val label: String, val icon: ImageVector)
 
     // ─── 二级页面（不在底部导航栏）────────────────────────────────────────
     data object Splash : Screen("splash", "开屏", Icons.Filled.Home)
-    data object TaskCreate : Screen("task_create", "创建任务", Icons.Filled.Add)
     data object Review : Screen("review", "复盘", Icons.Filled.CalendarMonth)
     data object Wearable : Screen("wearable", "腕上设备", Icons.Filled.Settings)
     data object Debug : Screen("debug", "调试", Icons.Filled.Settings)

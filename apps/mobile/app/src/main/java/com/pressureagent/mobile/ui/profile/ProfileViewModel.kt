@@ -3,7 +3,6 @@ package com.pressureagent.mobile.ui.profile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pressureagent.mobile.data.local.AppLogger
-import com.pressureagent.mobile.data.remote.AgentApiService
 import com.pressureagent.mobile.data.repository.WorldStateRepository
 import com.pressureagent.mobile.data.wearablegateway.WearableGateway
 import com.pressureagent.mobile.data.wearablegateway.WearableGatewaySnapshot
@@ -25,9 +24,6 @@ data class ProfileUiState(
     val reviewSummary: String = "",
     val completedActions: List<Action> = emptyList(),
     val completedOrders: List<ServiceOrder> = emptyList(),
-    // Sync
-    val isSyncing: Boolean = false,
-    val syncError: String? = null,
 )
 
 /**
@@ -44,7 +40,6 @@ enum class ProfilePreset(val label: String, val subtitle: String) {
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
     private val repository: WorldStateRepository,
-    private val api: AgentApiService,
     private val wearableGateway: WearableGateway,
 ) : ViewModel() {
 
@@ -77,9 +72,6 @@ class ProfileViewModel @Inject constructor(
                             reviewSummary = buildReviewSummary(completed, completedOrders),
                             completedActions = completed,
                             completedOrders = completedOrders,
-                            // Clear sync state when profile arrives from backend
-                            isSyncing = false,
-                            syncError = null,
                         )
                     }
                 }
@@ -115,42 +107,18 @@ class ProfileViewModel @Inject constructor(
         explanationDepth = ExplanationDepth.DETAILED,
     )
 
-    /** Switch to the given preset and push to backend. */
+    /** Switch to the given preset — local-only toggle for demo. */
     fun switchToPreset(preset: ProfilePreset) {
-        val currentProfile = _uiState.value.profile
-        val profileId = currentProfile?.profileId ?: "default"
+        val profileId = _uiState.value.profile?.profileId ?: "default"
 
         val newProfile = when (preset) {
             ProfilePreset.EFFICIENCY -> buildEfficiencyProfile(profileId)
             ProfilePreset.QUALITY -> buildQualityProfile(profileId)
         }
 
-        // Optimistic UI update
-        _uiState.update { it.copy(profile = newProfile, isSyncing = true, syncError = null) }
-
-        viewModelScope.launch {
-            try {
-                val updated = api.updateProfile(newProfile)
-                // Backend confirmed — apply server response
-                _uiState.update { it.copy(profile = updated.profile, isSyncing = false) }
-                // Refresh world state so other screens pick up the change
-                repository.refresh()
-                AppLogger.i("ProfileVM", "Profile switched to ${preset.label}")
-            } catch (e: Exception) {
-                AppLogger.e("ProfileVM", "Profile update failed", e)
-                _uiState.update {
-                    it.copy(
-                        // Revert to previous profile on failure
-                        profile = currentProfile,
-                        isSyncing = false,
-                        syncError = "同步失败: ${e.message}",
-                    )
-                }
-            }
-        }
+        _uiState.update { it.copy(profile = newProfile) }
+        AppLogger.i("ProfileVM", "Profile switched to ${preset.label} (local only)")
     }
-
-    fun dismissError() { _uiState.update { it.copy(syncError = null) } }
 
     private fun buildReviewSummary(actions: List<Action>, orders: List<ServiceOrder>): String {
         val parts = mutableListOf<String>()
