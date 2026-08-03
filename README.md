@@ -36,7 +36,22 @@ GitHub Pages 由本仓库的 `Web HMI and Console` 工作流自动部署。团�
 统一入口:  https://954593946.github.io/pressure-takeover-agent/
 车机 HMI: https://954593946.github.io/pressure-takeover-agent/apps/vehicle-hmi/
 Demo 台:  https://954593946.github.io/pressure-takeover-agent/apps/demo-console/
+旧版 HMI: https://954593946.github.io/pressure-takeover-agent/apps/vehicle-hmi-old/
+旧版台:   https://954593946.github.io/pressure-takeover-agent/apps/demo-console-old/
 ```
+
+`vehicle-hmi-old` 和 `demo-console-old` 精确保留团队备份提交 `f06a63f`（2026-07-31）的 Web 版本，仅用于对照和回退；当前开发与演示仍使用不带 `-old` 的固定地址。
+
+同一局域网内从开发机启动 `python -m http.server 5174 --bind 0.0.0.0` 后，可通过开发机 IP 访问当前版本：
+
+```text
+车机 HMI: http://192.168.1.11:5174/apps/vehicle-hmi/
+Demo 台:  http://192.168.1.11:5174/apps/demo-console/
+旧版 HMI: http://192.168.1.11:5174/apps/vehicle-hmi-old/
+旧版台:   http://192.168.1.11:5174/apps/demo-console-old/
+```
+
+开发机 IP 变化时以 `hostname -I` 的首个 IPv4 地址替换 `192.168.1.11`。新版静态资源使用独立版本号，更新后不需要在 URL 添加额外后缀；如浏览器仍保留旧页面，执行一次强制刷新即可。
 
 这些只是公开静态前端，不包含 Team Token 或 OpenAI API Key。首次打开后，在页面的连接设置中填写 `https://auri-agent-api.onrender.com` 和负责人单独提供的 Team Token。若两个页面看不到同一任务，首先检查二者是否连接了同一个 API 地址和同一个共享 Session。
 
@@ -240,8 +255,10 @@ wss://auri-agent-api.onrender.com/v1/ws?access_token=<AGENT_SHARED_TOKEN>
 apps/
   mobile/                         手机端业务 UI 与连接/腕上网关
   vehicle-hmi/                    正式车机横屏 HMI
+  vehicle-hmi-old/                2026-07-31 周五可用版归档
   vehicle-hmi-legacy/             旧版车机原型（仅回溯）
   demo-console/                   场景与故障控制台
+  demo-console-old/               2026-07-31 周五可用版归档
   watch/active2-pressure-watch/   Amazfit Active 2 工程（已有框架）
 services/agent-api/               Agent 后端、状态机和服务适配器
 devices/                          Zepp OS 说明与 ESP32-S3 兜底路线

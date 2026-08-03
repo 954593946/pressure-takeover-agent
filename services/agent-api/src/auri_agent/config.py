@@ -1,4 +1,6 @@
+from ipaddress import ip_address, ip_network
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -42,6 +44,7 @@ class Settings(BaseSettings):
         "https://954593946.github.io,"
         "https://wangwang20.github.io"
     )
+    amap_allow_private_origins: bool = True
     amap_proxy_timeout_seconds: float = 12.0
 
     model_config = SettingsConfigDict(
@@ -73,3 +76,27 @@ class Settings(BaseSettings):
     @property
     def amap_allowed_origin_list(self) -> list[str]:
         return [origin.strip().rstrip("/") for origin in self.amap_allowed_origins.split(",") if origin.strip()]
+
+    def amap_origin_allowed(self, origin: str) -> bool:
+        normalized = origin.strip().rstrip("/")
+        if normalized in self.amap_allowed_origin_list:
+            return True
+        if not self.amap_allow_private_origins:
+            return False
+        try:
+            parsed = urlsplit(normalized)
+            address = ip_address(parsed.hostname or "")
+        except ValueError:
+            return False
+        private_networks = (
+            ip_network("10.0.0.0/8"),
+            ip_network("172.16.0.0/12"),
+            ip_network("192.168.0.0/16"),
+        )
+        return (
+            parsed.scheme == "http"
+            and parsed.port == 5174
+            and parsed.username is None
+            and parsed.password is None
+            and any(address in network for network in private_networks)
+        )

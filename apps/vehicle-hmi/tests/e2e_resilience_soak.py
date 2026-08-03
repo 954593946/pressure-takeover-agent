@@ -556,8 +556,17 @@ def run_test(report: dict, agent_host: str, agent_port: int) -> None:
                         }
                     ),
                 )
+                # This test deliberately cuts all browser networking to audit
+                # Agent reconnection and retained resources. Keep the map on
+                # the deterministic offline renderer so third-party AMap
+                # errors do not contaminate the product-level page-error gate.
                 config = json.dumps(
-                    {"apiBase": AGENT, "token": TOKEN, "stream": True}
+                    {
+                        "apiBase": AGENT,
+                        "token": TOKEN,
+                        "stream": True,
+                        "mapProvider": "offline",
+                    }
                 )
                 page.add_init_script(RESOURCE_PROBE_SCRIPT)
                 page.add_init_script(

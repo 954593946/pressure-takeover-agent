@@ -78,6 +78,22 @@ async def test_amap_proxy_injects_server_security_code_and_rejects_other_origins
     assert denied.status_code == 403
 
 
+def test_amap_origin_allows_private_lan_only_on_static_web_port() -> None:
+    settings = Settings(amap_allowed_origins="https://hmi.example.com")
+
+    assert settings.amap_origin_allowed("https://hmi.example.com") is True
+    assert settings.amap_origin_allowed("http://192.168.8.23:5174") is True
+    assert settings.amap_origin_allowed("http://10.20.30.40:5174") is True
+    assert settings.amap_origin_allowed("http://172.20.1.5:5174") is True
+    assert settings.amap_origin_allowed("http://192.168.8.23:8080") is False
+    assert settings.amap_origin_allowed("https://192.168.8.23:5174") is False
+    assert settings.amap_origin_allowed("http://8.8.8.8:5174") is False
+    assert Settings(
+        amap_allowed_origins="https://hmi.example.com",
+        amap_allow_private_origins=False,
+    ).amap_origin_allowed("http://192.168.8.23:5174") is False
+
+
 def test_default_and_render_amap_origins_include_team_personal_and_local_pages() -> None:
     required_origins = {
         "https://954593946.github.io",

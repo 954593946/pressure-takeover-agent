@@ -126,7 +126,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not current_settings.amap_configured:
             raise HTTPException(status_code=503, detail={"code": "AMAP_NOT_CONFIGURED", "message": "AMap proxy is disabled"})
         origin = (request.headers.get("origin") or "").rstrip("/")
-        if origin not in current_settings.amap_allowed_origin_list:
+        if not current_settings.amap_origin_allowed(origin):
             raise HTTPException(status_code=403, detail={"code": "AMAP_ORIGIN_DENIED", "message": "origin is not allowed"})
         clean_path = proxy_path.lstrip("/")
         if not clean_path or ".." in clean_path or "://" in clean_path:

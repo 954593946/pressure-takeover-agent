@@ -618,7 +618,14 @@
 
   function renderStageNotice() {
     const deviceNotice = document.getElementById("auri-device-notice");
-    if (deviceNotice && !deviceNotice.hidden) return;
+    if (deviceNotice && !deviceNotice.hidden) {
+      const notice = document.getElementById("auri-stage-notice");
+      if (notice && notice.dataset.stage !== viewModel.lifecycle.stage) {
+        notifiedStages.delete(`${viewModel.meta.sessionId}:${viewModel.lifecycle.stage}`);
+        hideStageNotice();
+      }
+      return;
+    }
     const view = stageNoticeView();
     if (!view || !viewModel.meta.sessionId) {
       const notice = document.getElementById("auri-stage-notice");
