@@ -302,8 +302,8 @@ def capture(page: Page, state: dict, index: int, source: str) -> dict:
     assert quality["navHudVisible"] is True, quality
     assert quality["bottomLauncherVisible"] is False, quality
     assert quality["processPoisVisible"] is False, quality
-    assert quality["driver"]["right"] <= quality["vehicle"]["left"] + 1, quality
-    assert quality["vehicle"]["right"] <= quality["map"]["left"] + 1, quality
+    assert quality["driver"]["right"] <= quality["map"]["left"] + 1, quality
+    assert quality["map"]["right"] <= quality["vehicle"]["left"] + 1, quality
     assert quality["map"]["right"] <= quality["dock"]["right"] + 1, quality
     banned_icons = {"声", "腕", "表", "联", "刚", "弹", "信", "单", "路", "务", "返", "调", "距", "温"}
     assert not banned_icons.intersection(quality["iconTexts"]), quality

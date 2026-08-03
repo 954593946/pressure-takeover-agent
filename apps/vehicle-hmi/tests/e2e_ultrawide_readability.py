@@ -153,7 +153,25 @@ def main() -> None:
                 conclusionBox: {client:document.querySelector('.auri-takeover-conclusion').clientHeight,scroll:document.querySelector('.auri-takeover-conclusion').scrollHeight},
                 button: rect('#auri-takeover-confirm'),
                 card: rect('#auri-takeover-card'),
+                scene: rect('#scene3d'),
+                carPlate: rect('.auri-car-mark--plate'),
                 dock: rect('.bottom-bar'),
+                dockEntries:Array.from(document.querySelectorAll('.bottom-bar [data-auri-section]')).map(node=>{
+                  const box=node.getBoundingClientRect();
+                  const style=getComputedStyle(node);
+                  const image=node.querySelector('img');
+                  const stack=document.elementsFromPoint(box.left+box.width/2,box.top+box.height/2);
+                  return {
+                    section:node.dataset.auriSection,
+                    width:box.width,
+                    height:box.height,
+                    display:style.display,
+                    visibility:style.visibility,
+                    opacity:parseFloat(style.opacity),
+                    imageLoaded:!image||image.complete&&image.naturalWidth>0,
+                    hit:stack.some(item=>item===node||node.contains(item))
+                  };
+                }),
                 clock: document.querySelector('#tb-clock-v2').textContent.trim(),
                 overflow: getComputedStyle(document.body).overflow,
                 ultrawide: document.querySelector('#hmi').classList.contains('is-ultrawide')
@@ -167,12 +185,24 @@ def main() -> None:
     assert metrics["canvas"]["left"] >= -1 and metrics["canvas"]["right"] >= 1919, metrics
     assert metrics["canvas"]["top"] >= -1 and metrics["canvas"]["bottom"] >= 719, metrics
     assert metrics["conclusionFont"] >= 32, metrics
-    assert "预计晚到18分钟" in metrics["conclusionText"], metrics
+    assert "预计晚到 18 分钟" in metrics["conclusionText"], metrics
     assert metrics["conclusionFits"] is True, metrics
     assert metrics["actionFonts"] and min(metrics["actionFonts"]) >= 18, metrics
     assert metrics["button"]["height"] >= 55.5, metrics
     assert metrics["button"]["bottom"] <= metrics["card"]["bottom"] + 1, metrics
+    assert metrics["carPlate"]["top"] >= metrics["scene"]["top"] and metrics["carPlate"]["bottom"] <= metrics["scene"]["bottom"], metrics
     assert metrics["card"]["bottom"] <= metrics["dock"]["top"] + 1, metrics
+    assert len(metrics["dockEntries"]) == 5, metrics
+    assert all(
+        entry["width"] > 20
+        and entry["height"] > 20
+        and entry["display"] != "none"
+        and entry["visibility"] == "visible"
+        and entry["opacity"] >= 0.9
+        and entry["imageLoaded"]
+        and entry["hit"]
+        for entry in metrics["dockEntries"]
+    ), metrics
     assert metrics["overflow"] == "hidden", metrics
     assert metrics["clock"] != "06:40", metrics
     assert not errors, errors

@@ -67,9 +67,20 @@ def metrics(page, task_count: int) -> dict:
           };
           const iconTexts=Array.from(document.querySelectorAll('.auri-driver-panel [aria-hidden=true],.auri-takeover-action>span'))
             .map(node=>node.textContent.trim()).filter(Boolean);
+          const canvas=document.querySelector('#hmi');
+          const visualScale=canvas.getBoundingClientRect().width/parseFloat(canvas.style.width);
+          const scaledFont=selector=>parseFloat(getComputedStyle(document.querySelector(selector)).fontSize)*visualScale;
           return {
             expected,
             driver:box('#auri-driver-panel'), vehicle:box('#vd-panel'), map:box('.right-panel'), dock:box('.bottom-bar'),
+            taskSection:box('.auri-driver-tasks'), glance:box('.auri-driver-glance'), devices:box('.auri-driver-devices'),
+            ultrawide:document.querySelector('#hmi').classList.contains('is-ultrawide'),
+            visualScale,
+            taskTitleFont:document.querySelector('.auri-driver-task:not(.is-empty) b')?scaledFont('.auri-driver-task:not(.is-empty) b'):null,
+            taskMetaFont:document.querySelector('.auri-driver-task:not(.is-empty) small')?scaledFont('.auri-driver-task:not(.is-empty) small'):null,
+            glanceTitleFont:scaledFont('.auri-driver-glance b'),
+            deviceTitleFont:scaledFont('.auri-driver-devices b'),
+            deviceMetaFont:scaledFont('.auri-driver-devices small'),
             countText:document.querySelector('#auri-driver-task-count').textContent.trim(),
             taskRows:document.querySelectorAll('.auri-driver-task:not(.is-empty)').length,
             emptyRows:document.querySelectorAll('.auri-driver-task.is-empty').length,
@@ -107,19 +118,28 @@ def main() -> None:
                     arg=count,
                 )
                 measured = metrics(page, count)
-                assert measured["driver"]["right"] <= measured["vehicle"]["left"] + 1, measured
-                assert measured["vehicle"]["right"] <= measured["map"]["left"] + 1, measured
+                assert measured["driver"]["right"] <= measured["map"]["left"] + 1, measured
+                assert measured["map"]["right"] <= measured["vehicle"]["left"] + 1, measured
                 assert measured["driver"]["bottom"] <= measured["dock"]["top"] + 1, measured
                 assert measured["vehicle"]["bottom"] <= measured["dock"]["top"] + 1, measured
                 assert measured["map"]["bottom"] <= measured["dock"]["top"] + 1, measured
                 assert not measured["driver"]["overflowX"] and not measured["driver"]["overflowY"], measured
+                assert measured["taskSection"]["bottom"] <= measured["glance"]["top"] + 1, measured
+                assert measured["glance"]["bottom"] <= measured["devices"]["top"] + 1, measured
                 assert measured["countText"] == f"{count} 项", measured
-                assert measured["taskRows"] == min(count, 3), measured
+                preview_limit = 2 if measured["ultrawide"] else 3
+                assert measured["taskRows"] == min(count, preview_limit), measured
                 assert measured["emptyRows"] == (1 if count == 0 else 0), measured
-                assert (f"其余 {count - 3} 项" in measured["moreText"]) if count > 3 else not measured["moreText"], measured
+                assert (f"其余 {count - preview_limit} 项" in measured["moreText"]) if count > preview_limit else not measured["moreText"], measured
                 assert measured["sidebarDisplay"] == "none", measured
                 assert measured["navVisible"] is True, measured
                 assert not BANNED.intersection(measured["iconTexts"]), measured
+                if measured["ultrawide"] and count:
+                    assert measured["taskTitleFont"] >= 18, measured
+                    assert measured["taskMetaFont"] >= 13, measured
+                    assert measured["glanceTitleFont"] >= 18, measured
+                    assert measured["deviceTitleFont"] >= 18, measured
+                    assert measured["deviceMetaFont"] >= 13, measured
                 assert not errors, errors
                 if count == 5:
                     page.screenshot(path=OUTPUT / f"tasks-5-{width}x{height}.png")

@@ -407,6 +407,7 @@
       const vehicle = root.document.createElement("div");
       vehicle.className = "auri-amap-vehicle";
       vehicle.innerHTML = '<span class="auri-amap-vehicle-ring"></span><i></i><b>AURI</b>';
+      this.overlays.vehicleContent = vehicle;
       this.overlays.vehicleMarker = new AMap.Marker({ position: this.routePath[0], content: vehicle, anchor: "center", zIndex: 130 });
       this.overlays.originMarker = new AMap.Marker({ position: this.routePath[0], content: markerContent("auri-amap-origin", routeConfig.originName || "博世苏州"), anchor: "bottom-left", zIndex: 109 });
       this.overlays.destinationMarker = new AMap.Marker({ position: this.routePath.at(-1), content: markerContent("auri-amap-destination", routeConfig.destinationName || "目的地"), anchor: "bottom-center", zIndex: 110 });
@@ -510,7 +511,9 @@
 
       if (snapshot.showVehicle) {
         this.overlays.vehicleMarker.show();
-        this.overlays.vehicleMarker.setAngle?.(screenHeading(location.heading, this.map?.getRotation?.() || 0));
+        const markerAngle = screenHeading(location.heading, this.map?.getRotation?.() || 0);
+        this.overlays.vehicleMarker.setAngle?.(markerAngle);
+        this.overlays.vehicleContent?.style?.setProperty("--auri-marker-counter-rotation", `${-markerAngle}deg`);
         if (this.lastProgress !== null && typeof this.overlays.vehicleMarker.moveTo === "function") {
           this.overlays.vehicleMarker.stopMove?.();
           this.overlays.vehicleMarker.moveTo(location.point, { duration: 900, autoRotation: false });

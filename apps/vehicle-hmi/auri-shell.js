@@ -183,26 +183,39 @@
         <span class="auri-driver-brand"><img src="icons/auri-icon.png" alt=""><span><b>AURI</b><small>你只管开，我来处理</small></span></span>
         <button class="auri-driver-risk" id="auri-driver-risk" type="button" data-panel-target="auri">状态平稳</button>
       </header>
-      <section class="auri-driver-summary" data-panel-target="auri" role="button" tabindex="0">
-        <small id="auri-driver-kicker">AURI 当前判断</small>
-        <h2 id="auri-driver-title">等待手机创建今天的任务</h2>
-        <p id="auri-driver-copy">请在手机端通过语音创建，任务会自动同步到这里。</p>
+      <div class="auri-driver-overview" id="auri-driver-overview">
+        <section class="auri-driver-summary" data-panel-target="auri" role="button" tabindex="0">
+          <small id="auri-driver-kicker">AURI 当前判断</small>
+          <h2 id="auri-driver-title">等待手机创建今天的任务</h2>
+          <p id="auri-driver-copy">请在手机端通过语音创建，任务会自动同步到这里。</p>
+        </section>
+        <section class="auri-driver-context" id="auri-driver-context" data-panel-target="auri" role="button" tabindex="0">
+          <span class="auri-driver-context-icon">${iconSvg("phone")}</span>
+          <span><small id="auri-driver-source">手机端</small><b id="auri-driver-utterance">等待语音输入</b></span>
+          <em id="auri-driver-context-state">待同步</em>
+        </section>
+        <section class="auri-driver-tasks" aria-label="当前任务">
+          <div class="auri-driver-section-head"><span>当前任务</span><button type="button" data-panel-target="tasks" id="auri-driver-task-count">0 项</button></div>
+          <div id="auri-driver-task-list" class="auri-driver-task-list"></div>
+        </section>
+        <section class="auri-driver-glance" aria-label="快捷状态">
+          <button type="button" data-panel-target="messages" id="auri-glance-actions">${iconSvg("message")}<span><small>处理进度</small><b>等待 Agent 方案</b></span><em>查看</em></button>
+          <button type="button" data-panel-target="vehicle" id="auri-glance-cabin">${iconSvg("climate")}<span><small>座舱状态</small><b>等待车辆数据</b></span><em>查看</em></button>
+        </section>
+        <section class="auri-driver-devices" aria-label="设备状态">
+          <button type="button" data-panel-target="sync" id="auri-device-phone">${iconSvg("phone")}<span><b>手机</b><small>等待同步</small></span></button>
+          <button type="button" data-panel-target="sync" id="auri-device-watch">${iconSvg("watch")}<span><b>腕表</b><small>未连接</small></span></button>
+          <button type="button" data-panel-target="sync" id="auri-device-car">${iconSvg("car")}<span><b>车机</b><small>已就绪</small></span></button>
+        </section>
+        <div id="auri-driver-primary" class="auri-driver-primary"></div>
+      </div>
+      <section class="auri-driver-detail" id="auri-driver-detail" hidden aria-live="polite">
+        <header class="auri-driver-detail-head">
+          <button class="auri-driver-back" id="auri-driver-back" type="button" aria-label="返回 AURI 概览">${iconSvg("back")}</button>
+          <span><small id="auri-detail-subtitle">AURI</small><h2 id="auri-detail-title">详细信息</h2></span>
+        </header>
+        <div class="auri-driver-detail-body" id="auri-detail-body"></div>
       </section>
-      <section class="auri-driver-context" id="auri-driver-context" data-panel-target="auri" role="button" tabindex="0">
-        <span class="auri-driver-context-icon">${iconSvg("phone")}</span>
-        <span><small id="auri-driver-source">手机端</small><b id="auri-driver-utterance">等待语音输入</b></span>
-        <em id="auri-driver-context-state">待同步</em>
-      </section>
-      <section class="auri-driver-tasks" aria-label="当前任务">
-        <div class="auri-driver-section-head"><span>当前任务</span><button type="button" data-panel-target="tasks" id="auri-driver-task-count">0 项</button></div>
-        <div id="auri-driver-task-list" class="auri-driver-task-list"></div>
-      </section>
-      <section class="auri-driver-devices" aria-label="设备状态">
-        <button type="button" data-panel-target="sync" id="auri-device-phone">${iconSvg("phone")}<span><b>手机</b><small>等待同步</small></span></button>
-        <button type="button" data-panel-target="sync" id="auri-device-watch">${iconSvg("watch")}<span><b>腕表</b><small>未连接</small></span></button>
-        <button type="button" data-panel-target="sync" id="auri-device-car">${iconSvg("car")}<span><b>车机</b><small>已就绪</small></span></button>
-      </section>
-      <div id="auri-driver-primary" class="auri-driver-primary"></div>
     `;
     body.insertBefore(panel, vehiclePanel);
     panel.addEventListener("click", (event) => {
@@ -216,6 +229,7 @@
         openPanel(target.dataset.panelTarget);
       }
     });
+    panel.querySelector("#auri-driver-back")?.addEventListener("click", closePanel);
   }
 
   function ensureNavigationHud() {
@@ -249,11 +263,14 @@
         <span class="auri-takeover-orbit" aria-hidden="true"><i>A</i></span>
         <span><b id="auri-takeover-stage">AURI 接管</b><small id="auri-takeover-risk">状态平稳</small></span>
       </div>
+      <div class="auri-takeover-label">现实结论</div>
       <p class="auri-takeover-conclusion" id="auri-takeover-conclusion"></p>
+      <div class="auri-takeover-section-head"><span>AURI 已准备</span><em id="auri-takeover-action-count">0 项</em></div>
       <div class="auri-takeover-actions" id="auri-takeover-actions"></div>
       <div class="auri-takeover-devices" id="auri-takeover-devices"></div>
+      <div class="auri-takeover-next" id="auri-takeover-next"><small>下一步</small><b>保持驾驶，等待处理结果</b></div>
       <button class="auri-takeover-confirm" id="auri-takeover-confirm" type="button" hidden>
-        <span id="auri-confirm-label">确认处理</span><small>方向盘 OK / 点击</small>
+        <span id="auri-confirm-label">确认处理</span>
       </button>
       <p class="auri-confirm-error" id="auri-confirm-error" role="status" hidden></p>
     `;
@@ -389,15 +406,16 @@
 
     const taskList = document.getElementById("auri-driver-task-list");
     const taskCount = document.getElementById("auri-driver-task-count");
+    const taskPreviewLimit = document.getElementById("hmi")?.classList.contains("is-ultrawide") ? 2 : 3;
     taskCount.textContent = `${viewModel.tasks.total} 项`;
     taskList.innerHTML = viewModel.tasks.total
-      ? viewModel.tasks.items.slice(0, 3).map((task) => `
+      ? viewModel.tasks.items.slice(0, taskPreviewLimit).map((task) => `
           <button type="button" class="auri-driver-task is-${escapeHtml(task.tone)}" data-panel-target="task:${escapeHtml(task.id)}">
             <span class="auri-driver-task-icon">${iconSvg(task.tone === "rigid" ? "calendar" : "flexible")}</span>
             <span><b>${escapeHtml(task.displayTitle)}</b><small>${escapeHtml(task.tone === "rigid" ? "优先保护时间窗口" : "可调整顺序")}</small></span>
             <em>${escapeHtml(task.status)}</em>
           </button>
-        `).join("") + (viewModel.tasks.total > 3 ? `<button type="button" class="auri-driver-task-more" data-panel-target="tasks">查看其余 ${viewModel.tasks.total - 3} 项任务</button>` : "")
+        `).join("") + (viewModel.tasks.total > taskPreviewLimit ? `<button type="button" class="auri-driver-task-more" data-panel-target="tasks">查看其余 ${viewModel.tasks.total - taskPreviewLimit} 项任务</button>` : "")
       : `<button type="button" class="auri-driver-task is-empty" data-panel-target="tasks"><span class="auri-driver-task-icon">${iconSvg("add")}</span><span><b>暂无任务</b><small>任务将从手机端自动同步</small></span><em>等待</em></button>`;
 
     const phone = document.querySelector("#auri-device-phone small");
@@ -409,6 +427,14 @@
     document.getElementById("auri-device-phone")?.classList.toggle("is-active", Boolean(viewModel.utterance.available || viewModel.tasks.total));
     document.getElementById("auri-device-watch")?.classList.toggle("is-active", viewModel.wearable.connected);
     document.getElementById("auri-device-car")?.classList.toggle("is-active", viewModel.lifecycle.primarySurface === "vehicle_hmi");
+    const actionGlance = document.querySelector("#auri-glance-actions b");
+    const cabinGlance = document.querySelector("#auri-glance-cabin b");
+    if (actionGlance) actionGlance.textContent = viewModel.actions.counts.total
+      ? `${viewModel.actions.counts.completed}/${viewModel.actions.counts.total} 项已完成`
+      : "等待 Agent 方案";
+    if (cabinGlance) cabinGlance.textContent = viewModel.vehicle.available
+      ? viewModel.vehicle.summary
+      : "等待车辆数据";
   }
 
   function renderTakeover() {
@@ -425,10 +451,11 @@
     card.dataset.tone = tone;
     document.getElementById("auri-takeover-stage").textContent = label;
     const riskLine = document.getElementById("auri-takeover-risk");
-    const utteranceLine = viewModel.utterance.available ? ` · 手机：“${viewModel.utterance.preview}”` : "";
     riskLine.textContent = stage === "parked_review"
       ? "车辆已停稳 · 完整明细已同步"
-      : `${viewModel.risk.label}${utteranceLine}`;
+      : viewModel.risk.lateMinutes > 0
+        ? `${viewModel.risk.label} · 预计晚到 ${viewModel.risk.lateMinutes} 分钟`
+        : viewModel.risk.label;
     riskLine.title = viewModel.utterance.available ? viewModel.utterance.text : viewModel.risk.label;
     const messageCount = viewModel.actions.items.filter((action) => action.type === "message").length;
     const hasServicePlan = viewModel.actions.items.some((action) => action.type === "service_order");
@@ -444,12 +471,15 @@
       : viewModel.serviceOrders.hasFailure
         ? "生活服务暂不可用，消息和任务调整方案仍保留。"
         : ["service_prepared", "waiting_confirmation"].includes(stage)
-          ? concisePlan
+          ? viewModel.risk.lateMinutes > 0
+            ? `无法准点，预计晚到 ${viewModel.risk.lateMinutes} 分钟`
+            : concisePlan
           : viewModel.agentOutput.available && viewModel.agentOutput.fullText.length <= 42
             ? viewModel.agentOutput.fullText
             : fallback;
 
     const actions = takeoverActions();
+    document.getElementById("auri-takeover-action-count").textContent = `${actions.length} 项`;
     document.getElementById("auri-takeover-actions").innerHTML = actions.map((action) => `
       <div class="auri-takeover-action${action.completed ? " is-completed" : ""}">
         <span>${iconSvg(action.icon)}</span><b>${escapeHtml(action.text)}</b><small>${escapeHtml(action.state)}</small>
@@ -477,6 +507,14 @@
     button.hidden = !(showConfirm || showExecuting);
     button.disabled = !showConfirm || confirmInFlight || confirmOutcomeUnknown;
     button.classList.toggle("is-loading", showExecuting);
+    const next = document.querySelector("#auri-takeover-next b");
+    if (next) next.textContent = showConfirm
+      ? "说“确认”，或点击下方按钮"
+      : showExecuting
+        ? "正在执行，无需重复操作"
+        : ["action_completed", "cooldown", "parked_review"].includes(stage)
+          ? "继续按当前路线行驶"
+          : "保持驾驶，AURI 正在处理";
     document.getElementById("auri-confirm-label").textContent = showExecuting ? "正在执行" : "确认处理";
     const error = document.getElementById("auri-confirm-error");
     error.hidden = !confirmError;
@@ -655,18 +693,14 @@
   function panelFor(section) {
     const vm = viewModel;
     if (section === "auri") {
-      const conclusion = vm.agentOutput.available
-        ? vm.agentOutput.preview
-        : vm.tasks.total
-          ? `${vm.lifecycle.stageLabel}，AURI 正在持续检查任务与行程。`
-          : "等待用户在手机端创建今天的任务。";
+      const [, summaryTitle, summaryCopy] = driverSummaryView();
       return {
-        title: vm.lifecycle.stageLabel === "数据不可用" ? "AURI 已就绪" : vm.lifecycle.stageLabel,
-        subtitle: "你只管开，我来处理",
-        lead: conclusion,
+        title: "AURI",
+        subtitle: vm.lifecycle.stageLabel === "数据不可用" ? "已就绪" : vm.lifecycle.stageLabel,
+        lead: summaryTitle,
         copy: vm.utterance.available
-          ? `来自${vm.utterance.sourceLabel}：“${vm.utterance.preview}”`
-          : "手机语音已同步到当前行程。",
+          ? `手机语音：${vm.utterance.preview}`
+          : summaryCopy,
         status: vm.risk.label,
         tone: vm.risk.tone,
         rows: [
@@ -748,7 +782,9 @@
         title: "消息与执行",
         subtitle: vm.actions.counts.total ? `${vm.actions.counts.completed}/${vm.actions.counts.total} 已完成` : "等待 Agent 方案",
         lead: vm.actions.counts.total ? `${vm.actions.counts.total} 项动作已准备或执行` : "暂无 Agent 动作",
-        copy: vm.agentOutput.available ? vm.agentOutput.fullText : "AURI 会在需要时准备消息、任务调整和生活服务。",
+        copy: vm.actions.counts.total
+          ? "消息、任务调整和生活服务按执行状态排列。"
+          : "AURI 会在需要时准备消息、任务调整和生活服务。",
         status: vm.actions.counts.failed || vm.actions.counts.blocked ? "需要注意" : vm.actions.counts.total ? "状态已同步" : "等待",
         tone: vm.actions.counts.failed || vm.actions.counts.blocked ? "critical" : vm.actions.counts.completed === vm.actions.counts.total && vm.actions.counts.total ? "success" : "processing",
         rows: actionRows.length || orderRows.length ? [...actionRows, ...orderRows] : [emptyRow("□", "消息与服务", "等待 Agent 生成处理方案")]
@@ -894,9 +930,9 @@
   function refreshConnectionPanel() {
     if (activeSection !== "connection") return;
     const panel = connectionPanel();
-    const body = document.getElementById("body-a");
+    const body = document.getElementById("auri-detail-body");
     if (!body?.querySelector("#auri-config-form")) return;
-    const subtitle = document.getElementById("sub-a");
+    const subtitle = document.getElementById("auri-detail-subtitle");
     const copy = body.querySelector(".auri-shell-copy");
     const status = body.querySelector(".auri-shell-status");
     if (subtitle) subtitle.textContent = panel.subtitle;
@@ -923,8 +959,10 @@
   }
 
   function closePanel() {
-    const panel = document.getElementById("left-panel");
-    panel?.classList.remove("is-visible", "auri-shell-panel");
+    const panel = document.getElementById("auri-driver-panel");
+    const detail = document.getElementById("auri-driver-detail");
+    panel?.classList.remove("is-detail");
+    if (detail) detail.hidden = true;
     activeSection = null;
     document.querySelectorAll("[data-auri-section]").forEach((item) => {
       item.classList.toggle("active", item.dataset.auriSection === "navigation");
@@ -963,16 +1001,16 @@
       return;
     }
     const config = section === "connection" ? connectionPanel() : panelFor(section);
-    const panel = document.getElementById("left-panel");
+    const panel = document.getElementById("auri-driver-panel");
+    const detail = document.getElementById("auri-driver-detail");
     if (!config || !panel) return;
 
     activeSection = section;
-    panel.className = "left-panel is-visible auri-shell-panel";
-    const icon = panel.querySelector(".lp-agent-icon");
-    if (icon) icon.src = "icons/auri-icon.png";
-    const title = document.getElementById("hdr-a");
-    const subtitle = document.getElementById("sub-a");
-    const body = document.getElementById("body-a");
+    panel.classList.add("is-detail");
+    if (detail) detail.hidden = false;
+    const title = document.getElementById("auri-detail-title");
+    const subtitle = document.getElementById("auri-detail-subtitle");
+    const body = document.getElementById("auri-detail-body");
     if (title) title.textContent = config.title;
     if (subtitle) subtitle.textContent = config.subtitle;
     if (body) body.innerHTML = `
@@ -983,28 +1021,8 @@
         ${config.form || config.rows.join("")}
       </div>
     `;
-    const secondaryHeader = document.getElementById("lp-b-hdr");
-    const secondaryBody = document.getElementById("body-b");
-    if (secondaryHeader) secondaryHeader.style.display = "none";
-    if (secondaryBody) secondaryBody.style.display = "none";
-
-    let close = panel.querySelector(".auri-panel-close");
-    if (!close) {
-      close = document.createElement("button");
-      close.className = "auri-panel-close";
-      close.type = "button";
-      close.title = "关闭";
-      close.setAttribute("aria-label", "关闭");
-      close.textContent = "×";
-      close.addEventListener("click", closePanel);
-      panel.appendChild(close);
-    }
-
     document.querySelectorAll("[data-auri-section]").forEach((item) => {
       item.classList.toggle("active", item.dataset.auriSection === section);
-    });
-    body?.querySelectorAll("[data-panel-target]").forEach((button) => {
-      button.addEventListener("click", () => openPanel(button.dataset.panelTarget));
     });
     bindConfigForm();
   }

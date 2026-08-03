@@ -102,9 +102,39 @@ def main():
         assert "超市" in responsibility_text
 
         page.locator("#vd-nav-card").click(position={"x": 400, "y": 18})
-        assert "行程详情" in page.locator("#hdr-a").inner_text()
-        assert "阳光小学" in page.locator("#body-a").inner_text()
-        page.locator(".auri-panel-close").click()
+        assert "行程详情" in page.locator("#auri-detail-title").inner_text()
+        assert "阳光小学" in page.locator("#auri-detail-body").inner_text()
+        assert page.locator("#auri-driver-panel").evaluate("node => node.classList.contains('is-detail')")
+        integrated = page.evaluate(
+            """() => {
+              const driver=document.querySelector('#auri-driver-panel').getBoundingClientRect();
+              const detail=document.querySelector('#auri-driver-detail').getBoundingClientRect();
+              return {
+                inside: detail.left >= driver.left && detail.right <= driver.right && detail.top >= driver.top && detail.bottom <= driver.bottom,
+                legacyHidden: getComputedStyle(document.querySelector('#left-panel')).display === 'none'
+              };
+            }"""
+        )
+        assert integrated == {"inside": True, "legacyHidden": True}
+        page.screenshot(path=SCREENSHOT_DIR / "auri-hmi-e2e-left-route.png")
+        page.locator("#auri-driver-back").click()
+
+        dock_details = {
+            "auri": "AURI",
+            "tasks": "今日任务",
+            "messages": "消息与执行",
+            "vehicle": "座舱状态",
+        }
+        for section, expected_title in dock_details.items():
+            page.locator(f'[data-auri-section="{section}"]').click()
+            assert expected_title in page.locator("#auri-detail-title").inner_text()
+            assert page.locator("#auri-driver-detail").is_visible()
+            assert page.locator("#left-panel").is_hidden()
+            page.locator("#auri-driver-back").click()
+            assert page.locator("#auri-driver-overview").is_visible()
+        page.locator('[data-auri-section="navigation"]').click()
+        assert page.locator("#auri-driver-detail").is_hidden()
+        assert page.locator("#auri-driver-overview").is_visible()
 
         warning_state = submit("meeting.overrun", {"delay_minutes": 20})
         page.wait_for_function(
@@ -129,10 +159,11 @@ def main():
         assert "腕表" in page.locator("#auri-device-notice").inner_text()
 
         page.locator('[data-auri-section="auri"]').click()
-        page.locator('#body-a [data-panel-target="sync"]').click()
-        assert "设备同步" in page.locator("#hdr-a").inner_text()
-        assert all(label in page.locator("#body-a").inner_text() for label in ["手机", "腕表", "车机"])
-        page.locator(".auri-panel-close").click()
+        page.locator('#auri-detail-body [data-panel-target="sync"]').click()
+        assert "设备同步" in page.locator("#auri-detail-title").inner_text()
+        assert all(label in page.locator("#auri-detail-body").inner_text() for label in ["手机", "腕表", "车机"])
+        page.screenshot(path=SCREENSHOT_DIR / "auri-hmi-e2e-left-sync.png")
+        page.locator("#auri-driver-back").click()
 
         rigid = next(
             (task for task in vehicle_state["tasks"] if task.get("task_type") == "rigid"),
@@ -162,8 +193,28 @@ def main():
         )
         assert prepared["confirmation"]["owner_surface"] == "vehicle_hmi"
         assert page.locator("#auri-takeover-confirm").is_enabled()
-        assert "我还来得及吗" in page.locator("#auri-takeover-risk").inner_text()
+        assert "预计晚到 18 分钟" in page.locator("#auri-takeover-risk").inner_text()
+        assert "我还来得及吗" in page.locator("#auri-driver-utterance").inner_text()
+        assert page.locator("#auri-takeover-conclusion").inner_text() == "无法准点，预计晚到 18 分钟"
+        assert "下一步你说" not in page.locator("#auri-driver-panel").inner_text()
         assert page.locator(".auri-takeover-action").count() == len(prepared["actions"][:3])
+        action_metrics = page.evaluate(
+            """() => Array.from(document.querySelectorAll('.auri-takeover-action')).map(node => {
+              const rect=node.getBoundingClientRect(); const style=getComputedStyle(node);
+              const topNode=document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+              return {top:rect.top,bottom:rect.bottom,width:rect.width,height:rect.height,display:style.display,visibility:style.visibility,opacity:style.opacity,topTag:topNode?.tagName,topClass:topNode?.className||'',topId:topNode?.id||'',uncovered:node.contains(topNode)};
+            })"""
+        )
+        assert all(
+            item["height"] > 0
+            and item["width"] > 0
+            and item["display"] != "none"
+            and item["visibility"] == "visible"
+            and float(item["opacity"]) > 0.9
+            and item["uncovered"]
+            for item in action_metrics
+        ), action_metrics
+        assert float(page.locator("#auri-takeover-card").evaluate("node => getComputedStyle(node).opacity")) > 0.9
         page.wait_for_timeout(400)
         page.screenshot(path=SCREENSHOT_DIR / "auri-hmi-e2e-waiting-confirmation.png")
 

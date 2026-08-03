@@ -32,6 +32,11 @@ class FakeElement {
     this.hidden = false;
     this.innerHTML = "";
     this.textContent = "";
+    this.style = {
+      values: new Map(),
+      setProperty: (name, value) => this.style.values.set(name, value),
+      getPropertyValue: (name) => this.style.values.get(name) || ""
+    };
   }
 
   append(...children) {
@@ -370,6 +375,11 @@ async function main() {
   assert.equal(online.adapter.getCameraMode(), "follow");
   assert.ok(online.adapter.getCameraRotation() > 0);
   assertClose(online.adapter.overlays.vehicleMarker.angle, 0, 1e-6);
+  assert.equal(
+    online.adapter.overlays.vehicleContent.style.getPropertyValue("--auri-marker-counter-rotation"),
+    `${-online.adapter.overlays.vehicleMarker.angle}deg`,
+    "vehicle label must counter-rotate so the AURI wordmark stays horizontal"
+  );
   assert.equal(online.adapter.overlays.incidentMarker.visible, true);
   assert.equal(online.adapter.overlays.incidentContent.textContent, "拥堵 · 晚到 18 分钟");
   assert.deepEqual(
