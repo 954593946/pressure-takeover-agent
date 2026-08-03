@@ -79,6 +79,11 @@ class WearableGateway @Inject constructor(
                 }
             } catch (error: Exception) {
                 val shouldLogError = started
+                try {
+                    serverSocket?.close()
+                } catch (_: Exception) {
+                }
+                serverSocket = null
                 started = false
                 setState { it.copy(running = false, lastError = error.message ?: "server stopped") }
                 if (shouldLogError) {

@@ -76,19 +76,6 @@ export const SUBTITLE_STYLE = {
   text: "等待手机同步"
 };
 
-export const DEBUG_STYLE = {
-  x: px(68),
-  y: px(356),
-  w: px(330),
-  h: px(28),
-  color: 0x8fa0b5,
-  text_size: px(17),
-  align_h: hmUI.align.CENTER_H,
-  align_v: hmUI.align.CENTER_V,
-  text_style: hmUI.text_style.ELLIPSIS,
-  text: "debug: local"
-};
-
 export const FOOTER_STYLE = {
   x: CONTENT_X,
   y: px(386),
@@ -100,17 +87,4 @@ export const FOOTER_STYLE = {
   align_v: hmUI.align.CENTER_V,
   text_style: hmUI.text_style.ELLIPSIS,
   text: "AURI Active 2"
-};
-
-export const DEBUG_BUTTON_STYLE = {
-  x: px(166),
-  y: px(418),
-  w: px(134),
-  h: px(34),
-  radius: px(17),
-  normal_color: 0x172a45,
-  press_color: 0x2f6bff,
-  color: 0xf5f2ec,
-  text_size: px(18),
-  text: "本地调试"
 };

@@ -2,7 +2,12 @@ export const AURI_COLORS = {
   NAVY: 0x0b1b33,
   IVORY: 0xf5f2ec,
   MUTED: 0x8fa0b5,
-  PROCESSING: 0x2f6bff,
+  IDLE: 0x2f6bff,
+  IDLE_DIM: 0x132c66,
+  HANDOVER: 0x20c7d9,
+  HANDOVER_DIM: 0x0b4b57,
+  PROCESSING: 0x7a5cff,
+  PROCESSING_DIM: 0x272052,
   WARNING: 0xe6a700,
   SUCCESS: 0x2e9d6f,
   CRITICAL: 0xd1495b
@@ -32,8 +37,8 @@ const MODE_CONFIG = {
     icon: "A",
     title: "AURI 已就绪",
     text: "等待手机同步",
-    color: AURI_COLORS.PROCESSING,
-    dimColor: 0x132c66,
+    color: AURI_COLORS.IDLE,
+    dimColor: AURI_COLORS.IDLE_DIM,
     haptic: HAPTIC_PATTERNS.NONE
   },
   [WEARABLE_MODES.WARNING]: {
@@ -50,8 +55,8 @@ const MODE_CONFIG = {
     icon: ">",
     title: "进入驾驶模式",
     text: "车机负责确认",
-    color: AURI_COLORS.PROCESSING,
-    dimColor: 0x132c66,
+    color: AURI_COLORS.HANDOVER,
+    dimColor: AURI_COLORS.HANDOVER_DIM,
     haptic: HAPTIC_PATTERNS.SINGLE_SHORT
   },
   [WEARABLE_MODES.PROCESSING]: {
@@ -60,7 +65,7 @@ const MODE_CONFIG = {
     title: "接管处理中",
     text: "AURI 正在协调",
     color: AURI_COLORS.PROCESSING,
-    dimColor: 0x132c66,
+    dimColor: AURI_COLORS.PROCESSING_DIM,
     haptic: HAPTIC_PATTERNS.TRIPLE
   },
   [WEARABLE_MODES.COMPLETED]: {
@@ -110,8 +115,12 @@ const LEGACY_HAPTIC_MAP = {
 };
 
 const NAMED_COLOR_MAP = {
-  navy: AURI_COLORS.PROCESSING,
-  blue: AURI_COLORS.PROCESSING,
+  navy: AURI_COLORS.IDLE,
+  blue: AURI_COLORS.IDLE,
+  cyan: AURI_COLORS.HANDOVER,
+  teal: AURI_COLORS.HANDOVER,
+  violet: AURI_COLORS.PROCESSING,
+  purple: AURI_COLORS.PROCESSING,
   yellow: AURI_COLORS.WARNING,
   green: AURI_COLORS.SUCCESS,
   red: AURI_COLORS.CRITICAL

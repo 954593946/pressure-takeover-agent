@@ -1,6 +1,7 @@
 import * as hmUI from "@zos/ui";
 import { log as Logger } from "@zos/utils";
 import { BasePage } from "@zeppos/zml/base-page";
+import { enableDemoKeepAwake, disableDemoKeepAwake } from "../../../utils/display-control";
 import { playHaptic, stopHaptics } from "../../../utils/haptics";
 import { collectHealthSnapshot } from "../../../utils/health-sensors";
 import { createHello } from "../../../utils/protocol";
@@ -8,8 +9,6 @@ import { normalizeWearableCommand } from "../../../utils/state-map";
 import {
   BACKGROUND_STYLE,
   CORE_STYLE,
-  DEBUG_BUTTON_STYLE,
-  DEBUG_STYLE,
   FOOTER_STYLE,
   HALO_STYLE,
   ICON_STYLE,
@@ -21,6 +20,7 @@ import {
 const logger = Logger.getLogger("auri-watch-home");
 const MAX_PROCESSED_COMMANDS = 50;
 const OFFLINE_TIMEOUT_MS = 45000;
+const COMPLETED_AUTO_IDLE_MS = 5000;
 const VALID_MODES = {
   idle: true,
   warning: true,
@@ -30,91 +30,28 @@ const VALID_MODES = {
   error: true
 };
 
-const LOCAL_STATES = [
-  {
-    command_id: "local-idle-001",
-    mode: "idle",
-    icon: "A",
-    title: "AURI 已就绪",
-    text: "等待手机同步",
-    color: 0x2f6bff,
-    dimColor: 0x132c66,
-    haptic: "none"
-  },
-  {
-    command_id: "local-warning-001",
-    mode: "warning",
-    icon: "!",
-    title: "风险提醒",
-    text: "请关注接管准备",
-    color: 0xe6a700,
-    dimColor: 0x4d3b0b,
-    haptic: "double_short"
-  },
-  {
-    command_id: "local-handover-001",
-    mode: "handover",
-    icon: ">",
-    title: "进入驾驶模式",
-    text: "车机负责确认",
-    color: 0x2f6bff,
-    dimColor: 0x132c66,
-    haptic: "single_short"
-  },
-  {
-    command_id: "local-processing-001",
-    mode: "processing",
-    icon: "...",
-    title: "接管处理中",
-    text: "AURI 正在协调",
-    color: 0x2f6bff,
-    dimColor: 0x132c66,
-    haptic: "triple"
-  },
-  {
-    command_id: "local-completed-001",
-    mode: "completed",
-    icon: "OK",
-    title: "已完成",
-    text: "保持当前节奏",
-    color: 0x2e9d6f,
-    dimColor: 0x123d2d,
-    haptic: "gentle_short"
-  },
-  {
-    command_id: "local-error-001",
-    mode: "error",
-    icon: "X",
-    title: "请看手机",
-    text: "连接或数据异常",
-    color: 0xd1495b,
-    dimColor: 0x4d1821,
-    haptic: "error_combo"
-  }
-];
+const INITIAL_STATE = {
+  command_id: "initial-idle",
+  mode: "idle",
+  icon: "A",
+  title: "AURI 已就绪",
+  text: "等待手机同步",
+  color: 0x2f6bff,
+  dimColor: 0x132c66,
+  haptic: "none"
+};
 
 let stateWidgets = null;
-let stateIndex = 0;
 let lastCommandId = "";
 let lastHapticCommandId = "";
 let processedCommandIds = [];
 let offlineTimer = null;
+let visualEffectTimer = null;
+let completedResetTimer = null;
 let offlineShown = false;
-let localCommandSeq = 0;
 
 function getGlobalData() {
   return getApp()._options.globalData || {};
-}
-
-function updateDebug(text) {
-  if (!stateWidgets || !stateWidgets.debug) {
-    return;
-  }
-
-  stateWidgets.debug.setProperty(hmUI.prop.MORE, {
-    ...DEBUG_STYLE,
-    text
-  });
 }
 
 function updateSubtitle(text) {
@@ -163,23 +100,94 @@ function rememberCommand(commandId) {
   }
 }
 
+function clearVisualEffect() {
+  if (visualEffectTimer) {
+    clearInterval(visualEffectTimer);
+    visualEffectTimer = null;
+  }
+}
+
+function cancelCompletedAutoIdle() {
+  if (completedResetTimer) {
+    clearTimeout(completedResetTimer);
+    completedResetTimer = null;
+  }
+}
+
+function visualFrameFor(command, bright = false) {
+  const mode = command.mode || "idle";
+
+  if (mode === "handover") {
+    return {
+      dotColor: 0x65f4ff,
+      haloColor: 0x0b4b57,
+      coreColor: 0x20c7d9,
+      haloRadius: HALO_STYLE.radius + 10,
+      coreRadius: CORE_STYLE.radius - 4
+    };
+  }
+
+  if (mode === "processing") {
+    return {
+      dotColor: bright ? 0xb7abff : 0x7a5cff,
+      haloColor: bright ? 0x3b2f82 : 0x272052,
+      coreColor: bright ? 0x967fff : 0x7a5cff,
+      haloRadius: bright ? HALO_STYLE.radius + 8 : HALO_STYLE.radius - 4,
+      coreRadius: bright ? CORE_STYLE.radius + 2 : CORE_STYLE.radius - 5
+    };
+  }
+
+  return {
+    dotColor: command.color,
+    haloColor: command.dimColor,
+    coreColor: command.color,
+    haloRadius: HALO_STYLE.radius,
+    coreRadius: CORE_STYLE.radius
+  };
+}
+
+function applyVisualFrame(command, bright = false) {
+  if (!stateWidgets || !command) {
+    return;
+  }
+
+  const frame = visualFrameFor(command, bright);
+  stateWidgets.dot.setProperty(hmUI.prop.MORE, {
+    ...STATUS_DOT_STYLE,
+    color: frame.dotColor
+  });
+  stateWidgets.halo.setProperty(hmUI.prop.MORE, {
+    ...HALO_STYLE,
+    radius: frame.haloRadius,
+    color: frame.haloColor
+  });
+  stateWidgets.core.setProperty(hmUI.prop.MORE, {
+    ...CORE_STYLE,
+    radius: frame.coreRadius,
+    color: frame.coreColor
+  });
+}
+
+function startVisualEffect(command) {
+  clearVisualEffect();
+  if (!command || command.mode !== "processing") {
+    return;
+  }
+
+  let bright = false;
+  visualEffectTimer = setInterval(() => {
+    bright = !bright;
+    applyVisualFrame(command, bright);
+  }, 900);
+}
+
 function renderWearableState(command) {
   if (!stateWidgets || !command) {
     return;
   }
 
-  stateWidgets.dot.setProperty(hmUI.prop.MORE, {
-    ...STATUS_DOT_STYLE,
-    color: command.color
-  });
-  stateWidgets.halo.setProperty(hmUI.prop.MORE, {
-    ...HALO_STYLE,
-    color: command.dimColor
-  });
-  stateWidgets.core.setProperty(hmUI.prop.MORE, {
-    ...CORE_STYLE,
-    color: command.color
-  });
+  clearVisualEffect();
+  applyVisualFrame(command);
   stateWidgets.icon.setProperty(hmUI.prop.MORE, {
     ...ICON_STYLE,
     text: command.icon
@@ -198,6 +206,7 @@ function renderWearableState(command) {
   });
 
   getGlobalData().currentState = command;
+  startVisualEffect(command);
 }
 
 function executeStateChange(command, options = {}) {
@@ -212,26 +221,43 @@ function executeStateChange(command, options = {}) {
   }
 }
 
+function scheduleCompletedAutoIdle(command) {
+  cancelCompletedAutoIdle();
+  if (!command || command.mode !== "completed") {
+    return;
+  }
+
+  completedResetTimer = setTimeout(() => {
+    completedResetTimer = null;
+    const currentState = getGlobalData().currentState || {};
+    if (currentState.command_id !== command.command_id || currentState.mode !== "completed") {
+      return;
+    }
+
+    executeStateChange({
+      ...INITIAL_STATE,
+      command_id: `auto-idle-${Date.now()}`,
+      source: "local-auto-idle"
+    }, { playFeedback: false });
+  }, COMPLETED_AUTO_IDLE_MS);
+}
+
 function handleRemoteSetState(rawCommand) {
   if (!rawCommand || !rawCommand.command_id) {
-    updateDebug("ack: error / missing id");
     return { ack: sendAck("", "error", "missing command_id") };
   }
 
   if (hasProcessed(rawCommand.command_id)) {
-    updateDebug(`ack: duplicate / ${rawCommand.command_id}`);
     return { ack: sendAck(rawCommand.command_id, "duplicate") };
   }
 
   if (!rawCommand.mode && !rawCommand.state) {
     rememberCommand(rawCommand.command_id);
-    updateDebug("ack: unsupported / missing mode");
     return { ack: sendAck(rawCommand.command_id, "unsupported", "missing mode") };
   }
 
   if (rawCommand.mode && !VALID_MODES[rawCommand.mode]) {
     rememberCommand(rawCommand.command_id);
-    updateDebug(`ack: unsupported / ${rawCommand.mode || "none"}`);
     return { ack: sendAck(rawCommand.command_id, "unsupported", "unsupported mode") };
   }
 
@@ -240,23 +266,13 @@ function handleRemoteSetState(rawCommand) {
     source: "remote"
   });
 
+  cancelCompletedAutoIdle();
   rememberCommand(command.command_id);
   executeStateChange(command);
+  const ack = sendAck(command.command_id, "ok");
+  scheduleCompletedAutoIdle(command);
 
-  updateDebug(`ack: ok / ${command.command_id}`);
-  return { ack: sendAck(command.command_id, "ok") };
-}
-
-function showNextLocalState() {
-  const baseCommand = LOCAL_STATES[stateIndex];
-  localCommandSeq += 1;
-  const command = {
-    ...baseCommand,
-    command_id: `local-${baseCommand.mode}-${localCommandSeq}`
-  };
-  stateIndex = (stateIndex + 1) % LOCAL_STATES.length;
-  executeStateChange(command);
-  updateDebug(`debug: local / ${command.mode}`);
+  return { ack };
 }
 
 function formatHealthSummary(snapshot) {
@@ -267,12 +283,9 @@ function formatHealthSummary(snapshot) {
 }
 
 function collectLocalHealth() {
-  updateDebug("sensor: reading...");
-
   const snapshot = collectHealthSnapshot();
   getGlobalData().lastSensor = snapshot;
   updateSubtitle(formatHealthSummary(snapshot));
-  updateDebug(`sensor: ${snapshot.result}`);
   sendToSide("watch.sensor", snapshot);
 
   logger.log("health snapshot", JSON.stringify(snapshot));
@@ -297,11 +310,9 @@ function handleBridgeMessage(message = {}) {
       ping_id: message.ping_id || (message.params && message.params.ping_id) || "",
       timestamp: Date.now()
     });
-    updateDebug("pong: local");
     return { type: "PONG", timestamp: Date.now() };
   }
 
-  updateDebug("ack: unsupported");
   return { result: "unsupported" };
 }
 
@@ -312,6 +323,7 @@ function checkOffline() {
   }
 
   offlineShown = true;
+  cancelCompletedAutoIdle();
   renderWearableState({
     command_id: `offline-${Date.now()}`,
     mode: "error",
@@ -322,7 +334,6 @@ function checkOffline() {
     dimColor: 0x4d1821,
     haptic: "none"
   });
-  updateDebug("offline: no heartbeat");
 }
 
 Page(BasePage({
@@ -334,6 +345,7 @@ Page(BasePage({
 
   build() {
     logger.debug("home build");
+    enableDemoKeepAwake();
     this.createStaticLayout();
 
     const globalData = getGlobalData();
@@ -347,8 +359,7 @@ Page(BasePage({
     };
     globalData.lastMessageAt = Date.now();
 
-    renderWearableState(LOCAL_STATES[0]);
-    updateDebug("短按状态 / 长按健康");
+    renderWearableState(INITIAL_STATE);
     sendToSide("watch.hello", createHello());
     offlineTimer = setInterval(checkOffline, 15000);
   },
@@ -374,14 +385,7 @@ Page(BasePage({
       icon: hmUI.createWidget(hmUI.widget.TEXT, ICON_STYLE),
       title: hmUI.createWidget(hmUI.widget.TEXT, TITLE_STYLE),
       subtitle: hmUI.createWidget(hmUI.widget.TEXT, SUBTITLE_STYLE),
-      debug: hmUI.createWidget(hmUI.widget.TEXT, DEBUG_STYLE),
-      footer: hmUI.createWidget(hmUI.widget.TEXT, FOOTER_STYLE),
-      debugButton: hmUI.createWidget(hmUI.widget.BUTTON, {
-        ...DEBUG_BUTTON_STYLE,
-        text: "调试",
-        click_func: showNextLocalState,
-        longpress_func: collectLocalHealth
-      })
+      footer: hmUI.createWidget(hmUI.widget.TEXT, FOOTER_STYLE)
     };
   },
 
@@ -391,6 +395,9 @@ Page(BasePage({
       clearInterval(offlineTimer);
       offlineTimer = null;
     }
+    clearVisualEffect();
+    cancelCompletedAutoIdle();
     stopHaptics();
+    disableDemoKeepAwake();
   }
 }));
