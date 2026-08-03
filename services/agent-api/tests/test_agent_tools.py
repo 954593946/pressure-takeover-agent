@@ -184,6 +184,23 @@ def test_demo_receipts_include_message_body_and_purchase_details() -> None:
     assert "20:00-21:00" in grounded
 
 
+def test_demo_receipts_render_utc_eta_in_shanghai_time() -> None:
+    state = initial_state("demo_receipts_utc")
+    state.eta = datetime(2026, 7, 29, 10, 28, tzinfo=timezone.utc)
+    state.risk.late_minutes = 18
+    setup = AgentToolbox(state, event_id="evt_receipts_utc", source="mobile", original_text="帮我处理")
+    setup.create_tasks(
+        [task("18:10去学校接孩子", "rigid", priority="high", adjustable=False, waiting_party=["孩子"])],
+        replace_existing=False,
+    )
+
+    setup.prepare_assistance(include_messages=True, include_grocery=False)
+    message = next(action for action in state.actions if action.type == "message")
+
+    assert "预计18:28到" in message.summary
+    assert "预计10:28到" not in message.summary
+
+
 @pytest.mark.asyncio
 async def test_completed_tool_state_survives_final_model_timeout() -> None:
     class ToolThenTimeoutGraph:
@@ -263,6 +280,26 @@ async def test_ac_temperature_and_close_commands_are_deterministic() -> None:
     assert closed.called_tools == ["control_ac"]
     assert closed.state.vehicle_state.ac_on is False
     assert "空调已关闭" in closed.reply
+
+
+@pytest.mark.asyncio
+async def test_ac_mode_and_fan_commands_are_written_to_world_state() -> None:
+    agent = AuriAgent(Settings(llm_enabled=False, openai_api_key=""))
+
+    result = await agent.handle(
+        "空调调到26度制冷大风",
+        initial_state("demo_ac_mode_fan"),
+        source="mobile",
+        event_id="evt_ac_mode_fan",
+    )
+
+    assert result.called_tools == ["control_ac"]
+    assert result.state.vehicle_state.ac_on is True
+    assert result.state.vehicle_state.ac_target_temp == 26
+    assert result.state.vehicle_state.ac_mode == "cool"
+    assert result.state.vehicle_state.fan_speed == "high"
+    assert "26℃" in result.state.output.conclusion
+    assert "已经同步" in result.state.output.conclusion
 
 
 @pytest.mark.asyncio

@@ -50,7 +50,7 @@ fun SplashScreen(onSplashFinished: () -> Unit) {
             BuildConfig.AGENT_API_BASE_URL.isBlank() ->
                 "未配置 API 地址\n请在 build.gradle.kts 中设置 AGENT_API_BASE_URL"
             BuildConfig.AGENT_API_TOKEN.isBlank() && !BuildConfig.USE_MOCK_AGENT ->
-                "未配置 API Token\n请在 build.gradle.kts 中设置 AGENT_API_TOKEN"
+                "未配置 API Token\n请设置 AURI_AGENT_API_TOKEN 环境变量或用户级 Gradle 属性"
             else -> null
         }
     }

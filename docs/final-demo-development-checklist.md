@@ -41,7 +41,7 @@
 
 - **Owner**：Agent / 后端；项目负责人做最终选择。
 - **优先级**：P0，第一顺位。
-- **当前情况**：已将手机、车机、控制台和 README 的 canonical URL 统一为 `https://auri-agent-api.onrender.com`；`auri-langchain-agent-api` 仅作为负责人控制的备用实例。仍需补充服务构建标识并完成三端同 Session 验收。
+- **当前情况（2026-08-03 已完成代码整改）**：手机、车机、控制台和 README 使用同一 canonical URL；`/health` 已提供服务名、构建 SHA 和启动时间，三端本地隔离 E2E 已验证同 Session/revision。备用实例仍只由负责人统一切换，正式公网版本待部署后复验。
 - **要做**：
   - 保持手机、车机、控制台、README、脚本和 Render 配置继续使用 canonical URL。
   - 备用实例不参与同场联调，切换必须由负责人统一通知。
@@ -53,7 +53,7 @@
 
 - **Owner**：手机开发 A、手机开发 B；Agent Review。
 - **优先级**：P0。
-- **当前情况**：快速创建先写 LocalTaskStore，再用空 sessionId 异步请求后端，异常还会被吞掉。日历合并本地和后端任务时 ID 不同，可能出现“手机看见、车机和 Agent 不知道”或重复任务。
+- **当前情况（2026-08-03 已完成代码整改）**：快速创建只向当前 Session 提交 `task.created.payload.text`，由 Agent 解析并写入 World State；日历不再合并 `LocalTaskStore`。失败请求保留原 Event 并复用 `event_id` 重试，未取得 Session 时不发送。
 - **要做**：
   - 后端 World State 成为 Demo 任务的唯一权威来源。
   - 提交前从 Repository 获取当前 session_id，不发送空 Session。
@@ -67,7 +67,7 @@
 
 - **Owner**：手机开发 B。
 - **优先级**：P0。
-- **当前情况**：ChatViewModel 首次收到非空闲状态时会调用 session reset。手机晚加入或重连可能清空控制台和车机正在演示的状态。
+- **当前情况（2026-08-03 已完成代码整改）**：`ChatViewModel` 不再调用 Session reset；手机启动和重连直接订阅现有 World State。Reset API 仅保留在 Repository，供 Demo Console 的显式重置流程使用。
 - **要做**：
   - 删除启动自动 reset 逻辑。
   - 重置只允许 Demo 控制台显式执行，并增加二次确认。
@@ -92,8 +92,7 @@
 
 ### AGENT-P0-01：Chat 使用统一 Runtime 写入路径
 
-- **已有基础**：LangChain 受控工具和 Chat SSE 已存在。
-- **问题**：Chat 层直接访问 Runtime 私有状态、锁、事件集合和广播方法，绕过公开事件提交路径；并发时可能覆盖状态，甚至提交失败后仍回复成功。
+- **当前情况（2026-08-03 已完成代码整改）**：`AgentRuntime.submit_chat` 统一处理 Session、revision 冲突、事件幂等、提交和广播；Chat 适配层只格式化已提交结果。`clientEventId` 不同 payload 冲突返回 409，Agent 提交前失败返回 503 且不产生 `done`。
 - **开发**：
   - 在 AgentRuntime 增加公开的自然语言提交方法。
   - 所有自然语言输入使用同一 Session 校验、revision 冲突检测、事件幂等和广播逻辑。
@@ -103,8 +102,7 @@
 
 ### AGENT-P0-02：统一确认接口和错误语义
 
-- **已有基础**：标准 confirm 有 owner、过期和幂等校验。
-- **问题**：Chat confirm 当前把所有异常转成 HTTP 200 和 accepted=false。
+- **当前情况（2026-08-03 已完成代码整改）**：`/v1/chat/confirm` 复用 Runtime confirmation ledger，校验 Session、owner 和 expiry，保留 `WRONG_SURFACE`、`EXPIRED`、`NOT_FOUND` 等 404/409 语义；重复确认不重复执行。
 - **开发**：
   - 手机聊天确认复用标准 Runtime confirm。
   - 保留 400、404、409、401 和 WRONG_SURFACE、EXPIRED、NOT_FOUND 等错误码。
@@ -114,7 +112,7 @@
 
 ### AGENT-P0-03：冻结 Chat SSE 契约
 
-- **问题**：contracts/openapi.yaml 尚未正式描述 Chat 接口。
+- **当前情况（2026-08-03 已完成代码整改）**：`contracts/openapi.yaml` 已冻结 `/v1/chat`、`/v1/chat/sync`、`/v1/chat/confirm` 和六类 SSE frame；Android 的 SSE 与同步兜底复用同一个 `clientEventId`，业务卡片只消费 World State。
 - **开发**：
   - 定义请求字段、事件类型、命名、结束条件、错误事件和重连策略。
   - 冻结 text_delta、tool_call、tool_result、confirmation_required、done、error。
@@ -134,6 +132,8 @@
 
 ### AGENT-P0-05：可靠的 LLM 降级
 
+- **当前情况（2026-08-03 已完成代码整改）**：`/health` 已区分配置、最近模式、最近供应商成功时间、fallback 原因和 `UPSTREAM_AUTH / RATE_LIMIT / 5XX / TIMEOUT` 稳定错误码；错误正文和密钥不进入健康响应。确定性 fallback 继续覆盖主线。
+
 - **当前风险**：部署检查曾出现 llm_last_mode=fallback；health 为 200 不能证明模型已真实连通。
 - **开发**：
   - health 区分“配置存在”“最近调用成功”“最近 fallback 原因”。
@@ -143,6 +143,8 @@
 - **验收**：正常时两条不同请求产生不同回复；关闭 LLM 后 happy path 仍能完成，并明确显示降级。
 
 ### AGENT-P0-06：补齐自动化测试
+
+- **当前情况（2026-08-03）**：Agent API 共 45 项测试在无 Token 和全局 Token 两种环境均通过，已覆盖 Chat 鉴权、空消息、Session mismatch、SSE done、幂等冲突、并发 revision、提交失败、确认 owner/expiry/10 次重复、手机任务重试、高德 Origin、LLM 错误分类、异常 fixture 和生活服务越权保护。Android ViewModel 测试已补充，仍需在具备 JDK/Android SDK 的 CI 或开发机执行。
 
 至少新增：
 
@@ -204,7 +206,7 @@
 
 ### MOBILE-A-P0-05：Profile 真正可修改
 
-- **当前情况**：Profile 页面主要只读取预设值。
+- **当前情况（2026-08-03 已完成代码整改）**：Profile 页面已调用 `PUT /v1/profile`，按后端返回的完整 World State 读取 `profile`；同步失败回滚本地乐观更新。
 - 增加效率型、品质型两个稳定预设，调用 PUT profile。
 - 修改后显示已同步；失败不能只改本地文案。
 - Profile 影响语气、预算、配送和替代策略，但不影响安全权限。
@@ -345,6 +347,7 @@
 - 当前 STAGE_VIEW 中硬编码的 ETA、消息、动作结果和导航数据改为真实字段，或明确标注视觉占位。
 - 不在 HMI 推演下一 stage，不自行创建 confirmation。
 - **验收**：相同快照渲染稳定；切换 Session 后不保留上一轮草稿。
+- **当前情况（2026-08-03）**：任务、ETA、风险、语音、动作、订单、腕表、座舱和可选导航对象均从 Agent 快照读取；任务支持 0-N 项。高德提供真实底图、路线、交通与道路信息，车辆位置仍由 `navigation.progress` 的 Demo 回放驱动，界面已明确标注，不冒充真实 GPS。
 
 ### HMI-P0-03：唯一主交互端
 
@@ -379,6 +382,15 @@
 ### HMI-P1-01：浏览器回归
 
 - 覆盖快照渲染、主端切换、pending confirm、401、SSE 中断、重复 revision 和 Session 切换。
+
+### HMI-P0-08：座舱控制与跨端同步
+
+- HMI 仅提供 AC 开关、温度、模式和风量，不把商品、长消息或复杂车辆设置搬入驾驶主屏。
+- 控件先形成本地待提交草稿；点击唯一主按钮后提交 `vehicle.control` 标准 Event，禁止浏览器直接改 World State。
+- Agent 校验 `source=vehicle_hmi`、允许字段、16-30°C 温度和枚举值，成功后统一写入 `vehicle_state` 并增加 revision。
+- 手机和 HMI 使用同一个 Session 的 SSE 快照显示相同状态；失败时保留上一版状态并给出低干扰错误。
+- 相同 `event_id` 重试必须返回 duplicate，不得重复增加 revision。
+- **当前情况（2026-08-03）**：Schema、Pydantic、Runtime、HMI Client、座舱 UI 和后端/浏览器自动化测试已完成；真实手机与目标车机同场同步仍需在部署新版 Agent 后验收。
 
 ## 9. Demo 控制台
 
@@ -435,6 +447,8 @@
 
 ### CONTRACT-P0-02：正常和异常夹具
 
+- **当前情况（2026-08-03 已完成代码整改）**：除 happy path 外，已新增 wrong surface、duplicate event、duplicate confirmation、over budget、out of stock、new session、offline/reconnect 七类无隐私 fixture，并由 Agent 测试检查完整性和凭据泄漏。
+
 - 保留完整 happy path。
 - 新增 wrong surface、duplicate event、duplicate confirmation、over budget、out of stock、new session、offline/reconnect。
 - 每个夹具写明输入、预期 stage、revision、主交互端和可确认动作。
@@ -452,6 +466,7 @@
 - 参与：Agent、手机 B、车机。
 - 手机创建任务；控制台和 HMI 同步相同 Session、revision 和 tasks。
 - 暂时不接语音和腕表，先证明共享状态闭环。
+- 座舱控制追加验收：HMI 设置 23.5°C、制冷、高风量后，手机和 HMI 必须在相同 revision 显示一致 `vehicle_state`。
 
 ### INTEGRATION-P0-02：主交互端交接
 

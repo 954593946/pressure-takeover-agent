@@ -1,0 +1,10 @@
+{
+  "scenario": "over-budget",
+  "purpose": "预算超限时方案可解释但不得执行订单。",
+  "steps": [
+    {"kind": "event", "type": "service.mock.config", "source": "demo_console", "payload": {"mode": "over_budget"}},
+    {"kind": "event", "type": "task.created", "source": "mobile", "payload": {"text": "之后去超市采购"}},
+    {"kind": "event", "type": "user.utterance", "source": "mobile", "payload": {"text": "帮我处理，先准备方案"}}
+  ],
+  "expected": {"budget_status": "over_budget", "order_status": "blocked", "real_payment": false}
+}

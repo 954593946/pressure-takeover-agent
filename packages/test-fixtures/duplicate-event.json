@@ -1,0 +1,9 @@
+{
+  "scenario": "duplicate-event",
+  "purpose": "网络重试复用 event_id，不重复创建任务或推进 revision。",
+  "steps": [
+    {"kind": "event", "event_id": "fixture_duplicate_event", "type": "task.created", "source": "mobile", "payload": {"text": "今天18:10接孩子"}},
+    {"kind": "event", "event_id": "fixture_duplicate_event", "type": "task.created", "source": "mobile", "payload": {"text": "今天18:10接孩子"}}
+  ],
+  "expected": {"second_duplicate": true, "revision_delta": 1, "task_count": 1}
+}

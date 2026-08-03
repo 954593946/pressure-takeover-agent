@@ -11,6 +11,98 @@ components:
       type: apiKey
       in: header
       name: X-Agent-Token
+  schemas:
+    ChatRequest:
+      type: object
+      additionalProperties: false
+      required: [message, inputMode, clientEventId]
+      properties:
+        message: {type: string, minLength: 1, maxLength: 4000}
+        inputMode: {enum: [voice, text], default: text}
+        sessionId:
+          type: [string, 'null']
+          description: Active World State session. Omit only during initial bootstrap.
+        clientEventId:
+          type: string
+          minLength: 8
+          maxLength: 128
+          description: Client-generated idempotency key. Every retry and sync fallback must reuse it.
+    ChatResponse:
+      type: object
+      additionalProperties: false
+      required: [sessionId, responseText, revision, duplicate]
+      properties:
+        sessionId: {type: string}
+        responseText: {type: string}
+        revision: {type: integer, minimum: 0}
+        duplicate: {type: boolean}
+    ChatConfirmRequest:
+      type: object
+      additionalProperties: false
+      required: [sessionId, confirmationId, decision]
+      properties:
+        sessionId: {type: string, minLength: 1}
+        confirmationId: {type: string, minLength: 1}
+        decision: {enum: [accept, reject, accepted, rejected]}
+    ChatConfirmResponse:
+      type: object
+      additionalProperties: false
+      required: [accepted, revision, duplicate]
+      properties:
+        accepted: {type: boolean}
+        revision: {type: integer, minimum: 0}
+        duplicate: {type: boolean}
+    ChatStreamEvent:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [type, content]
+          properties:
+            type: {const: text_delta}
+            content: {type: string}
+        - type: object
+          additionalProperties: false
+          required: [type, toolCallId, function]
+          properties:
+            type: {const: tool_call}
+            toolCallId: {type: string}
+            function:
+              type: object
+              required: [name, arguments]
+              properties:
+                name: {type: string}
+                arguments: {type: string}
+        - type: object
+          additionalProperties: false
+          required: [type, toolCallId, success, summary]
+          properties:
+            type: {const: tool_result}
+            toolCallId: {type: string}
+            success: {type: boolean}
+            summary: {type: string}
+        - type: object
+          additionalProperties: false
+          required: [type, confirmationId, prompt, actionIds]
+          properties:
+            type: {const: confirmation_required}
+            confirmationId: {type: string}
+            prompt: {type: string}
+            actionIds: {type: array, items: {type: string}}
+        - type: object
+          additionalProperties: false
+          required: [type, sessionId, revision]
+          properties:
+            type: {const: done}
+            sessionId: {type: string}
+            revision: {type: integer, minimum: 0}
+        - type: object
+          additionalProperties: false
+          required: [type, code, message, retryable]
+          properties:
+            type: {const: error}
+            code: {type: string}
+            message: {type: string}
+            retryable: {type: boolean}
 security:
   - TeamToken: []
 paths:
@@ -49,6 +141,68 @@ paths:
           content:
             text/event-stream:
               schema: {type: string}
+  /v1/chat:
+    post:
+      operationId: streamChat
+      description: >-
+        Commits one idempotent natural-language event through AgentRuntime, then streams
+        presentation events. Business state is authoritative only in /v1/state and /v1/stream.
+        A reconnect or fallback must reuse clientEventId.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChatRequest'}
+      responses:
+        '200':
+          description: SSE frames end with exactly one done event.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Each data frame validates as ChatStreamEvent.
+        '400': {description: Empty or invalid chat input.}
+        '401': {description: Missing or invalid team token.}
+        '409': {description: Session mismatch, revision conflict, or reused idempotency key.}
+        '503': {description: Agent failed before committing World State; no success frame is emitted.}
+  /v1/chat/sync:
+    post:
+      operationId: submitChatSynchronously
+      description: Non-streaming transport fallback. Reuse the same clientEventId used by /v1/chat.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChatRequest'}
+      responses:
+        '200':
+          description: Original idempotent Chat result.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChatResponse'}
+        '400': {description: Empty or invalid chat input.}
+        '401': {description: Missing or invalid team token.}
+        '409': {description: Session mismatch, revision conflict, or reused idempotency key.}
+        '503': {description: Agent failed before committing World State.}
+  /v1/chat/confirm:
+    post:
+      operationId: confirmChatActionGroup
+      description: Mobile adapter over the same confirmation ledger and owner checks as /v1/confirm.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChatConfirmRequest'}
+      responses:
+        '200':
+          description: Confirmation accepted; duplicates return the original revision without executing twice.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChatConfirmResponse'}
+        '400': {description: Invalid decision or request.}
+        '401': {description: Missing or invalid team token.}
+        '404': {description: Confirmation not found.}
+        '409': {description: Session mismatch, expired confirmation, or wrong owner surface.}
   /v1/confirm:
     post:
       operationId: confirmActionGroup

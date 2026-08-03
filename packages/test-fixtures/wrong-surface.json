@@ -1,0 +1,10 @@
+{
+  "scenario": "wrong-surface",
+  "purpose": "驾驶中确认权属于车机，手机确认必须被拒绝。",
+  "steps": [
+    {"kind": "event", "type": "scene.vehicle_entered", "source": "demo_console", "payload": {}},
+    {"kind": "event", "type": "user.utterance", "source": "mobile", "payload": {"text": "帮我处理，先准备方案"}},
+    {"kind": "chat_confirm", "sessionId": "$session_id", "confirmationId": "$confirmation_id", "decision": "accept"}
+  ],
+  "expected": {"http_status": 409, "error_code": "WRONG_SURFACE", "confirmation_status": "pending"}
+}

@@ -10,7 +10,7 @@ import retrofit2.http.POST
 interface ChatApiService {
 
     /** Submit a chat message (non-streaming fallback). Returns the full response. */
-    @POST("v1/chat")
+    @POST("v1/chat/sync")
     suspend fun sendMessage(@Body request: ChatRequest): ChatResponse
 
     /** Confirm or reject a pending action. */
@@ -25,6 +25,7 @@ data class ChatRequest(
     val message: String,
     val inputMode: String = "text",
     val sessionId: String? = null,
+    val clientEventId: String,
 )
 
 @kotlinx.serialization.Serializable
@@ -32,6 +33,7 @@ data class ChatResponse(
     val sessionId: String,
     val responseText: String,
     val revision: Int,
+    val duplicate: Boolean = false,
 )
 
 @kotlinx.serialization.Serializable
@@ -45,4 +47,5 @@ data class ConfirmRequest(
 data class ConfirmResponse(
     val accepted: Boolean,
     val revision: Int,
+    val duplicate: Boolean = false,
 )

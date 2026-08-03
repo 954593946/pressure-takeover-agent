@@ -27,7 +27,7 @@ interface AgentApiService {
     suspend fun resetSession(@Body body: ResetRequest): WorldState
 
     @PUT("v1/profile")
-    suspend fun updateProfile(@Body profile: Profile): Profile
+    suspend fun updateProfile(@Body profile: Profile): WorldState
 }
 
 @kotlinx.serialization.Serializable

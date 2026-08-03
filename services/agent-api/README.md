@@ -26,10 +26,17 @@ py -3.11 -m venv .venv
 - `GET http://127.0.0.1:8000/v1/state`
 - `GET http://127.0.0.1:8000/v1/stream`（SSE）
 - `WS  ws://127.0.0.1:8000/v1/ws`
+- `POST http://127.0.0.1:8000/v1/chat`（手机 Chat SSE，要求 `clientEventId`）
+- `POST http://127.0.0.1:8000/v1/chat/sync`（断流同步兜底，复用同一 `clientEventId`）
+- `POST http://127.0.0.1:8000/v1/chat/confirm`（复用标准确认 Ledger）
 
 `GET /health` 中的 `llm_framework=langchain` 表示本构建使用 LangChain。`llm_last_mode=langchain_agent` 表示最近一次完整走过模型；`deterministic_tool` 表示“打开/关闭/调节空调”等明确低风险指令直接走受控工具，不受历史消息或模型网络波动影响；`langchain_agent_fallback_reply` 表示模型已选择并执行工具、但最终文案超时后使用了状态兜底；`fallback` 表示模型调用前失败。`agent_last_tools` 会列出最近实际调用的工具名。
 
+Health 还提供 `llm_last_success_at`、`llm_last_fallback_reason` 和 `llm_last_error_code`。错误码只使用 `UPSTREAM_AUTH`、`UPSTREAM_RATE_LIMIT`、`UPSTREAM_5XX`、`UPSTREAM_TIMEOUT`、`UPSTREAM_ERROR` 或 `LLM_NOT_CONFIGURED`，不会返回供应商响应正文、Key 或用户文本。
+
 完整工具、确认和 Event 边界见 [`contracts/tool-calling-spec.md`](../../contracts/tool-calling-spec.md)。
+
+导航位置使用可选的 `WorldState.navigation`：Agent 发布路线对应任务、起终点坐标、来源和模拟标识，HMI 只读消费。字段定义、数据流、兼容和隐私边界见 [`docs/navigation-location-contract.md`](../../docs/navigation-location-contract.md)。
 
 ## 配置
 
@@ -51,8 +58,8 @@ DEMO_MODE=true
 ```dotenv
 AMAP_JS_API_KEY=<Web端 JS API Key>
 AMAP_SECURITY_JS_CODE=<安全密钥>
-AMAP_PUBLIC_BASE_URL=https://auri-langchain-agent-api.onrender.com
-AMAP_ALLOWED_ORIGINS=https://wangwang20.github.io,http://127.0.0.1:5174,http://localhost:5174
+AMAP_PUBLIC_BASE_URL=https://auri-agent-api.onrender.com
+AMAP_ALLOWED_ORIGINS=https://954593946.github.io,https://wangwang20.github.io,http://127.0.0.1:5174,http://localhost:5174
 ```
 
 接口职责：
@@ -99,15 +106,13 @@ WebSocket 客户端优先使用 `X-Agent-Token` 请求头；浏览器原生 WebS
 部署完成后，客户端配置改为：
 
 ```dotenv
-AGENT_API_BASE_URL=https://auri-langchain-agent-api.onrender.com
-AGENT_STREAM_URL=https://auri-langchain-agent-api.onrender.com/v1/stream
+AGENT_API_BASE_URL=https://auri-agent-api.onrender.com
+AGENT_STREAM_URL=https://auri-agent-api.onrender.com/v1/stream
 ```
 
 实际子域名以 Render 分配结果为准。所有 `/v1/*` 请求继续携带 `X-Agent-Token`；WebSocket 使用 `wss://<Render 域名>/v1/ws`。
 
-仓库根目录的 `render-langchain.yaml` 用于创建不影响旧服务的独立 LangChain 服务。当前公网地址为 `https://auri-langchain-agent-api.onrender.com`，已验证 `/health`、团队令牌鉴权和两条不同自然语言任务，均真实进入 `langchain_agent` 模式。PR 合并后应把 Render 服务的代码分支切到 `main`；不要把 Bosch Key 写进 YAML、README 或客户端。
-
-旧版 `https://auri-agent-api.onrender.com` 仅作为回退服务；新联调默认使用 LangChain 公网服务。
+团队当前唯一 canonical 地址是 `https://auri-agent-api.onrender.com`，必须与根 README、手机、HMI 和 Demo Console 保持一致。仓库根目录的 `render-langchain.yaml` 用于维护独立的 LangChain 备用服务 `https://auri-langchain-agent-api.onrender.com`；只有负责人明确切换并通知所有端时才能使用，不能由单个客户端自行改成备用地址。不要把 Bosch Key 写进 YAML、README 或客户端。
 
 免费实例适合团队开发联调，但空闲后会休眠，首次请求可能需要约一分钟唤醒；休眠、重启或重新部署都会清空当前进程内 World State。正式演示前应提前唤醒并执行一次标准场景重置，或临时升级到不会空闲休眠的实例。
 
@@ -143,6 +148,6 @@ AGENT_STREAM_URL=https://auri-langchain-agent-api.onrender.com/v1/stream
 
 - 当前状态存储为进程内存，适合六周单实例 Demo；生产化前需换成持久存储并增加事务锁。
 - 消息、商品、库存、价格和订单均为显著标注的模拟数据。
-- SSE 是 P0 主实时通道，同时提供 `/v1/ws` 供需要 WebSocket 的客户端联调。
+- SSE 是 P0 主实时通道：订阅后立即返回当前 World State，并每 15 秒发送注释心跳，避免公网代理关闭空闲连接；同时提供 `/v1/ws` 供需要 WebSocket 的客户端联调。
 - LangChain Checkpointer 和 World State 当前都在单进程内存中；Render 重启或扩成多实例前必须迁移到共享持久存储。
 - 工具是受控业务入口；新增工具必须同时定义权限、幂等键、确认边界、失败结果和测试，不能把任意 Python/HTTP 能力直接交给模型。

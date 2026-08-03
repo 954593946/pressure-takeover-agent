@@ -95,6 +95,33 @@
         "fan_speed": {"enum": ["low", "medium", "high"], "default": "medium"}
       }
     },
+    "GeoPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "longitude", "latitude"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "longitude": {"type": "number", "minimum": -180, "maximum": 180},
+        "latitude": {"type": "number", "minimum": -90, "maximum": 90},
+        "address": {"type": ["string", "null"]}
+      }
+    },
+    "NavigationState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route_id", "task_id", "origin", "destination", "source", "is_simulated", "updated_at"],
+      "properties": {
+        "route_id": {"type": "string", "minLength": 1},
+        "task_id": {"type": "string", "minLength": 1},
+        "origin": {"$ref": "#/$defs/GeoPoint"},
+        "destination": {"$ref": "#/$defs/GeoPoint"},
+        "current_location": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/GeoPoint"}]},
+        "progress": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "source": {"enum": ["agent", "vehicle_api", "demo_fixture"]},
+        "is_simulated": {"type": "boolean"},
+        "updated_at": {"type": "string", "format": "date-time"}
+      }
+    },
     "UtteranceState": {
       "type": "object",
       "additionalProperties": false,
@@ -184,7 +211,8 @@
         "last_utterance": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/UtteranceState"}]},
         "action_ledger": {"type": "array", "items": {"type": "string"}},
         "service_mock_mode": {"enum": ["success", "out_of_stock", "over_budget"]},
-        "vehicle_state": {"$ref": "#/$defs/VehicleState"}
+        "vehicle_state": {"$ref": "#/$defs/VehicleState"},
+        "navigation": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/NavigationState"}]}
       }
     }
   }

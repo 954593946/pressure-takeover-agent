@@ -7,7 +7,7 @@
 本项目使用高德能力的边界是：
 
 - 高德负责真实底图、道路名称、驾车路线几何、实时交通图层和车辆沿路线移动。
-- Agent World State 继续负责场景、ETA、晚到分钟数、压力等级、任务重排、动作组和确认入口。
+- Agent World State 继续负责场景、ETA、晚到分钟数、压力等级、任务重排、动作组、确认入口和导航起终点。
 - 高德接口失败、Key 缺失、弱网或现场断网时，自动保留当前 SVG 离线演示地图。
 
 高德不能替代 Agent 的现实判断，也不能直接修改 `stage`、`risk`、`tasks`、`actions` 或 `confirmation`。
@@ -17,8 +17,8 @@
 代码位置：
 
 ```text
-apps/vehicle-hmi/amap-adapter.js
-apps/vehicle-hmi/amap-adapter.test.cjs
+apps/vehicle-hmi/src/amap-adapter.js
+apps/vehicle-hmi/tests/amap-adapter.test.cjs
 ```
 
 已实现：
@@ -34,7 +34,7 @@ apps/vehicle-hmi/amap-adapter.test.cjs
 | 地图操作 | Map zoom / fit view | 右侧 `+`、`-`、`北`按钮真实控制在线地图 |
 | 失败降级 | HMI adapter | 自动切回 SVG 离线演示地图 |
 
-当前 Demo 起点采用博世公开办公地址“江苏省苏州工业园区星龙街455号”，坐标为高德公开地点页对应位置；终点使用非个人化冻结演示坐标并标记为“阳光小学”，不代表任何真实儿童学校，不提交家庭、联系人或个人轨迹。
+当前 Demo 起点采用博世公开办公地址“江苏省苏州工业园区星龙街455号”，坐标为高德公开地点页对应位置；终点使用非个人化冻结演示坐标并标记为“阳光小学”，不代表任何真实儿童学校，不提交家庭、联系人或个人轨迹。起终点由 `WorldState.navigation` 发布，详细契约见 [`navigation-location-contract.md`](navigation-location-contract.md)。
 
 ## 申请正确的 Key
 
@@ -65,12 +65,12 @@ HMI 默认配置 `mapProvider=auto`。页面启动顺序：
 
 ```text
 读取当前浏览器保存的 Agent API 与 Team Token
--> GET /v1/map-config
+-> 并行启动 /v1/state、/v1/stream 与 GET /v1/map-config
 -> 获得 Web JS Key、/_AMapService 地址和 normal 样式
 -> 设置 window._AMapSecurityConfig.serviceHost
 -> 加载高德 JS API 2.0
 -> 创建 2D 地图并规划一次驾车路线
--> 再连接 /v1/state 与 /v1/stream
+-> 地图失败不阻塞 World State 和车机交互
 ```
 
 `/v1/map-config` 不返回 Security JS Code。高德服务请求由 Agent `/_AMapService` 代理注入安全密钥，并限制允许的 HMI Origin。
@@ -97,15 +97,19 @@ AMAP_ALLOWED_ORIGINS=http://127.0.0.1:5174,http://localhost:5174
 成功时：
 
 ```text
-window.AURI_HMI.getMapStatus()
+window.AURI_HMI_NEXT.getState().map
 ```
 
 应返回：
 
 ```json
 {
-  "mode": "online",
-  "message": "高德在线地图已连接"
+  "status": "online",
+  "cameraMode": "follow",
+  "usage": {
+    "mapInitializations": 1,
+    "routePlans": 1
+  }
 }
 ```
 
@@ -113,8 +117,8 @@ window.AURI_HMI.getMapStatus()
 
 ```json
 {
-  "mode": "offline",
-  "message": "具体失败原因"
+  "status": "offline",
+  "cameraMode": "overview"
 }
 ```
 
@@ -125,13 +129,13 @@ window.AURI_HMI.getMapStatus()
 公网页面：
 
 ```text
-https://wangwang20.github.io/auri-pressure-takeover-web/apps/vehicle-hmi/
+https://954593946.github.io/pressure-takeover-agent/apps/vehicle-hmi/
 ```
 
 高德控制台需要允许对应公网域名。至少检查：
 
 ```text
-wangwang20.github.io
+954593946.github.io
 ```
 
 如果后续迁移到团队域名或其他静态托管，需要同步更新高德 Key 的域名限制。
@@ -221,15 +225,15 @@ HMI map status = online
 离线和适配器逻辑：
 
 ```bash
-node --check apps/vehicle-hmi/amap-adapter.js
-node --check apps/vehicle-hmi/app.js
-node apps/vehicle-hmi/amap-adapter.test.cjs
+node --check apps/vehicle-hmi/src/amap-adapter.js
+node --check apps/vehicle-hmi/auri-shell.js
+node apps/vehicle-hmi/tests/amap-adapter.test.cjs
 ```
 
 浏览器无 Key 回归标准：
 
 ```text
-map.mode = offline
+map.status = offline
 amapCanvas.hidden = true
 SVG 导航继续显示
 body.scrollWidth = body.clientWidth
@@ -299,7 +303,7 @@ Demo 使用建议：
 ```text
 计算整条路线每两个点之间的球面距离
 -> 建立累计距离表
--> 按 World State 阶段进度定位真实距离位置
+-> 按 World State navigation.progress 定位真实距离位置
 -> 在当前线段内插值车辆坐标
 -> 从同一坐标切分已行驶路线和剩余路线
 -> 计算前方拥堵段与地图视野中心

@@ -8,10 +8,11 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from jsonschema import Draft202012Validator
 
-from auri_agent.app import create_app
+from auri_agent.app import create_app, world_state_event_stream
 from auri_agent.config import Settings
 from auri_agent.llm import ExtractedTask, TaskExtraction, TaskParser
-from auri_agent.models import ConfirmationRequest, Event, initial_state, now
+from auri_agent.models import ConfirmationRequest, Event, GeoPoint, initial_state, now
+from auri_agent.observability import classify_provider_error
 from auri_agent.prompts import TASK_RIGIDITY_POLICY, build_agent_prompt
 from auri_agent.runtime import AgentRuntime
 
@@ -72,12 +73,47 @@ async def prepare_confirmation(client: AsyncClient) -> dict:
 @pytest.mark.asyncio
 async def test_health_never_exposes_key(client: AsyncClient) -> None:
     response = await client.get("/health")
+    body = response.json()
+    assert body["service_name"] == "auri-agent-api"
+    assert body["build_sha"]
+    assert body["started_at"].endswith("+00:00")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     assert response.json()["llm_framework"] == "langchain"
     assert response.json()["agent_tools_enabled"] is False
     assert response.json()["agent_last_tools"] == []
+    assert response.json()["llm_last_success_at"] is None
+    assert response.json()["llm_last_fallback_reason"] == "not_configured"
+    assert response.json()["llm_last_error_code"] == "LLM_NOT_CONFIGURED"
     assert "api_key" not in response.text.lower()
+
+
+def test_provider_error_classification_is_stable_and_non_sensitive() -> None:
+    class Response:
+        def __init__(self, status_code: int):
+            self.status_code = status_code
+
+    class ProviderError(RuntimeError):
+        def __init__(self, status_code: int, secret_message: str):
+            super().__init__(secret_message)
+            self.response = Response(status_code)
+
+    assert classify_provider_error(TimeoutError("secret timeout payload")) == (
+        "UPSTREAM_TIMEOUT",
+        "timeout",
+    )
+    assert classify_provider_error(ProviderError(401, "private credential")) == (
+        "UPSTREAM_AUTH",
+        "http_401",
+    )
+    assert classify_provider_error(ProviderError(429, "private quota")) == (
+        "UPSTREAM_RATE_LIMIT",
+        "http_429",
+    )
+    assert classify_provider_error(ProviderError(503, "private upstream body")) == (
+        "UPSTREAM_5XX",
+        "http_5xx",
+    )
 
 
 def test_task_rigidity_policy_is_shared_by_both_real_agent_paths() -> None:
@@ -116,6 +152,119 @@ async def test_mobile_voice_transcript_is_written_to_world_state() -> None:
 
 
 @pytest.mark.asyncio
+async def test_vehicle_hmi_control_updates_shared_world_state_idempotently(client: AsyncClient) -> None:
+    payload = await event(
+        client,
+        "evt_vehicle_climate",
+        "vehicle.control",
+        {"ac_on": True, "ac_target_temp": 23, "ac_mode": "cool", "fan_speed": "high"},
+        "vehicle_hmi",
+    )
+    first = await client.post("/v1/event", json=payload)
+    retry = await client.post("/v1/event", json=payload)
+
+    assert first.status_code == 202
+    assert retry.status_code == 202
+    assert retry.json()["duplicate"] is True
+    assert retry.json()["revision"] == first.json()["revision"]
+    vehicle = first.json()["state"]["vehicle_state"]
+    assert vehicle == {
+        "ac_on": True,
+        "ac_target_temp": 23.0,
+        "ac_mode": "cool",
+        "fan_speed": "high",
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("source", "payload"),
+    [
+        ("mobile", {"ac_on": True}),
+        ("vehicle_hmi", {"ac_target_temp": 31}),
+        ("vehicle_hmi", {"ac_mode": "eco"}),
+        ("vehicle_hmi", {"fan_speed": "maximum"}),
+        ("vehicle_hmi", {"unknown": True}),
+        ("vehicle_hmi", {}),
+    ],
+)
+async def test_vehicle_control_rejects_invalid_source_and_payload(client: AsyncClient, source: str, payload: dict) -> None:
+    response = await client.post(
+        "/v1/event",
+        json=await event(client, f"evt_invalid_vehicle_{source}_{len(payload)}", "vehicle.control", payload, source),
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] in {"INVALID_EVENT_SOURCE", "INVALID_VEHICLE_CONTROL"}
+
+
+def test_geo_point_rejects_invalid_coordinate_ranges() -> None:
+    with pytest.raises(ValueError):
+        GeoPoint(name="invalid longitude", longitude=181, latitude=31)
+    with pytest.raises(ValueError):
+        GeoPoint(name="invalid latitude", longitude=120, latitude=-91)
+
+
+@pytest.mark.asyncio
+async def test_agent_publishes_demo_navigation_contract_for_known_location(client: AsyncClient) -> None:
+    created = await client.post(
+        "/v1/event",
+        json=await event(client, "evt_route_task", "task.created", {"text": "今天18:10接孩子"}, "mobile"),
+    )
+    state = created.json()["state"]
+
+    assert state["navigation"]["route_id"] == "route_demo_task_pickup_child"
+    assert state["navigation"]["task_id"] == "task_pickup_child"
+    assert state["navigation"]["origin"]["address"] == "江苏省苏州工业园区星龙街455号"
+    assert state["navigation"]["origin"]["longitude"] == pytest.approx(120.791879)
+    assert state["navigation"]["destination"]["name"] == "阳光小学"
+    assert state["navigation"]["destination"]["latitude"] == pytest.approx(31.3048)
+    assert state["navigation"]["source"] == "demo_fixture"
+    assert state["navigation"]["is_simulated"] is True
+    assert state["navigation"]["progress"] == pytest.approx(0.03)
+    assert state["navigation"]["updated_at"] == state["updated_at"]
+
+    entered = await client.post(
+        "/v1/event",
+        json=await event(client, "evt_route_vehicle", "scene.vehicle_entered", {}),
+    )
+    driving_state = entered.json()["state"]
+    assert driving_state["navigation"]["route_id"] == state["navigation"]["route_id"]
+    assert driving_state["navigation"]["progress"] == pytest.approx(0.32)
+    assert driving_state["navigation"]["updated_at"] == driving_state["updated_at"]
+
+
+@pytest.mark.asyncio
+async def test_agent_does_not_invent_coordinates_for_unknown_location(client: AsyncClient) -> None:
+    response = await client.post(
+        "/v1/event",
+        json=await event(
+            client,
+            "evt_unknown_route",
+            "task.created",
+            {
+                "tasks": [
+                    {
+                        "task_id": "task_private_location",
+                        "title": "拜访客户",
+                        "scheduled_at": None,
+                        "location": "客户临时地址",
+                        "task_type": "rigid",
+                        "priority": "high",
+                        "adjustable": False,
+                        "status": "pending",
+                        "waiting_party": ["客户"],
+                        "capability_tags": [],
+                    }
+                ]
+            },
+            "mobile",
+        ),
+    )
+    assert response.status_code == 202
+    assert response.json()["state"]["navigation"] is None
+
+
+@pytest.mark.asyncio
 async def test_fallback_never_invents_child_for_unrelated_pickup() -> None:
     parser = TaskParser(Settings(llm_enabled=False, openai_api_key=""))
     tasks = await parser.parse("今晚二十点去机场接从北京回来的同事")
@@ -151,6 +300,9 @@ async def test_langchain_agent_output_is_normalised_to_public_task_contract() ->
     tasks = await parser.parse("今晚二十点去机场接从北京回来的同事")
 
     assert parser.last_mode == "langchain_agent"
+    assert parser.last_success_at is not None
+    assert parser.last_fallback_reason is None
+    assert parser.last_error_code is None
     assert [task.title for task in tasks] == ["去机场接同事"]
     assert tasks[0].task_id == "task_agent_1"
     assert tasks[0].status == "pending"
@@ -171,6 +323,25 @@ async def test_shared_backend_requires_team_token() -> None:
     assert missing.status_code == 401
     assert wrong.status_code == 401
     assert allowed.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_world_state_stream_starts_with_snapshot_and_keeps_connection_alive() -> None:
+    runtime = AgentRuntime(Settings(llm_enabled=False, openai_api_key="", agent_shared_token=""))
+
+    class ConnectedRequest:
+        async def is_disconnected(self) -> bool:
+            return False
+
+    stream = world_state_event_stream(ConnectedRequest(), runtime, heartbeat_seconds=0.01)
+    initial = await asyncio.wait_for(anext(stream), timeout=0.2)
+    heartbeat = await asyncio.wait_for(anext(stream), timeout=0.2)
+    await stream.aclose()
+
+    assert initial.startswith("event: state.updated\ndata: ")
+    assert '"schema_version":"0.2.0"' in initial
+    assert heartbeat == ": heartbeat\n\n"
+    assert not runtime._subscribers
 
 
 @pytest.mark.asyncio
@@ -277,8 +448,39 @@ async def test_over_budget_order_is_not_confirmable(client: AsyncClient) -> None
     )).json()["state"]
     order_action = next(action for action in state["actions"] if action["type"] == "service_order")
     assert order_action["status"] == "blocked"
-    assert order_action["action_id"] not in state["confirmation"]["action_ids"]
+    assert state["confirmation"] is None or order_action["action_id"] not in state["confirmation"]["action_ids"]
     assert state["service_orders"][0]["error_code"] == "OVER_BUDGET"
+
+
+@pytest.mark.asyncio
+async def test_out_of_stock_order_is_not_confirmable_or_reported_as_executed(client: AsyncClient) -> None:
+    await client.post(
+        "/v1/event",
+        json=await event(client, "evt_stock_task", "task.created", {"text": "之后去超市采购"}, "mobile"),
+    )
+    await client.post(
+        "/v1/event",
+        json=await event(client, "evt_stock_mock", "service.mock.config", {"mode": "out_of_stock"}),
+    )
+    state = (
+        await client.post(
+            "/v1/event",
+            json=await event(
+                client,
+                "evt_stock_help",
+                "user.utterance",
+                {"text": "帮我处理，先准备方案"},
+                "mobile",
+            ),
+        )
+    ).json()["state"]
+
+    order_action = next(action for action in state["actions"] if action["type"] == "service_order")
+    assert order_action["status"] == "blocked"
+    assert state["confirmation"] is None or order_action["action_id"] not in state["confirmation"]["action_ids"]
+    assert state["service_orders"][0]["error_code"] == "OUT_OF_STOCK"
+    assert state["service_orders"][0]["status"] == "blocked"
+    assert "已下单" not in state["output"]["conclusion"]
 
 
 @pytest.mark.asyncio
@@ -324,3 +526,23 @@ def test_contract_examples_validate() -> None:
     event_example = json.loads((REPO_ROOT / "contracts" / "examples" / "confirmation-event.json").read_text(encoding="utf-8"))
     Draft202012Validator(world_schema, format_checker=Draft202012Validator.FORMAT_CHECKER).validate(world_example)
     Draft202012Validator(event_schema, format_checker=Draft202012Validator.FORMAT_CHECKER).validate(event_example)
+
+
+def test_vehicle_control_payload_is_frozen_in_event_schema() -> None:
+    schema = json.loads((REPO_ROOT / "contracts" / "event.schema.json").read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema, format_checker=Draft202012Validator.FORMAT_CHECKER)
+    base = {
+        "schema_version": "0.2.0",
+        "event_id": "evt_vehicle_schema",
+        "session_id": "schema_session",
+        "type": "vehicle.control",
+        "source": "vehicle_hmi",
+        "timestamp": "2026-08-03T14:30:00+08:00",
+        "payload": {"ac_on": True, "ac_target_temp": 23.5, "ac_mode": "cool", "fan_speed": "high"},
+    }
+
+    assert list(validator.iter_errors(base)) == []
+    assert list(validator.iter_errors({**base, "source": "mobile"}))
+    assert list(validator.iter_errors({**base, "payload": {"ac_target_temp": 31}}))
+    assert list(validator.iter_errors({**base, "payload": {"unknown": True}}))
+    assert list(validator.iter_errors({**base, "payload": {}}))

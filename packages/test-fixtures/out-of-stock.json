@@ -1,0 +1,10 @@
+{
+  "scenario": "out-of-stock",
+  "purpose": "缺货时显示受阻原因，不声明下单成功。",
+  "steps": [
+    {"kind": "event", "type": "service.mock.config", "source": "demo_console", "payload": {"mode": "out_of_stock"}},
+    {"kind": "event", "type": "task.created", "source": "mobile", "payload": {"text": "之后去超市采购"}},
+    {"kind": "event", "type": "user.utterance", "source": "mobile", "payload": {"text": "帮我处理，先准备方案"}}
+  ],
+  "expected": {"error_code": "OUT_OF_STOCK", "order_status": "blocked", "success_claimed": false}
+}

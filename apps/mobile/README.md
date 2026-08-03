@@ -16,7 +16,14 @@ bash setup-sherpa.sh
 
 > **模型和 APK 都不入 git**（`.gitignore` 已排除 `assets/models/` 和 `/app/build`）。克隆后必须跑 `setup-sherpa.sh` 才能编译。
 
-**Debug 构建默认连接 Render 后端**，也可切回本地 MockAgent（修改 `app/build.gradle.kts` 中 `USE_MOCK_AGENT` 为 `true`）。
+**Debug 构建默认连接 Render 后端**，也可切回本地 MockAgent（修改 `app/build.gradle.kts` 中 `USE_MOCK_AGENT` 为 `true`）。真实后端 Token 不写入仓库，构建前通过环境变量或未提交的用户级 Gradle 属性注入：
+
+```bash
+export AURI_AGENT_API_TOKEN="<team-token>"
+./gradlew assembleDebug
+```
+
+也可在用户目录的 `~/.gradle/gradle.properties` 中配置 `AURI_AGENT_API_TOKEN=<team-token>`。不要把真实 Token 写入项目内的 `gradle.properties`、源码或文档。
 
 ---
 
@@ -174,6 +181,10 @@ Agent API ──SSE/polling──→ WorldStateRepository
 User tap → ViewModel.submitEvent(Event)
     → POST /v1/event → server → new WorldState via SSE → UI updates
 ```
+
+快速创建任务不写本地日历缓存：ViewModel 从当前 World State 读取 `session_id`，提交带自然语言 `text` 的 `task.created`，只有后端接受后才显示已同步。断网重试复用原 `event_id`，日历只展示 World State 中的任务。
+
+Chat 每次用户输入生成一个 `clientEventId`。`/v1/chat` SSE 与 `/v1/chat/sync` 兜底必须复用该 ID，防止服务端已提交但客户端断流时重复执行；任务卡、风险卡和确认状态仍只认 World State。
 
 ---
 

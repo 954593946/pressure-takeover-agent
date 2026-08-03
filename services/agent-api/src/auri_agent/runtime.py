@@ -4,10 +4,11 @@ import asyncio
 from datetime import datetime
 from uuid import uuid4
 
-from .agent import AuriAgent
+from .agent import AgentRunResult, AuriAgent
 from .config import Settings
 from .engine import DomainError, RiskEngine, add_auxiliary_signal, consume_confirmation
 from .llm import TaskParser
+from .navigation import sync_navigation_state
 from .models import (
     ConfirmationRequest,
     Event,
@@ -37,8 +38,13 @@ class AgentRuntime:
         self.task_parser = TaskParser(settings)
         self.conversation_agent = AuriAgent(settings)
         self.llm_last_mode = "fallback"
+        self.llm_last_success_at: str | None = self.conversation_agent.last_success_at
+        self.llm_last_fallback_reason: str | None = self.conversation_agent.last_fallback_reason
+        self.llm_last_error_code: str | None = self.conversation_agent.last_error_code
         self._state = initial_state()
         self._event_ids: set[str] = set()
+        self._agent_results: dict[str, AgentRunResult] = {}
+        self._agent_requests: dict[str, tuple[str, str, str]] = {}
         self._lock = asyncio.Lock()
         self._subscribers: set[asyncio.Queue[WorldState]] = set()
 
@@ -67,6 +73,7 @@ class AgentRuntime:
             else:
                 parsed_tasks = await self.task_parser.parse(str(event.payload.get("text", "")))
                 self.llm_last_mode = self.task_parser.last_mode
+                self._sync_llm_observation(self.task_parser)
 
         async with self._lock:
             if event.event_id in self._event_ids:
@@ -104,6 +111,7 @@ class AgentRuntime:
                 source=event.source,
                 event_id=event.event_id,
             )
+            self._sync_llm_observation(self.conversation_agent)
 
             async with self._lock:
                 if event.event_id in self._event_ids:
@@ -118,10 +126,76 @@ class AgentRuntime:
                 self._event_ids.add(event.event_id)
                 self._touch(f"event:{event.event_id}")
                 state = self._state.model_copy(deep=True)
+                self._agent_results[event.event_id] = AgentRunResult(
+                    state=state.model_copy(deep=True),
+                    reply=result.reply,
+                    mode=result.mode,
+                    called_tools=list(result.called_tools),
+                )
+                self._agent_requests[event.event_id] = (
+                    event.session_id,
+                    str(event.payload.get("text", "")).strip(),
+                    "text" if event.payload.get("input_mode") == "text" else "voice",
+                )
             await self._broadcast(state)
             return EventAccepted(event_id=event.event_id, accepted=True, duplicate=False, revision=state.revision, state=state)
 
         raise RuntimeErrorWithCode("CONCURRENT_UPDATE", "state changed while the agent was planning; retry the event")
+
+    async def submit_chat(
+        self,
+        *,
+        message: str,
+        session_id: str | None,
+        input_mode: str,
+        client_event_id: str,
+    ) -> tuple[AgentRunResult, bool]:
+        text = message.strip()
+        if not text:
+            raise RuntimeErrorWithCode("EMPTY_MESSAGE", "chat message must not be empty")
+        if not client_event_id.strip():
+            raise RuntimeErrorWithCode("INVALID_EVENT_ID", "client_event_id is required")
+
+        current = await self.get_state()
+        if session_id is not None and session_id != current.session_id:
+            raise RuntimeErrorWithCode("SESSION_MISMATCH", "chat session_id does not match the active session")
+        event = Event(
+            event_id=client_event_id,
+            session_id=current.session_id,
+            type="user.utterance",
+            source="mobile",
+            timestamp=now(),
+            payload={"text": text, "input_mode": input_mode},
+        )
+        try:
+            accepted = await self._submit_agent_event(event)
+        except RuntimeErrorWithCode:
+            raise
+        except Exception as exc:
+            raise RuntimeErrorWithCode(
+                "AGENT_EXECUTION_FAILED",
+                "agent failed before committing a World State update",
+            ) from exc
+        async with self._lock:
+            result = self._agent_results.get(client_event_id)
+            original_request = self._agent_requests.get(client_event_id)
+            if result is None:
+                raise RuntimeErrorWithCode(
+                    "IDEMPOTENCY_KEY_REUSED",
+                    "client_event_id was already used by a non-chat event",
+                )
+            if original_request != (current.session_id, text, input_mode):
+                raise RuntimeErrorWithCode(
+                    "IDEMPOTENCY_KEY_REUSED",
+                    "client_event_id was reused with a different chat request",
+                )
+            snapshot = AgentRunResult(
+                state=result.state.model_copy(deep=True),
+                reply=result.reply,
+                mode=result.mode,
+                called_tools=list(result.called_tools),
+            )
+        return snapshot, accepted.duplicate
 
     def _apply_event(self, event: Event, parsed_tasks: list[Task] | None) -> None:
         payload = event.payload
@@ -183,6 +257,8 @@ class AgentRuntime:
         elif event.type == "driving.signal":
             if payload.get("harsh_brake") is True:
                 add_auxiliary_signal(self._state, "DRIVING_HARSH_BRAKE")
+        elif event.type == "vehicle.control":
+            self._apply_vehicle_control(event)
         elif event.type == "service.mock.config":
             mode = payload.get("mode", "success")
             if mode not in {"success", "out_of_stock", "over_budget"}:
@@ -211,19 +287,81 @@ class AgentRuntime:
         elif event.type == "session.reset":
             raise RuntimeErrorWithCode("USE_RESET_ENDPOINT", "use POST /v1/session/reset")
 
+    def _apply_vehicle_control(self, event: Event) -> None:
+        if event.source != "vehicle_hmi":
+            raise RuntimeErrorWithCode("INVALID_EVENT_SOURCE", "vehicle.control must originate from vehicle_hmi")
+
+        payload = event.payload
+        allowed = {"ac_on", "ac_target_temp", "ac_mode", "fan_speed"}
+        unknown = set(payload) - allowed
+        if unknown:
+            raise RuntimeErrorWithCode("INVALID_VEHICLE_CONTROL", f"unsupported vehicle control fields: {', '.join(sorted(unknown))}")
+        if not payload:
+            raise RuntimeErrorWithCode("INVALID_VEHICLE_CONTROL", "vehicle.control requires at least one field")
+
+        if "ac_on" in payload and not isinstance(payload["ac_on"], bool):
+            raise RuntimeErrorWithCode("INVALID_VEHICLE_CONTROL", "ac_on must be a boolean")
+        if "ac_target_temp" in payload:
+            value = payload["ac_target_temp"]
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not 16 <= float(value) <= 30:
+                raise RuntimeErrorWithCode("INVALID_VEHICLE_CONTROL", "ac_target_temp must be between 16 and 30")
+        if "ac_mode" in payload and payload["ac_mode"] not in {"auto", "cool", "heat", "fan"}:
+            raise RuntimeErrorWithCode("INVALID_VEHICLE_CONTROL", "ac_mode must be auto, cool, heat, or fan")
+        if "fan_speed" in payload and payload["fan_speed"] not in {"low", "medium", "high"}:
+            raise RuntimeErrorWithCode("INVALID_VEHICLE_CONTROL", "fan_speed must be low, medium, or high")
+
+        vehicle = self._state.vehicle_state
+        if "ac_on" in payload:
+            vehicle.ac_on = payload["ac_on"]
+        if "ac_target_temp" in payload:
+            vehicle.ac_target_temp = float(payload["ac_target_temp"])
+        if "ac_mode" in payload:
+            vehicle.ac_mode = payload["ac_mode"]
+        if "fan_speed" in payload:
+            vehicle.fan_speed = payload["fan_speed"]
+        if vehicle.ac_on and self._state.scene == Scene.OFF_VEHICLE:
+            self._state.scene = Scene.APPROACHING_VEHICLE
+
     async def confirm(self, request: ConfirmationRequest) -> tuple[WorldState, bool]:
+        return await self.confirm_for_session(request, session_id=None)
+
+    async def confirm_for_session(
+        self,
+        request: ConfirmationRequest,
+        *,
+        session_id: str | None,
+    ) -> tuple[WorldState, bool]:
+        expired_error: RuntimeErrorWithCode | None = None
+        expired_state: WorldState | None = None
         async with self._lock:
+            if session_id is not None and session_id != self._state.session_id:
+                raise RuntimeErrorWithCode("SESSION_MISMATCH", "confirmation session_id does not match the active session")
             duplicate = self._state.confirmation is not None and self._state.confirmation.status != "pending"
-            consume_confirmation(self._state, request)
-            if not duplicate:
-                self._touch(f"confirm:{request.confirmation_id}:{request.input_mode}")
-            expected_revision = self._state.revision
-            confirmed_state = self._state.model_copy(deep=True)
+            try:
+                consume_confirmation(self._state, request)
+            except RuntimeErrorWithCode as exc:
+                if exc.code != "EXPIRED":
+                    raise
+                self._touch(f"confirm_expired:{request.confirmation_id}")
+                expired_error = exc
+                expired_state = self._state.model_copy(deep=True)
+            if expired_error is not None:
+                confirmed_state = expired_state
+                expected_revision = self._state.revision
+            else:
+                if not duplicate:
+                    self._touch(f"confirm:{request.confirmation_id}:{request.input_mode}")
+                expected_revision = self._state.revision
+                confirmed_state = self._state.model_copy(deep=True)
+        if expired_error is not None and expired_state is not None:
+            await self._broadcast(expired_state)
+            raise expired_error
         if not duplicate:
             reply = await self.conversation_agent.compose_confirmation_reply(
                 confirmed_state,
                 decision=request.decision,
             )
+            self._sync_llm_observation(self.conversation_agent)
             async with self._lock:
                 if self._state.revision == expected_revision and self._state.output is not None:
                     self._state.output.conclusion = reply
@@ -247,14 +385,34 @@ class AgentRuntime:
         async with self._lock:
             self._state = initial_state(f"{scenario_id}_{uuid4().hex[:8]}")
             self._event_ids.clear()
+            self._agent_results.clear()
+            self._agent_requests.clear()
             state = self._state.model_copy(deep=True)
         await self._broadcast(state)
         return state
 
     def _touch(self, ledger_entry: str) -> None:
+        timestamp = now()
         self._state.revision += 1
-        self._state.updated_at = now()
+        self._state.updated_at = timestamp
+        sync_navigation_state(self._state, updated_at=timestamp)
         self._state.action_ledger.append(ledger_entry)
+
+    def _sync_llm_observation(self, provider: object) -> None:
+        success_at = getattr(provider, "last_success_at", None)
+        mode = getattr(provider, "last_mode", "")
+        if success_at is not None:
+            self.llm_last_success_at = success_at
+        if mode == "langchain_agent":
+            self.llm_last_fallback_reason = None
+            self.llm_last_error_code = None
+            return
+        fallback_reason = getattr(provider, "last_fallback_reason", None)
+        error_code = getattr(provider, "last_error_code", None)
+        if fallback_reason is not None:
+            self.llm_last_fallback_reason = fallback_reason
+        if error_code is not None:
+            self.llm_last_error_code = error_code
 
     async def subscribe(self) -> asyncio.Queue[WorldState]:
         queue: asyncio.Queue[WorldState] = asyncio.Queue(maxsize=10)

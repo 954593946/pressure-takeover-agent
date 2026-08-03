@@ -37,6 +37,8 @@ https://954593946.github.io/pressure-takeover-agent/apps/demo-console/
 
 第一次使用需填写团队 Agent API 和负责人单独提供的 Team Token。公网静态页面不包含 Token、OpenAI API Key 或后端环境变量。
 
+在同一个 GitHub Pages 域名下，Console 点击“保存配置”“连接 Agent”或“载入演示预置任务”后，正式 HMI 会复用同一浏览器连接配置。建议先配置 Console，再打开 HMI；两端应显示同一个 Session 和 revision。若 Console 与 HMI 分别运行在不同端口或域名，浏览器不会共享 `localStorage`，需要分别填写一次。
+
 ### 本机访问
 
 从仓库根目录启动静态服务：
@@ -95,6 +97,15 @@ Team Token: 留空，除非本地后端开启共享访问
 ```
 
 `State Sync` 应显示 `SSE 实时`。如果显示 `轮询兜底`，主线仍可继续，但导演需要确认 revision 持续更新；SSE 恢复后页面会自动切回实时模式。
+
+连接后同时打开以下页面进行核对：
+
+```text
+http://127.0.0.1:5174/apps/demo-console/
+http://127.0.0.1:5174/apps/vehicle-hmi/
+```
+
+两端必须显示相同 Session、revision 和 stage。`apps/vehicle-hmi/` 是唯一正式 HMI；旧版仅保留在 `apps/vehicle-hmi-legacy/` 用于回溯。
 
 ## 连接团队公网 Agent
 
@@ -210,6 +221,10 @@ service.mock.config
 | 低干扰恢复 | `POST /v1/event` | `cooldown.elapsed` | 完成后降低打扰。 |
 | 停车复盘 | `POST /v1/event` | `scene.parked` | 主端回到手机复盘。 |
 | 重置 Demo | `POST /v1/session/reset` | - | 回到初始状态。 |
+
+“载入演示预置任务”无需先单独点击“连接 Agent”。填写当前 Agent API 和 Team Token 后可直接点击“载入”，控制台会保存配置、读取当前 State，再提交包含结构化 `tasks[]` 的 `task.created`，不等待 LLM 解析；如果共享 State 已有任务，按钮会锁定，避免覆盖手机端输入。
+
+公网服务冷启动时，按钮会显示“连接并载入中…”，`State Sync` 和 Event Log 同步显示连接/重试进度。Health 检查在 State 连接后后台执行，不阻塞任务载入；GET 请求三次失败或单次超过 45 秒后会显示明确错误，不会无限等待。
 
 ## 推荐演示顺序
 

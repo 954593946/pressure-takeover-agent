@@ -14,11 +14,19 @@ from .models import (
     Stage,
     Surface,
     Task,
+    TZ,
     WearableState,
     WorldState,
     now,
     output_expiry,
 )
+
+
+def format_local_time(value) -> str:
+    """Format an Agent datetime in the frozen Demo business timezone."""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=TZ)
+    return value.astimezone(TZ).strftime("%H:%M")
 
 
 class RiskEngine:
@@ -100,7 +108,7 @@ class MockGroceryAdapter:
 def _timing_text(state: WorldState) -> str:
     parts: list[str] = []
     if state.eta is not None:
-        parts.append(f"预计{state.eta.strftime('%H:%M')}到")
+        parts.append(f"预计{format_local_time(state.eta)}到")
     if state.risk.late_minutes > 0:
         parts.append(f"会晚{state.risk.late_minutes}分钟")
     return "，".join(parts) or "到达时间有变化"

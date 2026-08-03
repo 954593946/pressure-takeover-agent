@@ -117,5 +117,26 @@
     "ac_target_temp": 24,
     "ac_mode": "auto",
     "fan_speed": "medium"
+  },
+  "navigation": {
+    "route_id": "route_demo_task_pickup_child",
+    "task_id": "task_pickup_child",
+    "origin": {
+      "name": "博世苏州",
+      "longitude": 120.791879,
+      "latitude": 31.33468,
+      "address": "江苏省苏州工业园区星龙街455号"
+    },
+    "destination": {
+      "name": "阳光小学",
+      "longitude": 120.7359,
+      "latitude": 31.3048,
+      "address": null
+    },
+    "current_location": null,
+    "progress": 0.7,
+    "source": "demo_fixture",
+    "is_simulated": true,
+    "updated_at": "2026-07-15T18:28:00+08:00"
   }
 }

@@ -1,4 +1,6 @@
+from ipaddress import ip_address, ip_network
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -10,6 +12,9 @@ SERVICE_ROOT = Path(__file__).resolve().parents[2]
 
 class Settings(BaseSettings):
     app_name: str = "AURI Agent API"
+    service_name: str = "auri-agent-api"
+    build_sha: str = ""
+    render_git_commit: str = ""
     environment: str = "development"
     log_level: str = "INFO"
     demo_mode: bool = True
@@ -36,8 +41,10 @@ class Settings(BaseSettings):
     amap_allowed_origins: str = (
         "http://localhost:5174,"
         "http://127.0.0.1:5174,"
+        "https://954593946.github.io,"
         "https://wangwang20.github.io"
     )
+    amap_allow_private_origins: bool = True
     amap_proxy_timeout_seconds: float = 12.0
 
     model_config = SettingsConfigDict(
@@ -59,9 +66,37 @@ class Settings(BaseSettings):
         return bool(self.amap_js_api_key and self.amap_security_js_code)
 
     @property
+    def deployment_build_sha(self) -> str:
+        return self.build_sha or self.render_git_commit or "local"
+
+    @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
     @property
     def amap_allowed_origin_list(self) -> list[str]:
         return [origin.strip().rstrip("/") for origin in self.amap_allowed_origins.split(",") if origin.strip()]
+
+    def amap_origin_allowed(self, origin: str) -> bool:
+        normalized = origin.strip().rstrip("/")
+        if normalized in self.amap_allowed_origin_list:
+            return True
+        if not self.amap_allow_private_origins:
+            return False
+        try:
+            parsed = urlsplit(normalized)
+            address = ip_address(parsed.hostname or "")
+        except ValueError:
+            return False
+        private_networks = (
+            ip_network("10.0.0.0/8"),
+            ip_network("172.16.0.0/12"),
+            ip_network("192.168.0.0/16"),
+        )
+        return (
+            parsed.scheme == "http"
+            and parsed.port == 5174
+            and parsed.username is None
+            and parsed.password is None
+            and any(address in network for network in private_networks)
+        )

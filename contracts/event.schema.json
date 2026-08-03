@@ -20,6 +20,7 @@
         "traffic.updated",
         "wearable.signal",
         "driving.signal",
+        "vehicle.control",
         "user.utterance",
         "service.mock.config",
         "confirmation.confirmed",
@@ -35,5 +36,26 @@
     "correlation_id": {"type": ["string", "null"]},
     "device_id": {"type": ["string", "null"]},
     "payload": {"type": "object", "additionalProperties": true}
-  }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"type": {"const": "vehicle.control"}}},
+      "then": {
+        "properties": {
+          "source": {"const": "vehicle_hmi"},
+          "payload": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": false,
+            "properties": {
+              "ac_on": {"type": "boolean"},
+              "ac_target_temp": {"type": "number", "minimum": 16, "maximum": 30},
+              "ac_mode": {"enum": ["auto", "cool", "heat", "fan"]},
+              "fan_speed": {"enum": ["low", "medium", "high"]}
+            }
+          }
+        }
+      }
+    }
+  ]
 }

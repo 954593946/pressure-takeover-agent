@@ -1,0 +1,10 @@
+{
+  "scenario": "duplicate-confirmation",
+  "purpose": "同一确认重复十次只执行一次动作组。",
+  "steps": [
+    {"kind": "event", "type": "task.created", "source": "mobile", "payload": {"text": "之后去超市"}},
+    {"kind": "event", "type": "user.utterance", "source": "mobile", "payload": {"text": "帮我处理，先准备方案"}},
+    {"kind": "repeat_chat_confirm", "count": 10, "sessionId": "$session_id", "confirmationId": "$confirmation_id", "decision": "accept"}
+  ],
+  "expected": {"http_status": 200, "confirmation_status": "accepted", "execution_count": 1}
+}

@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+apps/vehicle-hmi/env.local.js
 *.pem
 *.key
 
@@ -52,7 +53,7 @@ devices/zepp-os/dist/
 devices/zepp-os/.zeus/
 
 # Runtime data and logs
-data/
+/data/
 !apps/mobile/app/src/main/java/com/pressureagent/mobile/data/
 logs/
 *.log
