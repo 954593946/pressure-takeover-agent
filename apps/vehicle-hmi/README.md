@@ -43,7 +43,9 @@ http://127.0.0.1:5174/apps/vehicle-hmi/
 - 高德地图挂载在 Bosch 中央舞台内；路线成功后才切换，加载失败、无任务、无坐标或额度触发时保留 Bosch 离线地图。
 - 同一 Session 和目的地只规划一次路线；SSE revision 更新只推进车辆和路线分段，不重复消耗路线规划次数。
 - Demo 车辆进度按 Agent `navigation.progress` 在路线累计距离上插值，箭头朝向来自路线切线；跟车相机随路线旋转，路线总览和缩放可操作。当前是“真实地图与路线 + Demo 位置回放”，不对外宣称真实 GPS 或原生高德导航 SDK。
-- 跟车视觉以历史版本的“自车靠下、路线朝前、城市道路伪 3D 纵深”为基线。高德相机实际支持 3D 时使用原生俯仰/旋转；高德回读俯角为 0 时，跟车页切换到本地导航渲染层并继续消费高德路线、TMC、道路指令和剩余里程，全览页仍显示真实高德 2D 底图。禁止通过旋转整个高德 DOM 冒充 3D，避免地名、路线和车标错位。
+- 跟车视觉按高德导航的“锁车态 + 车头朝上”实现：真实高德底图和真实规划路线随进度移动，自车固定在地图下部，路线向屏幕前方延伸；全览态使用高德 `setFitView` 展示完整路线，返回后恢复跟车相机。
+- 桌面 Linux 上仅当浏览器 WebGL 实测可用、且高德平台门禁错误降级为 2D 时，SDK 加载器才临时提供桌面 WebGL 兼容提示；SDK 完成加载后立即恢复原始 `navigator`。随后必须回读有效 `pitch` 才标记为原生 3D，不能用请求参数冒充生效结果。
+- 高德仍回读 `pitch=0` 时保留真实 2D 高德路线全览和地理位置车标，并禁用“3D 跟车”；不旋转整个高德 DOM，也不切换成 Bosch-Agent 假导航。当前实现是 Web Demo 的真实地图/路线回放，不对外宣称已接入 Android/iOS 原生导航 SDK。
 - Agent 通过可选 `WorldState.navigation` 发布 `route_id`、关联任务、起终点坐标、来源、模拟属性和进度；HMI 优先消费正式对象。
 - 旧服务没有 `navigation` 时才使用 HMI 冻结映射；未知地址不调用地理编码并保持离线降级。
 - Agent `eta` 和 `risk.late_minutes` 仍是业务真相；高德距离、道路、路况和转向只用于导航表现。真实定位、偏航检测、动态重规划和原生语音引导属于产品化接口。
@@ -79,7 +81,7 @@ http://127.0.0.1:5174/apps/vehicle-hmi/
 - 车外、接近车辆和停车阶段速度归零；驾驶阶段的 `68` 明确标记为 Demo 车辆信号，不冒充 Agent 契约字段。
 - SSE 真正断开 15 秒期间页面不假更新；恢复网络后先取最新快照并重新进入 streaming。
 - 30 分钟长稳采样通过：Heap、DOM、Document、Timeout、Interval 和 RAF 均无持续增长，未检测到重复计时器。
-- 高德 SDK 加载或路线规划永不返回时，1800ms 硬超时并恢复 Bosch 离线地图；外部配置不能放宽到 2 秒以上。
+- 高德 SDK 加载或路线规划永不返回时，1800ms 硬超时并恢复离线演示地图；外部配置不能放宽到 2 秒以上。
 - 同一失败路线在后续 revision 中不会重复规划或消耗免费额度；新路线仍可重新尝试。
 - 地图故障的技术原因只保留在返回值和状态详情中，甲方界面统一显示“已切换离线导航”。
 
@@ -140,6 +142,20 @@ node apps/vehicle-hmi/tests/amap-adapter.test.cjs
 /home/fly/miniconda3/envs/bosch-agent-dev/bin/python \
   apps/vehicle-hmi/tests/e2e_ultrawide_readability.py
 ```
+
+真实高德双视角专项测试需通过环境变量临时提供 Web Key 和安全码；测试会验证实际 `rotation/pitch`、固定锁车锚点、路线移动、拥堵停车、黄/红/深红路段、全览和返回跟车，不会把密钥写入仓库：
+
+```bash
+AURI_AGENT_URL=http://127.0.0.1:8795 \
+AURI_AGENT_TOKEN=<local-test-token> \
+AURI_HMI_URL=http://127.0.0.1:5174/apps/vehicle-hmi/ \
+AURI_AMAP_KEY=<web-key> \
+AURI_AMAP_SECURITY=<security-code> \
+/home/fly/miniconda3/envs/bosch-agent-dev/bin/python \
+  apps/vehicle-hmi/tests/e2e_live_amap_navigation.py
+```
+
+通过截图位于 `/tmp/auri-live-amap-lock-car5/`。跟车态必须满足 `cameraRotation=requestedCameraRotation`、`cameraPitch>=50`、固定车标中心约为 `(0.50, 0.72)`，且真实路线位置投影误差不超过 4px；全览态必须为 `rotation=0`、`pitch=0` 且起终点均在地图视野内。
 
 浏览器回归覆盖空任务、契约示例、全部二级面板、1920x1080、1600x900、1280x720，以及本地 Agent 的 `/v1/state`、`/v1/stream` 实时更新和断线追平。公网只读检查验证 State 与 SSE 建连；15 秒心跳必须在对应 Agent 版本部署后再做公网持续连接验收，不能用本地结果替代。
 

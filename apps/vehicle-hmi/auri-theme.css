@@ -731,30 +731,6 @@ body {
   pointer-events: none;
 }
 
-/* AMap's 2D raster renderer cannot rotate labels and overlays as one plane.
-   Use the proven local route-forward renderer for follow mode, while keeping
-   the real AMap route and overview available. */
-.right-panel.is-amap-online[data-amap3d="simulated"][data-camera-mode="follow"] .auri-amap-canvas {
-  opacity: 0 !important;
-  pointer-events: none;
-}
-
-.right-panel.is-amap-online[data-amap3d="simulated"][data-camera-mode="follow"] .map-design {
-  opacity: 1 !important;
-  visibility: visible;
-  pointer-events: none;
-  transition-delay: 0s;
-}
-
-.right-panel.is-amap-online[data-amap3d="simulated"][data-camera-mode="follow"] #rmap {
-  opacity: 1;
-  pointer-events: none;
-}
-
-.right-panel.is-amap-online[data-amap3d="simulated"][data-camera-mode="follow"] .auri-amap-fixed-vehicle {
-  display: none !important;
-}
-
 .auri-map-source {
   position: absolute;
   top: 18px;
@@ -856,39 +832,30 @@ body {
   display: none !important;
 }
 
-.right-panel[data-amap3d="simulated"] #auri-amap-canvas {
+.right-panel[data-amap3d="overview-only"] #auri-amap-canvas {
   overflow: hidden;
-  background: #dfe7ee;
+  background: #edf1f2;
 }
 
-.right-panel[data-amap3d="simulated"] #auri-amap-canvas .amap-maps {
+.right-panel[data-amap3d="overview-only"] #auri-amap-canvas .amap-maps {
   width: 100% !important;
   height: 100% !important;
-  transform: perspective(1450px) rotateX(var(--auri-sim-map-pitch, 32deg)) rotateZ(var(--auri-sim-map-rotation, 0deg)) scale(1.5);
-  transform-origin: 50% 50%;
-  transition: transform 440ms cubic-bezier(.2, .72, .2, 1);
-  will-change: transform;
+  transform: none !important;
 }
 
-.right-panel[data-amap3d="simulated"][data-camera-mode="follow"] #auri-amap-canvas .amap-layer-tile {
-  filter: saturate(0.24) contrast(0.68) brightness(1.14) blur(0.7px);
-  opacity: 0.12 !important;
+.right-panel[data-amap3d="overview-only"] #auri-amap-canvas .amap-layer-tile {
+  filter: none;
+  opacity: 1 !important;
 }
 
-.right-panel[data-amap3d="simulated"][data-camera-mode="follow"] #auri-amap-canvas::after {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto;
-  height: 18%;
-  z-index: 44;
-  pointer-events: none;
-  background: linear-gradient(180deg, rgba(245, 242, 236, 0.82), rgba(245, 242, 236, 0.2) 68%, transparent);
+.right-panel[data-amap3d="overview-only"] #auri-amap-canvas::after {
+  display: none;
 }
 
 .auri-amap-fixed-vehicle {
   position: absolute;
   left: 50%;
-  top: 69%;
+  top: 72%;
   z-index: 76;
   width: 72px;
   height: 72px;
@@ -899,7 +866,49 @@ body {
   filter: drop-shadow(0 10px 17px rgba(11, 27, 51, 0.35));
 }
 
-.right-panel[data-amap3d="simulated"][data-camera-mode="follow"][data-vehicle-visible="true"] .auri-amap-fixed-vehicle {
+#vd-nav-card .vd-nav-main {
+  min-width: 0;
+  gap: 14px;
+}
+
+#vd-nav-card .vd-nav-info {
+  min-width: 0;
+  overflow: hidden;
+}
+
+#vd-nav-card .vd-nav-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 4px;
+  font-size: 42px;
+  line-height: 1.02;
+  letter-spacing: 0;
+}
+
+#vd-nav-card .vd-nav-title span {
+  margin-left: 0;
+  font-size: 22px;
+}
+
+#vd-nav-card .vd-nav-sub {
+  display: -webkit-box;
+  margin-top: 7px;
+  overflow: hidden;
+  white-space: normal;
+  font-size: 22px;
+  line-height: 1.22;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+#vd-nav-card .vd-nav-stat b {
+  overflow: visible;
+  font-size: 28px;
+  letter-spacing: 0;
+}
+
+.right-panel[data-camera-mode="follow"][data-vehicle-visible="true"] .auri-amap-fixed-vehicle {
   display: grid;
 }
 
@@ -944,18 +953,6 @@ body {
 @keyframes auriVehicleFixPulse {
   0%, 100% { transform: scale(0.96); opacity: 0.84; }
   50% { transform: scale(1.06); opacity: 1; }
-}
-
-.right-panel[data-camera-mode="overview"][data-amap3d="simulated"] #auri-amap-canvas .amap-maps {
-  transform: none;
-}
-
-.right-panel[data-amap3d="simulated"][data-camera-mode="follow"] .auri-amap-vehicle b,
-.right-panel[data-amap3d="simulated"][data-camera-mode="follow"] .auri-amap-origin,
-.right-panel[data-amap3d="simulated"][data-camera-mode="follow"] .auri-amap-destination,
-.right-panel[data-amap3d="simulated"][data-camera-mode="follow"] .auri-amap-incident {
-  transform: rotate(calc(-1 * var(--auri-sim-map-rotation, 0deg)));
-  transform-origin: center;
 }
 
 .auri-amap-vehicle {

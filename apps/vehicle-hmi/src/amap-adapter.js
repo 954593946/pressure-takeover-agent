@@ -9,6 +9,7 @@
   const DEFAULT_LIMITS = { mapLoads: 200, routePlans: 200 };
   const MAX_FAILURE_FALLBACK_MS = 1800;
   let loaderPromise = null;
+  let loaderWebglHintApplied = false;
 
   function boundedTimeoutMs(value) {
     const parsed = Number(value);
@@ -42,6 +43,14 @@
     return null;
   }
 
+  function pixelValue(pixel) {
+    if (!pixel) return null;
+    if (Array.isArray(pixel)) return [Number(pixel[0]), Number(pixel[1])];
+    if (typeof pixel.getX === "function") return [Number(pixel.getX()), Number(pixel.getY())];
+    if ("x" in pixel && "y" in pixel) return [Number(pixel.x), Number(pixel.y)];
+    return null;
+  }
+
   function flattenDrivingPath(route) {
     const path = [];
     (route?.steps || []).forEach((step) => {
@@ -69,13 +78,30 @@
 
   function followCameraSpec(meta, attention = false) {
     const nextDistanceMeters = Number(meta?.nextDistanceMeters || 0);
-    const routeZoom = nextDistanceMeters <= 260 ? 17.8 : nextDistanceMeters <= 900 ? 17.45 : 17.05;
+    const routeZoom = nextDistanceMeters <= 180 ? 18.05 : nextDistanceMeters <= 600 ? 17.65 : 17.25;
+    const lookAheadMeters = nextDistanceMeters <= 180 ? 58 : nextDistanceMeters <= 600 ? 88 : 118;
     return {
-      lookAheadOffset: 0.006,
-      zoom: attention ? Math.min(routeZoom, 17.3) : routeZoom,
-      pitch: attention ? 48 : 52,
-      rotationThreshold: 7
+      lookAheadMeters: attention ? Math.min(lookAheadMeters, 78) : lookAheadMeters,
+      zoom: attention ? Math.min(routeZoom, 17.45) : routeZoom,
+      pitch: attention ? 50 : 56,
+      anchorY: 0.72,
+      rotationThreshold: 4
     };
+  }
+
+  function waitForMapReady(map, timeoutMs = 720) {
+    if (!map || typeof map.once !== "function") return Promise.resolve();
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        root.clearTimeout?.(timer);
+        resolve();
+      };
+      const timer = root.setTimeout?.(finish, timeoutMs);
+      map.once("complete", () => root.requestAnimationFrame ? root.requestAnimationFrame(finish) : finish());
+    });
   }
 
   function trafficColor(status) {
@@ -304,6 +330,36 @@
     if (root.AMap) return Promise.resolve(root.AMap);
     if (loaderPromise) return loaderPromise;
     loaderPromise = new Promise((resolve, reject) => {
+      const navigatorRef = root.navigator;
+      const originalNavigatorDescriptors = {};
+      const linuxWebglHint = config.amapPrefer3d !== false
+        && runtimeSupportsWebgl()
+        && /Linux/i.test(String(navigatorRef?.userAgent || ""));
+      if (linuxWebglHint && navigatorRef) {
+        try {
+          ["userAgent", "platform"].forEach((key) => {
+            originalNavigatorDescriptors[key] = Object.getOwnPropertyDescriptor(navigatorRef, key) || null;
+          });
+          const desktopUserAgent = String(navigatorRef.userAgent || "")
+            .replace(/\([^)]*Linux[^)]*\)/i, "(Windows NT 10.0; Win64; x64)")
+            .replace("HeadlessChrome", "Chrome");
+          Object.defineProperty(navigatorRef, "userAgent", { configurable: true, get: () => desktopUserAgent });
+          Object.defineProperty(navigatorRef, "platform", { configurable: true, get: () => "Win32" });
+          loaderWebglHintApplied = true;
+        } catch (_error) {
+          loaderWebglHintApplied = false;
+        }
+      }
+      const restoreNavigator = () => {
+        if (!loaderWebglHintApplied || !navigatorRef) return;
+        ["userAgent", "platform"].forEach((key) => {
+          const descriptor = originalNavigatorDescriptors[key];
+          try {
+            if (descriptor) Object.defineProperty(navigatorRef, key, descriptor);
+            else delete navigatorRef[key];
+          } catch (_error) { /* optional compatibility hint cleanup */ }
+        });
+      };
       root._AMapSecurityConfig = config.amapServiceHost
         ? { serviceHost: String(config.amapServiceHost).replace(/\/$/, "") }
         : { securityJsCode: String(config.amapSecurityJsCode || "").trim() };
@@ -318,6 +374,7 @@
         if (settled) return;
         settled = true;
         if (timer !== null) root.clearTimeout(timer);
+        restoreNavigator();
         script.onload = null;
         script.onerror = null;
         if (removeScript) script.remove?.();
@@ -369,6 +426,7 @@
       this.lastStage = null;
       this.lastCameraHeading = null;
       this.lastCameraRotation = null;
+      this.lastEffectiveRotation = null;
       this.lastCameraPitch = null;
       this.lastAnimatedPoint = null;
       this.markerProgress = null;
@@ -390,6 +448,7 @@
       this.failedRouteReason = null;
       this.fixedVehicle = null;
       this.congestionDiagnostics = [];
+      this.anchorDiagnostics = null;
     }
 
     async init(config) {
@@ -416,10 +475,8 @@
         recordUsage("mapLoads");
         this.mapWrap.dataset.webglReported = amapReportedWebgl ? "true" : "false";
         this.mapWrap.dataset.webglRuntime = runtimeWebgl ? "true" : "false";
-        const requestedStyle = config.amapStyle || "amap://styles/normal";
-        const mapStyle = !amapReportedWebgl && requestedStyle === "amap://styles/normal"
-          ? "amap://styles/whitesmoke"
-          : requestedStyle;
+        this.mapWrap.dataset.webglPromoted = loaderWebglHintApplied ? "true" : "false";
+        const mapStyle = config.amapStyle || "amap://styles/normal";
         this.map = new AMap.Map(this.container, {
           center: config.amapStart || [120.791879, 31.334680],
           zoom: 16.8,
@@ -427,11 +484,11 @@
           pitch: 52,
           rotation: 0,
           mapStyle,
-          features: amapReportedWebgl ? ["bg", "road", "building", "point"] : ["bg", "road", "building"],
+          features: ["bg", "road", "building", "point"],
           showBuildingBlock: true,
           buildingAnimation: true,
           skyColor: "#e9eef5",
-          showLabel: amapReportedWebgl,
+          showLabel: true,
           resizeEnable: true,
           rotateEnable: true,
           pitchEnable: true,
@@ -441,9 +498,17 @@
           keyboardEnable: false,
           doubleClickZoom: true
         });
+        await waitForMapReady(this.map);
+        this.map.setPitch?.(52, true, 0);
+        this.map.setRotation?.(1, true, 0);
+        await new Promise((resolve) => root.setTimeout?.(resolve, 80) ?? resolve());
         const effectivePitch = Number(this.map.getPitch?.() || 0);
-        this.native3d = amapReportedWebgl || (runtimeWebgl && effectivePitch >= 1);
-        this.mapWrap.dataset.amap3d = this.native3d ? "native" : "simulated";
+        const effectiveRotation = Number(this.map.getRotation?.() || 0);
+        this.native3d = amapReportedWebgl && effectivePitch >= 1;
+        this.map.setRotation?.(0, true, 0);
+        if (!this.native3d) this.map.setPitch?.(0, true, 0);
+        this.lastEffectiveRotation = effectiveRotation;
+        this.mapWrap.dataset.amap3d = this.native3d ? "native" : "overview-only";
         this.mapWrap.dataset.webglEffective = this.native3d ? "true" : "false";
         this.overlays.trafficLayer = new AMap.TileLayer.Traffic({ autoRefresh: true, interval: 180, opacity: 0.2, zIndex: 8 });
         this.map.add(this.overlays.trafficLayer);
@@ -481,6 +546,7 @@
       this.motionCompletedCount = 0;
       this.lastMotionPlannedDurationMs = 0;
       this.congestionDiagnostics = [];
+      this.anchorDiagnostics = null;
       this.lastRouteMetaKey = null;
       this.lastMetaProgress = null;
     }
@@ -569,7 +635,7 @@
         path: segment.path,
         strokeColor: segment.color,
         strokeOpacity: 0.92,
-        strokeWeight: 12,
+        strokeWeight: 15,
         zIndex: 50
       }));
       this.overlays.routeCongestionBands = [
@@ -581,7 +647,7 @@
         path: this.routePath.slice(0, 2),
         strokeColor,
         strokeOpacity: 0,
-        strokeWeight: 12,
+        strokeWeight: 15,
         zIndex
       }));
 
@@ -698,20 +764,54 @@
       this.pendingMotionProgress = null;
       this.cameraMode = "overview";
       this.mapWrap.dataset.cameraMode = "overview";
-      if (this.native3d) {
-        this.map.setPitch?.(20, false, 520);
-        this.map.setRotation?.(0, false, 520);
-      }
-      const camera = routeOverviewCamera(
-        this.routePath,
-        this.container?.clientWidth || this.mapWrap?.clientWidth || 1000,
-        this.container?.clientHeight || this.mapWrap?.clientHeight || 700
+      this.map.setPitch?.(0, true, 0);
+      this.map.setRotation?.(0, true, 0);
+      this.map.setFitView?.(
+        [this.overlays.routeShadow, this.overlays.originMarker, this.overlays.destinationMarker].filter(Boolean),
+        true,
+        [112, 88, 104, 88],
+        16
       );
-      this.map.setZoomAndCenter(camera.zoom, camera.center, false, 520);
-      this.mapWrap.style?.setProperty?.("--auri-sim-map-rotation", "0deg");
-      this.mapWrap.style?.setProperty?.("--auri-sim-map-pitch", "0deg");
       this.lastCameraRotation = 0;
-      this.lastCameraPitch = this.native3d ? 20 : 0;
+      this.lastEffectiveRotation = Number(this.map.getRotation?.() || 0);
+      this.lastCameraPitch = 0;
+      this.anchorDiagnostics = null;
+    }
+
+    alignFollowAnchor(location, anchorY) {
+      if (!location?.point || typeof this.map?.lngLatToContainer !== "function" || typeof this.map?.panBy !== "function") return;
+      const before = pixelValue(this.map.lngLatToContainer(location.point));
+      if (!before?.every(Number.isFinite)) return;
+      const width = Math.max(1, Number(this.container?.clientWidth || this.mapWrap?.clientWidth || 1));
+      const height = Math.max(1, Number(this.container?.clientHeight || this.mapWrap?.clientHeight || 1));
+      const target = [width * 0.5, height * clamp(anchorY, 0.55, 0.82)];
+      let projected = before;
+      const pan = [0, 0];
+      const gain = [1, 1];
+      // Perspective projection means one pan pixel is not always one screen
+      // pixel. Re-read the route point and close the error instead of relying
+      // on a hard-coded screen offset.
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const residual = [target[0] - projected[0], target[1] - projected[1]];
+        if (Math.hypot(residual[0], residual[1]) < 1) break;
+        const requested = residual.map((value, axis) => value / Math.max(0.2, Math.min(4, Math.abs(gain[axis]))));
+        this.map.panBy(requested[0], requested[1], 0);
+        pan[0] += requested[0];
+        pan[1] += requested[1];
+        const next = pixelValue(this.map.lngLatToContainer(location.point));
+        if (!next?.every(Number.isFinite)) break;
+        requested.forEach((value, axis) => {
+          if (Math.abs(value) >= 0.5) gain[axis] = (next[axis] - projected[axis]) / value || gain[axis];
+        });
+        projected = next;
+      }
+      this.anchorDiagnostics = {
+        target,
+        projected,
+        pan,
+        point: [...location.point],
+        errorPx: Math.hypot(projected[0] - target[0], projected[1] - target[1])
+      };
     }
 
     applyFollowCamera(snapshot, location, force = false) {
@@ -720,35 +820,32 @@
       const rawDelta = this.lastCameraHeading === null ? 360 : Math.abs(heading - this.lastCameraHeading) % 360;
       const delta = Math.min(rawDelta, 360 - rawDelta);
       const attention = ["takeover_L2", "takeover_L3", "planning", "waiting_confirmation"].includes(snapshot.stage);
-      // Keep the camera close enough to the current position that the locked
-      // vehicle remains on the route through bends. This mirrors the native
-      // navigation camera used before the CSS fallback was introduced.
       const meta = routeMeta(this.drivingRoute, snapshot.progress);
       const cameraSpec = followCameraSpec(meta, attention);
-      const lookAhead = locationAtProgress(this.routeGeometry, Math.min(1, Number(snapshot.progress || 0) + cameraSpec.lookAheadOffset));
-      const cameraDuration = force ? 620 : Math.max(420, Math.min(720, Number(snapshot.motionDurationMs || 640)));
+      const progressOffset = this.routeGeometry.totalDistance > 0
+        ? cameraSpec.lookAheadMeters / this.routeGeometry.totalDistance
+        : 0;
+      const lookAhead = locationAtProgress(this.routeGeometry, Math.min(1, Number(snapshot.progress || 0) + progressOffset));
       const targetRotation = ((360 - heading) % 360 + 360) % 360;
       const targetPitch = cameraSpec.pitch;
       this.cameraMode = "follow";
       this.mapWrap.dataset.cameraMode = "follow";
-      this.map.setZoomAndCenter(cameraSpec.zoom, lookAhead.point, false, cameraDuration);
-      this.map.setPitch?.(targetPitch, false, cameraDuration);
-      this.mapWrap.style?.setProperty?.("--auri-sim-map-pitch", `${this.native3d ? 0 : 32}deg`);
-      this.lastCameraPitch = this.native3d ? targetPitch : 32;
+      this.map.setZoomAndCenter(cameraSpec.zoom, lookAhead.point, true, 0);
+      if (this.native3d) this.map.setPitch?.(targetPitch, true, 0);
+      else this.map.setPitch?.(0, true, 0);
+      this.map.setRotation?.(targetRotation, true, 0);
       if (force || delta >= cameraSpec.rotationThreshold || this.lastCameraRotation === null) {
-        this.map.setRotation?.(targetRotation, false, cameraDuration);
-        this.mapWrap.style?.setProperty?.("--auri-sim-map-rotation", `${targetRotation}deg`);
         this.lastCameraHeading = heading;
-        this.lastCameraRotation = targetRotation;
       }
+      this.lastCameraRotation = targetRotation;
+      this.lastCameraPitch = this.native3d ? targetPitch : 0;
+      this.lastEffectiveRotation = Number(this.map.getRotation?.() || 0);
+      this.mapWrap.dataset.lockAnchorY = String(cameraSpec.anchorY);
+      this.alignFollowAnchor(location, cameraSpec.anchorY);
     }
 
     setVehicleHeading(heading) {
-      const cameraRotation = this.native3d === false
-        ? 0
-        : this.lastSnapshot?.overview
-          ? Number(this.map?.getRotation?.() || 0)
-          : Number(this.lastCameraRotation ?? this.map?.getRotation?.() ?? 0);
+      const cameraRotation = Number(this.map?.getRotation?.() || 0);
       const markerAngle = screenHeading(heading, cameraRotation);
       this.overlays.vehicleContent?.style?.setProperty("--auri-vehicle-heading", `${markerAngle}deg`);
     }
@@ -780,7 +877,7 @@
       const completed = ["action_completed", "cooldown", "parked_review"].includes(snapshot.stage);
       // Keep all three traffic severities inside the short follow-camera
       // horizon: slow, congested, then severe congestion farther ahead.
-      const congestionRanges = [[0.003, 0.008], [0.008, 0.014], [0.014, 0.021]];
+      const congestionRanges = [[0.002, 0.014], [0.014, 0.03], [0.03, 0.052]];
       const congestionColors = ["#e6a700", "#d1495b", "#8f2032"];
       this.congestionDiagnostics = [];
       this.overlays.routeCongestionBands.forEach((band, index) => {
@@ -806,19 +903,19 @@
 
       const stageChanged = snapshot.stage !== this.lastStage;
       const progressChanged = this.lastProgress === null || Math.abs(progress - this.lastProgress) >= 0.00005;
-      if (snapshot.overview) {
+      const overviewMode = snapshot.overview || !this.native3d;
+      if (overviewMode) {
         if (stageChanged || this.cameraMode !== "overview") this.applyOverviewCamera();
       } else if (stageChanged || progressChanged || this.cameraMode !== "follow") {
         this.applyFollowCamera(snapshot, location, stageChanged || this.cameraMode !== "follow");
       }
 
       if (snapshot.showVehicle) {
-        const fixedFollowVehicle = this.native3d === false && !snapshot.overview;
-        if (fixedFollowVehicle) this.overlays.vehicleMarker.hide();
-        else this.overlays.vehicleMarker.show();
+        if (overviewMode) this.overlays.vehicleMarker.show();
+        else this.overlays.vehicleMarker.hide();
         this.mapWrap.dataset.vehicleVisible = "true";
         this.mapWrap.dataset.vehicleMotion = snapshot.stopped ? "stopped" : this.motionActive ? "moving" : "settled";
-        if (snapshot.overview) {
+        if (overviewMode) {
           if (this.motionActive) this.overlays.vehicleMarker.stopMove?.();
           this.motionActive = false;
           if (this.motionFallbackTimer !== null) root.clearTimeout?.(this.motionFallbackTimer);
@@ -866,10 +963,10 @@
         this.mapWrap.dataset.vehicleVisible = "false";
         this.mapWrap.dataset.vehicleMotion = "hidden";
       }
-      if (snapshot.overview) this.overlays.originMarker.show();
+      if (overviewMode) this.overlays.originMarker.show();
       else this.overlays.originMarker.hide();
 
-      this.updateChevrons(snapshot);
+      this.updateChevrons({ ...snapshot, overview: overviewMode });
       const meta = routeMeta(this.drivingRoute, progress);
       const key = `${meta.stepIndex}:${meta.nextDistance.value}:${meta.nextDistance.unit}`;
       if (meta.instruction && (key !== this.lastRouteMetaKey || Math.abs(progress - (this.lastMetaProgress ?? -1)) >= 0.002)) {
@@ -890,7 +987,7 @@
         this.trafficVisible = !this.trafficVisible;
         if (this.lastSnapshot) this.update(this.lastSnapshot);
       }
-      else if (action === "follow" && this.lastSnapshot && this.routeGeometry) {
+      else if (action === "follow" && this.native3d && this.lastSnapshot && this.routeGeometry) {
         this.applyFollowCamera(this.lastSnapshot, locationAtProgress(this.routeGeometry, this.lastSnapshot.progress), true);
       } else return false;
       return true;
@@ -924,10 +1021,12 @@
     isTrafficVisible() { return this.trafficVisible; }
     getCameraHeading() { return this.lastCameraHeading; }
     getCameraPitch() { return this.native3d === false ? this.lastCameraPitch : this.map?.getPitch?.() ?? null; }
-    getCameraRotation() { return this.native3d === false ? this.lastCameraRotation : this.map?.getRotation?.() ?? null; }
-    get3dMode() { return this.native3d === false ? "simulated" : "native"; }
+    getCameraRotation() { return this.map?.getRotation?.() ?? null; }
+    getRequestedCameraRotation() { return this.lastCameraRotation; }
+    get3dMode() { return this.native3d === false ? "overview-only" : "native"; }
     getMotionMethod() { return this.lastMotionMethod || "position"; }
     getCongestionDiagnostics() { return this.congestionDiagnostics.map((item) => ({ ...item })); }
+    getAnchorDiagnostics() { return this.anchorDiagnostics ? { ...this.anchorDiagnostics } : null; }
     getMotionDiagnostics() {
       return {
         active: this.motionActive,

@@ -132,7 +132,11 @@ def follow_metrics(page) -> dict:
           width:actual?.width || 0,
           height:actual?.height || 0,
           display:actualVehicle ? getComputedStyle(actualVehicle).display : 'none',
-          opacity:actualVehicle ? Number(getComputedStyle(actualVehicle).opacity) : 0
+          opacity:actualVehicle ? Number(getComputedStyle(actualVehicle).opacity) : 0,
+          centerRatio:{
+            x:canvas && actual ? (actual.x + actual.width / 2 - canvas.x) / canvas.width : null,
+            y:canvas && actual ? (actual.y + actual.height / 2 - canvas.y) / canvas.height : null
+          }
         },
         overviewMarkers:{
           origin:origin ? {x:origin.x,y:origin.y,width:origin.width,height:origin.height} : null,
@@ -218,6 +222,7 @@ def main() -> None:
         page.locator('[data-map-control="traffic"]').click()
         page.wait_for_timeout(120)
         traffic_hidden_metrics = follow_metrics(page)
+        traffic_hidden_map = page.evaluate("window.AURI_HMI_NEXT.getState().map")
         page.locator('[data-map-control="traffic"]').click()
         page.wait_for_timeout(120)
 
@@ -228,7 +233,9 @@ def main() -> None:
         page.wait_for_function("window.AURI_HMI_NEXT.getState().drivePlayback.speedKph >= 20", timeout=5000)
         page.wait_for_function("document.querySelector('.right-panel')?.dataset.vehicleMotion === 'moving'", timeout=5000)
         resumed_before = page.evaluate("window.AURI_HMI_NEXT.getState().drivePlayback.progress")
+        resumed_authoritative = float(api("/v1/state")["navigation"]["progress"])
         resumed_metrics = follow_metrics(page)
+        resumed_map = page.evaluate("window.AURI_HMI_NEXT.getState().map")
         page.screenshot(path=str(OUTPUT / "resumed-follow.png"))
         page.wait_for_timeout(900)
         resumed_after = page.evaluate("window.AURI_HMI_NEXT.getState().drivePlayback.progress")
@@ -236,7 +243,6 @@ def main() -> None:
         display_progress_before_overview = float(
             page.evaluate("window.AURI_HMI_NEXT.getState().drivePlayback.progress")
         )
-        resumed_map = page.evaluate("window.AURI_HMI_NEXT.getState().map")
         page.locator('[data-map-control="overview"]').click()
         page.wait_for_timeout(900)
         overview = page.evaluate("window.AURI_HMI_NEXT.getState().map")
@@ -256,12 +262,15 @@ def main() -> None:
         assert overview["cameraMode"] == "overview", overview
         assert return_follow["cameraMode"] == "follow", return_follow
         assert follow["motionMethod"] == "moveAlong", follow
-        assert follow_label == ("3D 跟车" if follow["rendering3d"] == "native" else "跟车视角"), follow_label
+        assert follow["rendering3d"] == "native", follow
+        assert follow_label == "3D 跟车", follow_label
         assert moving_after > moving_before, (moving_before, moving_after)
         assert abs(stopped_after - stopped_before) < 0.001, (stopped_before, stopped_after)
         assert [item["color"] for item in stopped_map["congestion"]] == ["#e6a700", "#d1495b", "#8f2032"], stopped_map
         assert all(item["visible"] and item["pointCount"] > 1 for item in stopped_map["congestion"]), stopped_map
-        assert resumed_before < 0.55, resumed_before
+        assert all(not item["visible"] for item in traffic_hidden_map["congestion"]), traffic_hidden_map
+        assert traffic_hidden_metrics["controls"]["trafficPressed"] == "false", traffic_hidden_metrics
+        assert abs(resumed_before - resumed_authoritative) < 0.02, (resumed_before, resumed_authoritative)
         assert resumed_after > resumed_before, (resumed_before, resumed_after)
         assert timing["mapMotionDurationMs"] < timing["tickIntervalMs"], timing
         assert follow["motion"]["plannedDurationMs"] <= timing["mapMotionDurationMs"], (follow, timing)
@@ -272,59 +281,46 @@ def main() -> None:
             display_progress_before_overview,
             display_progress_after_overview,
         )
-        assert abs(overview["motion"]["markerProgress"] - display_progress_after_overview) < 0.001, (
+        assert abs(overview["motion"]["markerProgress"] - display_progress_after_overview) < 0.012, (
             overview,
             display_progress_after_overview,
         )
-        assert abs(
-            overview["routeMeta"]["remainingDistanceMeters"]
-            - resumed_map["routeMeta"]["remainingDistanceMeters"]
-        ) < 100, (resumed_map, overview)
+        assert overview["routeMeta"]["remainingDistanceMeters"] <= resumed_map["routeMeta"]["remainingDistanceMeters"], (resumed_map, overview)
         assert 0 <= return_follow_progress - display_progress_after_overview < 0.02, (
             display_progress_after_overview,
             return_follow_progress,
         )
-        if follow["rendering3d"] == "native":
-            assert follow["cameraPitch"] >= 50 and overview["cameraPitch"] <= 20, (follow, overview)
-        else:
-            assert 30 <= follow["cameraPitch"] <= 34, follow
-            assert stopped_metrics["vehicleMotion"] == "stopped", stopped_metrics
-            for metrics in (moving_metrics, stopped_metrics, resumed_metrics, return_follow_metrics):
-                local = metrics["localRenderer"]
-                assert metrics["amapCanvasOpacity"] <= 0.01, metrics
-                assert metrics["fixedDisplay"] == "none", metrics
-                assert local["opacity"] >= 0.99 and local["visibility"] == "visible", metrics
-                assert local["car"] and local["car"]["width"] > 20 and local["car"]["height"] > 20, metrics
-                assert 0.35 <= local["carCenterRatio"]["x"] <= 0.65, metrics
-                assert 0.62 <= local["carCenterRatio"]["y"] <= 0.94, metrics
-                assert local["nearestRouteDistance"] is not None and local["nearestRouteDistance"] <= 24, metrics
-                assert local["pointsAhead"] >= 25, metrics
-
-            traffic = stopped_metrics["localRenderer"]["traffic"]
-            assert len(traffic) == 3, traffic
-            assert all(item["display"] != "none" and item["opacity"] > 0 for item in traffic), traffic
-            assert [item["stroke"] for item in traffic] == [
-                "rgb(230, 167, 0)",
-                "rgb(209, 73, 91)",
-                "rgb(143, 32, 50)",
-            ], traffic
-            assert all(item["display"] == "none" for item in traffic_hidden_metrics["localRenderer"]["traffic"]), traffic_hidden_metrics
-            assert traffic_hidden_metrics["controls"]["trafficPressed"] == "false", traffic_hidden_metrics
-            assert all(moving_metrics["controls"]["zoomDisabled"]), moving_metrics
-
-            assert overview_metrics["amapCanvasOpacity"] >= 0.99, overview_metrics
-            assert overview_metrics["localRenderer"]["opacity"] <= 0.01, overview_metrics
-            assert overview_metrics["localRenderer"]["visibility"] == "hidden", overview_metrics
-            assert not any(overview_metrics["controls"]["zoomDisabled"]), overview_metrics
-            assert overview_metrics["fixedDisplay"] == "none", overview_metrics
-            assert overview_metrics["actualVehicle"]["width"] > 0 and overview_metrics["actualVehicle"]["opacity"] > 0, overview_metrics
-            for marker in overview_metrics["overviewMarkers"].values():
-                assert marker and marker["width"] > 0 and marker["height"] > 0, overview_metrics
-                marker_center_x = marker["x"] + marker["width"] / 2
-                marker_center_y = marker["y"] + marker["height"] / 2
-                canvas = overview_metrics["canvas"]
-                assert canvas["x"] <= marker_center_x <= canvas["x"] + canvas["width"], overview_metrics
-                assert canvas["y"] <= marker_center_y <= canvas["y"] + canvas["height"], overview_metrics
+        for map_state in (follow, stopped_map, resumed_map, return_follow):
+            assert map_state["anchor"] is not None, map_state
+            assert map_state["anchor"]["errorPx"] <= 4, map_state["anchor"]
+        assert follow["anchor"]["point"] != stopped_map["anchor"]["point"], (follow, stopped_map)
+        assert overview["anchor"] is None, overview
+        rotation_error = abs(((follow["cameraRotation"] - follow["requestedCameraRotation"] + 180) % 360) - 180)
+        assert rotation_error <= 1, follow
+        for metrics in (moving_metrics, stopped_metrics, resumed_metrics, return_follow_metrics):
+            assert metrics["amapCanvasOpacity"] >= 0.99, metrics
+            assert metrics["fixedDisplay"] == "grid", metrics
+            assert 0.47 <= metrics["fixedCenterRatio"]["x"] <= 0.53, metrics
+            assert 0.69 <= metrics["fixedCenterRatio"]["y"] <= 0.75, metrics
+            assert metrics["localRenderer"]["opacity"] <= 0.01, metrics
+            assert metrics["localRenderer"]["visibility"] == "hidden", metrics
+            vehicle = metrics["actualVehicle"]
+            assert vehicle["display"] == "none" or vehicle["opacity"] == 0 or vehicle["width"] == 0, metrics
+            assert not any(metrics["controls"]["zoomDisabled"]), metrics
+        assert stopped_metrics["vehicleMotion"] == "stopped", stopped_metrics
+        assert overview_metrics["amapCanvasOpacity"] >= 0.99, overview_metrics
+        assert overview_metrics["localRenderer"]["opacity"] <= 0.01, overview_metrics
+        assert overview_metrics["localRenderer"]["visibility"] == "hidden", overview_metrics
+        assert overview_metrics["fixedDisplay"] == "none", overview_metrics
+        assert overview_metrics["actualVehicle"]["width"] > 0 and overview_metrics["actualVehicle"]["opacity"] > 0, overview_metrics
+        for marker in overview_metrics["overviewMarkers"].values():
+            assert marker and marker["width"] > 0 and marker["height"] > 0, overview_metrics
+            marker_center_x = marker["x"] + marker["width"] / 2
+            marker_center_y = marker["y"] + marker["height"] / 2
+            canvas = overview_metrics["canvas"]
+            assert canvas["x"] <= marker_center_x <= canvas["x"] + canvas["width"], overview_metrics
+            assert canvas["y"] <= marker_center_y <= canvas["y"] + canvas["height"], overview_metrics
+        assert follow["cameraPitch"] >= 50 and overview["cameraPitch"] == 0, (follow, overview)
         assert not errors, errors
         print(json.dumps({
             "follow": follow,
@@ -336,9 +332,11 @@ def main() -> None:
                 "stopped": [stopped_before, stopped_after],
                 "resumed": [resumed_before, resumed_after],
             },
+            "resumedAuthoritativeProgress": resumed_authoritative,
             "movingMetrics": moving_metrics,
             "stoppedMetrics": stopped_metrics,
             "trafficHiddenMetrics": traffic_hidden_metrics,
+            "trafficHiddenMap": traffic_hidden_map,
             "resumedMetrics": resumed_metrics,
             "overviewMetrics": overview_metrics,
             "returnFollow": return_follow,

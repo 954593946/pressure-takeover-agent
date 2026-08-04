@@ -62,6 +62,7 @@ class FakeMap {
     this.removed = [];
     this.rotation = Number(options.rotation || 0);
     this.pitch = Number(options.pitch || 0);
+    this.pixelOffset = [0, 0];
   }
 
   add(value) {
@@ -73,12 +74,24 @@ class FakeMap {
     this.removed.push(...value);
   }
 
-  setFitView() {
-    calls.push(["fit"]);
+  setFitView(overlays, immediately, avoid, maxZoom) {
+    calls.push(["fit", overlays, immediately, avoid, maxZoom]);
   }
 
   setZoomAndCenter(zoom, center) {
+    this.pixelOffset = [0, 0];
     calls.push(["zoom-center", zoom, center]);
+  }
+
+  lngLatToContainer() {
+    const [dx, dy] = this.pixelOffset;
+    return { x: 500 + dx, y: 350 + dy };
+  }
+
+  panBy(dx, dy) {
+    this.pixelOffset[0] += dx;
+    this.pixelOffset[1] += dy;
+    calls.push(["pan", dx, dy]);
   }
 
   setPitch(pitch) {
@@ -268,18 +281,20 @@ global.AMap = fakeAMap;
 const amap = require("../src/amap-adapter.js");
 
 assert.deepEqual(amap.followCameraSpec({ nextDistanceMeters: 1200 }, false), {
-  lookAheadOffset: 0.006,
-  zoom: 17.05,
-  pitch: 52,
-  rotationThreshold: 7
+  lookAheadMeters: 118,
+  zoom: 17.25,
+  pitch: 56,
+  anchorY: 0.72,
+  rotationThreshold: 4
 });
-assert.equal(amap.followCameraSpec({ nextDistanceMeters: 700 }, false).zoom, 17.45);
-assert.equal(amap.followCameraSpec({ nextDistanceMeters: 200 }, false).zoom, 17.8);
+assert.equal(amap.followCameraSpec({ nextDistanceMeters: 500 }, false).zoom, 17.65);
+assert.equal(amap.followCameraSpec({ nextDistanceMeters: 120 }, false).zoom, 18.05);
 assert.deepEqual(amap.followCameraSpec({ nextDistanceMeters: 200 }, true), {
-  lookAheadOffset: 0.006,
-  zoom: 17.3,
-  pitch: 48,
-  rotationThreshold: 7
+  lookAheadMeters: 78,
+  zoom: 17.45,
+  pitch: 50,
+  anchorY: 0.72,
+  rotationThreshold: 4
 });
 
 function createAdapter(options = {}) {
@@ -436,10 +451,12 @@ async function main() {
   assert.equal(routePlanCount, 1, "same route key must not trigger another AMap.Driving search");
   assert.equal(online.adapter.getStatus(), "online");
   assert.equal(online.mapWrap.classList.contains("is-amap-online"), true);
-  const overviewCameraCall = calls.filter(([name]) => name === "zoom-center").at(-1);
-  assert.equal(overviewCameraCall[0], "zoom-center");
-  assertClose(overviewCameraCall[1], amap.routeOverviewCamera(online.adapter.routePath, 1000, 700).zoom);
-  assert.deepEqual(overviewCameraCall[2], amap.routeOverviewCamera(online.adapter.routePath, 1000, 700).center);
+  const overviewCameraCall = calls.filter(([name]) => name === "fit").at(-1);
+  assert.equal(overviewCameraCall[0], "fit");
+  assert.equal(overviewCameraCall[1].length, 3);
+  assert.equal(overviewCameraCall[2], true);
+  assert.deepEqual(overviewCameraCall[3], [112, 88, 104, 88]);
+  assert.equal(overviewCameraCall[4], 16);
   assert.equal(online.routeMetas[0].roadName, "星龙街");
   assert.deepEqual(online.adapter.getUsage(), {
     month: currentLocalMonth(),
@@ -459,7 +476,9 @@ async function main() {
   });
   assert.equal(online.adapter.getCameraMode(), "follow");
   assert.ok(online.adapter.getCameraRotation() > 0);
-  assert.equal(online.adapter.getCameraPitch(), 48);
+  assert.equal(online.adapter.getCameraPitch(), 50);
+  assert.ok(online.adapter.getAnchorDiagnostics().errorPx < 0.01, online.adapter.getAnchorDiagnostics());
+  assert.deepEqual(online.adapter.getAnchorDiagnostics().target, [500, 504]);
   assert.equal(
     online.adapter.overlays.vehicleContent.style.getPropertyValue("--auri-vehicle-heading"),
     "0deg",
@@ -528,12 +547,13 @@ async function main() {
   fakeAMap.Browser.isWebGL = false;
   const reportedFallback = createAdapter();
   await reportedFallback.adapter.init({ mapProvider: "amap", amapKey: "test-key", amapMonthlyMapLimit: 10, amapMonthlyRouteLimit: 10 });
-  assert.equal(reportedFallback.adapter.get3dMode(), "simulated", "false WebGL capability must select the controlled pseudo-3D fallback");
+  assert.equal(reportedFallback.adapter.get3dMode(), "overview-only", "false WebGL capability must degrade to a truthful route overview");
   assert.equal(reportedFallback.mapWrap.dataset.webglReported, "false");
   assert.equal(reportedFallback.mapWrap.dataset.webglRuntime, "false");
   assert.equal(reportedFallback.mapWrap.dataset.webglEffective, "false");
-  assert.equal(reportedFallback.adapter.map.options.mapStyle, "amap://styles/whitesmoke");
-  assert.deepEqual(reportedFallback.adapter.map.options.features, ["bg", "road", "building"]);
+  assert.equal(reportedFallback.adapter.map.options.mapStyle, "amap://styles/normal");
+  assert.deepEqual(reportedFallback.adapter.map.options.features, ["bg", "road", "building", "point"]);
+  assert.equal(reportedFallback.adapter.map.options.showLabel, true);
   await reportedFallback.adapter.setRoute(routeConfig, "reported-fallback-route");
   reportedFallback.adapter.update({
     stage: "vehicle_observation",
@@ -546,12 +566,13 @@ async function main() {
     riskLevel: "L0",
     lateMinutes: 0
   });
-  assert.equal(reportedFallback.adapter.getCameraMode(), "follow");
-  assert.equal(reportedFallback.adapter.getCameraPitch(), 32);
-  assert.notEqual(reportedFallback.adapter.getCameraRotation(), 0);
+  assert.equal(reportedFallback.adapter.getCameraMode(), "overview");
+  assert.equal(reportedFallback.adapter.getCameraPitch(), 0);
+  assert.equal(reportedFallback.adapter.getCameraRotation(), 0);
   assert.equal(reportedFallback.mapWrap.dataset.vehicleVisible, "true");
-  assert.equal(reportedFallback.mapWrap.dataset.amap3d, "simulated");
-  assert.equal(reportedFallback.mapWrap.style.getPropertyValue("--auri-sim-map-pitch"), "32deg");
+  assert.equal(reportedFallback.mapWrap.dataset.amap3d, "overview-only");
+  assert.equal(reportedFallback.adapter.overlays.vehicleMarker.visible, true, "2D degradation keeps the geographic vehicle marker in route overview");
+  assert.equal(reportedFallback.adapter.control("follow"), false, "2D degradation must not present a fake locked-car mode");
 
   const originalCreateElement = global.document.createElement;
   global.document.createElement = (tagName) => {
@@ -561,10 +582,10 @@ async function main() {
   resetRuntime();
   const runtimeWebgl = createAdapter();
   await runtimeWebgl.adapter.init({ mapProvider: "amap", amapKey: "test-key", amapMonthlyMapLimit: 10, amapMonthlyRouteLimit: 10 });
-  assert.equal(runtimeWebgl.adapter.get3dMode(), "native", "a real WebGL context must override a stale negative AMap browser report");
+  assert.equal(runtimeWebgl.adapter.get3dMode(), "overview-only", "AMap must report WebGL and return an effective pitch before 3D follow is enabled");
   assert.equal(runtimeWebgl.mapWrap.dataset.webglReported, "false");
   assert.equal(runtimeWebgl.mapWrap.dataset.webglRuntime, "true");
-  assert.equal(runtimeWebgl.mapWrap.dataset.webglEffective, "true");
+  assert.equal(runtimeWebgl.mapWrap.dataset.webglEffective, "false");
   global.document.createElement = originalCreateElement;
   fakeAMap.Browser.isWebGL = () => true;
 

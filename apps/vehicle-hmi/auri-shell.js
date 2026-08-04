@@ -1640,17 +1640,7 @@
         : STAGE_PROGRESS[viewModel.lifecycle.stage] ?? 0.03;
       drivePlayback.speedKph = 0;
       mapViewUserSelected = false;
-    } else if (authoritativeChanged) {
-      const nextMode = driveProfile().mode;
-      const holdsAtCongestion = drivePlayback.mode === "stopped"
-        && nextMode === "stopped"
-        && authoritativeProgress > drivePlayback.progress;
-      const resumesAfterStop = stageChanged
-        && drivePlayback.mode === "stopped"
-        && ["action_completed", "cooldown"].includes(viewModel.lifecycle.stage)
-        && authoritativeProgress > drivePlayback.progress + 0.12;
-      if (!holdsAtCongestion && !resumesAfterStop) drivePlayback.progress = authoritativeProgress;
-    }
+    } else if (authoritativeChanged) drivePlayback.progress = authoritativeProgress;
     if (stageChanged && !mapViewUserSelected) {
       if (viewModel.lifecycle.stage === "handover_to_vehicle") mapViewMode = "overview";
       else if (["vehicle_observation", "takeover_L2", "action_completed", "cooldown"].includes(viewModel.lifecycle.stage)) mapViewMode = "follow";
@@ -1693,8 +1683,7 @@
     const firstFrame = lastAnimatedStage === null;
     lastAnimatedStage = stage;
     syncDrivePlayback();
-    const localFollow = mapAdapter.get3dMode() === "simulated" && mapAdapter.getCameraMode() === "follow";
-    if (firstFrame && (mapAdapter.getStatus() !== "online" || localFollow) && Number.isFinite(drivePlayback.progress) && typeof window.mapCarTo === "function") {
+    if (firstFrame && mapAdapter.getStatus() !== "online" && Number.isFinite(drivePlayback.progress) && typeof window.mapCarTo === "function") {
       try { window.mapCarTo(drivePlayback.progress, 240); } catch (_error) { /* initialize the offline route marker */ }
     }
   }
@@ -1708,7 +1697,8 @@
     const deltaSpeed = profile.speedKph - drivePlayback.speedKph;
     const acceleration = deltaSpeed < 0 ? 36 : 22;
     drivePlayback.speedKph += Math.sign(deltaSpeed) * Math.min(Math.abs(deltaSpeed), acceleration * elapsed);
-    if (profile.mode === "moving" && drivePlayback.progress < profile.ceiling) {
+    const presentationPlayback = viewModel.navigation.route?.isSimulated !== false;
+    if (presentationPlayback && profile.mode === "moving" && drivePlayback.progress < profile.ceiling) {
       const speedRatio = drivePlayback.speedKph / Math.max(1, profile.speedKph);
       drivePlayback.progress = Math.min(profile.ceiling, drivePlayback.progress + profile.rate * elapsed * speedRatio);
     }
@@ -1716,10 +1706,9 @@
     renderNavigation();
     const snapshot = navigationSnapshot();
     if (mapAdapter.getStatus() === "online") mapAdapter.update(snapshot);
-    const localFollow = mapAdapter.get3dMode() === "simulated" && mapAdapter.getCameraMode() === "follow";
-    if ((mapAdapter.getStatus() !== "online" || localFollow) && profile.mode === "moving" && typeof window.mapCarTo === "function") {
+    if (mapAdapter.getStatus() !== "online" && profile.mode === "moving" && typeof window.mapCarTo === "function") {
       try { window.mapCarTo(drivePlayback.progress, 720); } catch (_error) { /* offline visual controller stays optional */ }
-    } else if ((mapAdapter.getStatus() !== "online" || localFollow) && ["stopped", "parked"].includes(profile.mode)) {
+    } else if (mapAdapter.getStatus() !== "online" && ["stopped", "parked"].includes(profile.mode)) {
       try { window.mapCarStop?.(); } catch (_error) { /* offline visual controller stays optional */ }
     }
   }
@@ -1791,6 +1780,11 @@
 
   function renderMapControlState() {
     const mapWrap = document.querySelector(".right-panel");
+    const native3d = mapAdapter.get3dMode() === "native";
+    if (!native3d && ["map_ready", "online"].includes(mapAdapter.getStatus()) && mapViewMode === "follow") {
+      mapViewMode = "overview";
+      mapViewUserSelected = false;
+    }
     document.querySelectorAll("[data-map-control='follow'], [data-map-control='overview']").forEach((button) => {
       const active = button.dataset.mapControl === mapViewMode;
       button.classList.toggle("is-active", active);
@@ -1805,13 +1799,14 @@
     }
     const follow = document.querySelector("[data-map-control='follow']");
     const followLabel = follow?.querySelector("span");
-    const native3d = mapAdapter.get3dMode() === "native";
-    const localFollow = mapAdapter.getStatus() === "online" && !native3d && mapViewMode === "follow";
-    if (followLabel) followLabel.textContent = native3d ? "3D 跟车" : "跟车视角";
-    if (follow) follow.setAttribute("aria-label", native3d ? "切换到车头向上的三维跟车视角" : "切换到跟车视角");
+    if (followLabel) followLabel.textContent = native3d ? "3D 跟车" : "设备不支持 3D";
+    if (follow) {
+      follow.disabled = !native3d;
+      follow.setAttribute("aria-label", native3d ? "切换到车头向上的三维跟车视角" : "当前设备仅支持路线全览");
+    }
     document.querySelectorAll("[data-map-control='zoom-in'], [data-map-control='zoom-out']").forEach((button) => {
-      button.disabled = localFollow;
-      button.title = localFollow ? "切换到路线全览后可缩放" : button.getAttribute("aria-label");
+      button.disabled = false;
+      button.title = button.getAttribute("aria-label");
     });
   }
 
@@ -2006,7 +2001,7 @@
         worldState: client.getSnapshot(),
         viewModel,
         activeSection,
-        map: { status: mapAdapter.getStatus(), cameraMode: mapAdapter.getCameraMode(), cameraHeading: mapAdapter.getCameraHeading(), cameraRotation: mapAdapter.getCameraRotation(), cameraPitch: mapAdapter.getCameraPitch(), rendering3d: mapAdapter.get3dMode(), motionMethod: mapAdapter.getMotionMethod(), motion: mapAdapter.getMotionDiagnostics(), congestion: mapAdapter.getCongestionDiagnostics(), trafficVisible: mapAdapter.isTrafficVisible(), usage: mapAdapter.getUsage(), routeMeta },
+        map: { status: mapAdapter.getStatus(), cameraMode: mapAdapter.getCameraMode(), cameraHeading: mapAdapter.getCameraHeading(), cameraRotation: mapAdapter.getCameraRotation(), requestedCameraRotation: mapAdapter.getRequestedCameraRotation(), cameraPitch: mapAdapter.getCameraPitch(), rendering3d: mapAdapter.get3dMode(), motionMethod: mapAdapter.getMotionMethod(), motion: mapAdapter.getMotionDiagnostics(), congestion: mapAdapter.getCongestionDiagnostics(), anchor: mapAdapter.getAnchorDiagnostics(), trafficVisible: mapAdapter.isTrafficVisible(), usage: mapAdapter.getUsage(), routeMeta },
         drivePlayback: {
           ...drivePlayback,
           tickIntervalMs: DRIVE_PLAYBACK_INTERVAL_MS,
