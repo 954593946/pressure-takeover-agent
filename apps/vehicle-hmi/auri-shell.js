@@ -322,8 +322,11 @@
         <span class="auri-takeover-orbit" aria-hidden="true"><i>A</i></span>
         <span><b id="auri-takeover-stage">AURI 接管</b><small id="auri-takeover-risk">状态平稳</small></span>
       </div>
-      <div class="auri-takeover-label">现实结论</div>
-      <p class="auri-takeover-conclusion" id="auri-takeover-conclusion"></p>
+      <div class="auri-takeover-verdict" id="auri-takeover-verdict">
+        <span class="auri-takeover-verdict-icon" id="auri-takeover-verdict-icon">${iconSvg("info")}</span>
+        <span class="auri-takeover-verdict-copy"><small>现实结论</small><p class="auri-takeover-conclusion" id="auri-takeover-conclusion"></p></span>
+        <em id="auri-takeover-verdict-status">已判断</em>
+      </div>
       <div class="auri-takeover-section-head"><span>AURI 已准备</span><em id="auri-takeover-action-count">0 项</em></div>
       <div class="auri-takeover-actions" id="auri-takeover-actions"></div>
       <div class="auri-takeover-devices" id="auri-takeover-devices"></div>
@@ -530,7 +533,7 @@
     const concisePlan = viewModel.risk.lateMinutes > 0 && preparedParts
       ? `预计晚到${viewModel.risk.lateMinutes}分钟，${preparedParts}已备好。`
       : preparedParts ? `${preparedParts}已备好。` : fallback;
-    document.getElementById("auri-takeover-conclusion").textContent = stage === "parked_review"
+    const conclusion = stage === "parked_review"
       ? fallback
       : viewModel.serviceOrders.hasFailure
         ? "生活服务暂不可用，消息和任务调整方案仍保留。"
@@ -541,6 +544,15 @@
           : viewModel.agentOutput.available && viewModel.agentOutput.fullText.length <= 42
             ? viewModel.agentOutput.fullText
             : fallback;
+    document.getElementById("auri-takeover-conclusion").textContent = conclusion;
+    const verdict = document.getElementById("auri-takeover-verdict");
+    const verdictIcon = document.getElementById("auri-takeover-verdict-icon");
+    const verdictStatus = document.getElementById("auri-takeover-verdict-status");
+    const completedStage = ["action_completed", "cooldown", "parked_review"].includes(stage);
+    const waitingStage = ["service_prepared", "waiting_confirmation"].includes(stage);
+    if (verdict) verdict.dataset.tone = completedStage ? "success" : waitingStage ? "warning" : tone;
+    if (verdictIcon) verdictIcon.innerHTML = iconSvg(completedStage ? "check" : waitingStage ? "clock" : "info");
+    if (verdictStatus) verdictStatus.textContent = completedStage ? "已处理" : waitingStage ? "待确认" : "已判断";
 
     const actions = takeoverActions();
     document.getElementById("auri-takeover-action-count").textContent = `${actions.length} 项`;
@@ -1691,8 +1703,11 @@
     }
   }
 
+  const DRIVE_PLAYBACK_INTERVAL_MS = 650;
+  const MAP_MOTION_DURATION_MS = 520;
+
   function startDrivePlayback() {
-    if (!drivePlaybackTimer) drivePlaybackTimer = window.setInterval(tickDrivePlayback, 650);
+    if (!drivePlaybackTimer) drivePlaybackTimer = window.setInterval(tickDrivePlayback, DRIVE_PLAYBACK_INTERVAL_MS);
   }
 
   function coordinatesFromTask(task) {
@@ -1743,7 +1758,7 @@
       showVehicle: driving,
       overview: !driving || ["handover_to_vehicle", "parked_review"].includes(stage) || mapViewMode === "overview",
       stopped: ["stopped", "parked"].includes(driveProfile().mode),
-      motionDurationMs: 720,
+      motionDurationMs: MAP_MOTION_DURATION_MS,
       riskLevel: viewModel.risk.level,
       lateMinutes: viewModel.risk.lateMinutes
     };
@@ -1761,6 +1776,11 @@
       traffic.classList.toggle("is-active", active);
       traffic.setAttribute("aria-pressed", String(active));
     }
+    const follow = document.querySelector("[data-map-control='follow']");
+    const followLabel = follow?.querySelector("span");
+    const native3d = mapAdapter.get3dMode() === "native";
+    if (followLabel) followLabel.textContent = native3d ? "3D 跟车" : "跟车视角";
+    if (follow) follow.setAttribute("aria-label", native3d ? "切换到车头向上的三维跟车视角" : "切换到跟车视角");
   }
 
   function prepareMapControls() {
@@ -1768,8 +1788,8 @@
     if (!controls) return;
     controls.innerHTML = `
       <div class="auri-map-view-toggle" role="group" aria-label="导航视角">
-        <button type="button" data-map-control="follow" aria-label="跟车视角">${iconSvg("car")}<span>跟车</span></button>
-        <button type="button" data-map-control="overview" aria-label="路线全览">${iconSvg("route")}<span>全览</span></button>
+        <button type="button" data-map-control="follow" aria-label="切换到跟车视角">${iconSvg("car")}<span>跟车视角</span></button>
+        <button type="button" data-map-control="overview" aria-label="切换到路线全览视角">${iconSvg("route")}<span>路线全览</span></button>
       </div>
       <button type="button" class="auri-map-traffic" data-map-control="traffic" aria-label="显示实时路况">${iconSvg("traffic")}<span>路况</span></button>
       <div class="auri-map-zoom" role="group" aria-label="地图缩放">
@@ -1951,8 +1971,12 @@
         worldState: client.getSnapshot(),
         viewModel,
         activeSection,
-        map: { status: mapAdapter.getStatus(), cameraMode: mapAdapter.getCameraMode(), cameraHeading: mapAdapter.getCameraHeading(), cameraRotation: mapAdapter.getCameraRotation(), trafficVisible: mapAdapter.isTrafficVisible(), usage: mapAdapter.getUsage(), routeMeta },
-        drivePlayback: { ...drivePlayback }
+        map: { status: mapAdapter.getStatus(), cameraMode: mapAdapter.getCameraMode(), cameraHeading: mapAdapter.getCameraHeading(), cameraRotation: mapAdapter.getCameraRotation(), cameraPitch: mapAdapter.getCameraPitch(), rendering3d: mapAdapter.get3dMode(), motionMethod: mapAdapter.getMotionMethod(), motion: mapAdapter.getMotionDiagnostics(), trafficVisible: mapAdapter.isTrafficVisible(), usage: mapAdapter.getUsage(), routeMeta },
+        drivePlayback: {
+          ...drivePlayback,
+          tickIntervalMs: DRIVE_PLAYBACK_INTERVAL_MS,
+          mapMotionDurationMs: MAP_MOTION_DURATION_MS
+        }
       };
     },
     openPanel,

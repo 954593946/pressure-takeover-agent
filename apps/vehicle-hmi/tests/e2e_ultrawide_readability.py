@@ -148,6 +148,19 @@ def main() -> None:
                 visualScale,
                 conclusionFont: font('.auri-takeover-conclusion') * visualScale,
                 actionFonts: Array.from(document.querySelectorAll('.auri-takeover-action b')).map(node => parseFloat(getComputedStyle(node).fontSize) * visualScale),
+                actionRows: Array.from(document.querySelectorAll('.auri-takeover-action')).map(node => {
+                  const copy=node.querySelector('.auri-takeover-action-copy');
+                  const title=copy?.querySelector('b');
+                  const copyBox=copy?.getBoundingClientRect();
+                  return {
+                    title:title?.textContent.trim()||'',
+                    copyWidth:copyBox?.width||0,
+                    copyClient:copy?.clientWidth||0,
+                    copyScroll:copy?.scrollWidth||0,
+                    copyDisplay:copy?getComputedStyle(copy).display:'',
+                    copyPosition:copy?getComputedStyle(copy).position:''
+                  };
+                }),
                 conclusionText: document.querySelector('.auri-takeover-conclusion').textContent.trim(),
                 conclusionFits: document.querySelector('.auri-takeover-conclusion').scrollHeight <= document.querySelector('.auri-takeover-conclusion').clientHeight + 1,
                 conclusionBox: {client:document.querySelector('.auri-takeover-conclusion').clientHeight,scroll:document.querySelector('.auri-takeover-conclusion').scrollHeight},
@@ -189,6 +202,7 @@ def main() -> None:
     assert "预计晚到 18 分钟" in metrics["conclusionText"], metrics
     assert metrics["conclusionFits"] is True, metrics
     assert metrics["actionFonts"] and min(metrics["actionFonts"]) >= 18, metrics
+    assert all(len(row["title"]) >= 2 and row["copyWidth"] >= 100 for row in metrics["actionRows"]), metrics
     assert metrics["button"]["height"] >= 55.5, metrics
     assert metrics["button"]["bottom"] <= metrics["card"]["bottom"] + 1, metrics
     assert metrics["carPlate"]["top"] >= metrics["scene"]["top"] and metrics["carPlate"]["bottom"] <= metrics["scene"]["bottom"], metrics

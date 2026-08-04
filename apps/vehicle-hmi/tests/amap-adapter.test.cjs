@@ -34,7 +34,10 @@ class FakeElement {
     this.textContent = "";
     this.style = {
       values: new Map(),
-      setProperty: (name, value) => this.style.values.set(name, value),
+      setProperty: (name, value) => {
+        this.style.values.set(name, value);
+        calls.push(["style", name, value]);
+      },
       getPropertyValue: (name) => this.style.values.get(name) || ""
     };
   }
@@ -55,6 +58,7 @@ class FakeMap {
     this.added = [];
     this.removed = [];
     this.rotation = Number(options.rotation || 0);
+    this.pitch = Number(options.pitch || 0);
   }
 
   add(value) {
@@ -75,7 +79,12 @@ class FakeMap {
   }
 
   setPitch(pitch) {
+    this.pitch = pitch;
     calls.push(["pitch", pitch]);
+  }
+
+  getPitch() {
+    return this.pitch;
   }
 
   setRotation(rotation) {
@@ -132,15 +141,37 @@ class FakeMarker {
     this.options = options;
     this.position = options.position;
     this.visible = true;
+    this.listeners = new Map();
+  }
+
+  on(event, handler) {
+    this.listeners.set(event, handler);
   }
 
   setPosition(position) {
     this.position = position;
   }
 
+  getPosition() {
+    return this.position;
+  }
+
   moveTo(position) {
     this.position = position;
     calls.push(["move-to", position]);
+  }
+
+  moveAlong(path) {
+    path.forEach((item) => {
+      this.position = item?.position || item;
+      this.listeners.get("moving")?.({ target: this, pos: this.position });
+    });
+    this.listeners.get("moveend")?.({ target: this });
+    calls.push(["move-along", path.length, path.reduce((sum, item) => sum + Number(item?.duration || 0), 0)]);
+  }
+
+  stopMove() {
+    calls.push(["stop-move"]);
   }
 
   setAngle(angle) {
@@ -226,7 +257,8 @@ const fakeAMap = {
   Driving: FakeDriving,
   DrivingPolicy: { LEAST_TIME: 0 },
   Polyline: FakePolyline,
-  Marker: FakeMarker
+  Marker: FakeMarker,
+  Browser: { isWebGL: () => true }
 };
 global.AMap = fakeAMap;
 
@@ -323,6 +355,18 @@ async function main() {
   assertClose(middleSegment[0][0], 0.001, 0.00002);
   assertClose(middleSegment.at(-1)[0], 0.003, 0.00002);
 
+  const veryLongMotionPath = Array.from({ length: 702 }, (_, index) => [120 + index / 100000, 31]);
+  const boundedMotionPath = amap.buildTimedMotionPath(veryLongMotionPath, 520);
+  assert.ok(boundedMotionPath.length <= 34, `long paths must be sampled, got ${boundedMotionPath.length} points`);
+  assert.deepEqual(boundedMotionPath[0], { position: veryLongMotionPath[0], duration: 0 });
+  assert.deepEqual(boundedMotionPath.at(-1).position, veryLongMotionPath.at(-1));
+  assert.equal(
+    boundedMotionPath.reduce((sum, item) => sum + item.duration, 0),
+    520,
+    "arbitrary path lengths must preserve the exact animation budget"
+  );
+  assert.ok(boundedMotionPath.slice(1).every((item) => item.duration >= 16));
+
   const firstMeta = amap.routeMeta(successfulRoute, 0);
   assert.equal(firstMeta.instruction, "左转进入星龙街");
   assert.equal(firstMeta.maneuver, "left");
@@ -352,6 +396,7 @@ async function main() {
   assert.equal(initialized.mode, "map_ready");
   assert.equal(online.container.hidden, false);
   assert.equal(online.adapter.getStatus(), "map_ready");
+  assert.equal(online.adapter.get3dMode(), "native", "function-form WebGL capability must be detected");
 
   const routeConfig = {
     start: [120.791879, 31.33468],
@@ -373,6 +418,7 @@ async function main() {
     routePlans: 1
   });
 
+  const headingWritesBeforeMotion = calls.filter(([name, property]) => name === "style" && property === "--auri-vehicle-heading").length;
   online.adapter.update({
     stage: "waiting_confirmation",
     progress: 0.5,
@@ -384,11 +430,11 @@ async function main() {
   });
   assert.equal(online.adapter.getCameraMode(), "follow");
   assert.ok(online.adapter.getCameraRotation() > 0);
-  assertClose(online.adapter.overlays.vehicleMarker.angle, 0, 1e-6);
+  assert.equal(online.adapter.getCameraPitch(), 55);
   assert.equal(
-    online.adapter.overlays.vehicleContent.style.getPropertyValue("--auri-marker-counter-rotation"),
-    `${-online.adapter.overlays.vehicleMarker.angle}deg`,
-    "vehicle label must counter-rotate so the AURI wordmark stays horizontal"
+    online.adapter.overlays.vehicleContent.style.getPropertyValue("--auri-vehicle-heading"),
+    "0deg",
+    "follow camera must keep the navigation arrow pointing forward while the AURI wordmark stays horizontal"
   );
   assert.equal(online.adapter.overlays.incidentMarker.visible, true);
   assert.equal(online.adapter.overlays.incidentContent.textContent, "拥堵 · 晚到 18 分钟");
@@ -397,6 +443,30 @@ async function main() {
     ["#e6a700", "#d1495b", "#8f2032"],
     "congestion must progress from amber to red and deep red"
   );
+  online.adapter.update({
+    stage: "waiting_confirmation",
+    progress: 0.56,
+    showVehicle: true,
+    overview: false,
+    driving: true,
+    riskLevel: "L2",
+    lateMinutes: 18,
+    motionDurationMs: 640
+  });
+  assert.equal(calls.some(([name]) => name === "move-along"), true, "vehicle must use AMap moveAlong for curved route animation");
+  const moveAlongCall = calls.find(([name]) => name === "move-along");
+  assert.ok(moveAlongCall[2] <= 640, `timed path must stay within its 640ms motion budget, got ${moveAlongCall[2]}ms`);
+  assert.ok(
+    calls.filter(([name, property]) => name === "style" && property === "--auri-vehicle-heading").length > headingWritesBeforeMotion,
+    "AMap moving events must keep the arrow heading synchronized with the actual marker position"
+  );
+  assert.equal(online.adapter.getMotionMethod(), "moveAlong");
+  assert.deepEqual(online.adapter.getMotionDiagnostics(), {
+    active: false,
+    overlapCount: 0,
+    completedCount: 1,
+    plannedDurationMs: moveAlongCall[2]
+  });
   assert.equal(online.adapter.overlays.routeCongestionBands.every((band) => band.options.strokeOpacity === 1), true);
   online.adapter.update({
     stage: "waiting_confirmation",
@@ -421,6 +491,13 @@ async function main() {
   );
   online.adapter.clearNavigation();
   assert.equal(online.adapter.getStatus(), "offline");
+
+  resetRuntime();
+  fakeAMap.Browser.isWebGL = false;
+  const simulated = createAdapter();
+  await simulated.adapter.init({ mapProvider: "amap", amapKey: "test-key", amapMonthlyMapLimit: 10, amapMonthlyRouteLimit: 10 });
+  assert.equal(simulated.adapter.get3dMode(), "simulated", "boolean-form WebGL capability must be detected");
+  fakeAMap.Browser.isWebGL = () => true;
   assert.equal(online.adapter.routePath.length, 0);
   assert.equal(online.mapWrap.classList.contains("is-amap-online"), false);
   assert.equal(online.container.hidden, true);

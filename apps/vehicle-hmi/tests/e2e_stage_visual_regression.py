@@ -284,6 +284,11 @@ def capture(page: Page, state: dict, index: int, source: str) -> dict:
           };
           const iconSelectors=['.auri-shell-row-icon','.auri-notice-icon','.auri-stage-notice-icon','.auri-takeover-action>span','.auri-driver-task-icon','.auri-driver-context-icon'];
           const iconTexts=iconSelectors.flatMap(selector=>Array.from(document.querySelectorAll(selector))).filter(node=>visibleNode(node)).map(node=>node.textContent.trim()).filter(Boolean);
+          const actionRows=Array.from(document.querySelectorAll('.auri-takeover-action')).filter(node=>visibleNode(node)).map(node=>{
+            const copy=node.querySelector('.auri-takeover-action-copy');
+            const box=copy?.getBoundingClientRect();
+            return {title:copy?.querySelector('b')?.textContent.trim()||'',copyWidth:box?.width||0};
+          });
           function visibleNode(node){
             const style=getComputedStyle(node); const box=node.getBoundingClientRect();
             return !node.hidden && style.display!=='none' && style.visibility!=='hidden' && box.width>0 && box.height>0;
@@ -292,7 +297,7 @@ def capture(page: Page, state: dict, index: int, source: str) -> dict:
             driver:rect('#auri-driver-panel'), vehicle:rect('#vd-panel'), map:rect('.right-panel'), dock:rect('.bottom-bar'),
             driverVisible:visible('#auri-driver-panel'), navCardVisible:visible('#vd-nav-card'), navHudVisible:visible('#auri-nav-hud'),
             stageNoticeVisible:visible('#auri-stage-notice'), deviceNoticeVisible:visible('#auri-device-notice'),
-            processPoisVisible:visible('.map-poi-layer'), iconTexts,
+            processPoisVisible:visible('.map-poi-layer'), iconTexts, actionRows,
             bottomLauncherVisible:visible('.sidebar')
           };
         }"""
@@ -307,6 +312,7 @@ def capture(page: Page, state: dict, index: int, source: str) -> dict:
     assert quality["map"]["right"] <= quality["dock"]["right"] + 1, quality
     banned_icons = {"声", "腕", "表", "联", "刚", "弹", "信", "单", "路", "务", "返", "调", "距", "温"}
     assert not banned_icons.intersection(quality["iconTexts"]), quality
+    assert all(len(row["title"]) >= 2 and row["copyWidth"] >= 100 for row in quality["actionRows"]), quality
     # Stage and device notifications share one visual lane. Showing both at
     # once recreates the map occlusion this regression is intended to catch.
     assert not (
