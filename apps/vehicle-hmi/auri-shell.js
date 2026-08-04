@@ -662,6 +662,7 @@
     document.getElementById("auri-notice-title").textContent = title;
     document.getElementById("auri-notice-text").textContent = `${wearable.text} · ${HAPTIC_LABEL[wearable.haptic] || "状态提示"}${delivered ? "" : " · 设备未连接"}`;
     notice.dataset.tone = wearable.mode;
+    notice.dataset.stage = viewModel.lifecycle.stage;
     clearTimeout(noticeHideTimer);
     notice.hidden = false;
     requestAnimationFrame(() => notice.classList.add("is-visible"));
@@ -696,12 +697,19 @@
   function renderStageNotice() {
     const deviceNotice = document.getElementById("auri-device-notice");
     if (deviceNotice && !deviceNotice.hidden) {
-      const notice = document.getElementById("auri-stage-notice");
-      if (notice && notice.dataset.stage !== viewModel.lifecycle.stage) {
-        notifiedStages.delete(`${viewModel.meta.sessionId}:${viewModel.lifecycle.stage}`);
-        hideStageNotice();
+      if (deviceNotice.dataset.stage !== viewModel.lifecycle.stage) {
+        clearTimeout(noticeTimer);
+        clearTimeout(noticeHideTimer);
+        deviceNotice.classList.remove("is-visible");
+        deviceNotice.hidden = true;
+      } else {
+        const notice = document.getElementById("auri-stage-notice");
+        if (notice && notice.dataset.stage !== viewModel.lifecycle.stage) {
+          notifiedStages.delete(`${viewModel.meta.sessionId}:${viewModel.lifecycle.stage}`);
+          hideStageNotice();
+        }
+        return;
       }
-      return;
     }
     const view = stageNoticeView();
     if (!view || !viewModel.meta.sessionId) {
@@ -1630,7 +1638,15 @@
       drivePlayback.speedKph = 0;
       mapViewUserSelected = false;
     } else if (authoritativeChanged) {
-      drivePlayback.progress = authoritativeProgress;
+      const nextMode = driveProfile().mode;
+      const holdsAtCongestion = drivePlayback.mode === "stopped"
+        && nextMode === "stopped"
+        && authoritativeProgress > drivePlayback.progress;
+      const resumesAfterStop = stageChanged
+        && drivePlayback.mode === "stopped"
+        && ["action_completed", "cooldown"].includes(viewModel.lifecycle.stage)
+        && authoritativeProgress > drivePlayback.progress + 0.12;
+      if (!holdsAtCongestion && !resumesAfterStop) drivePlayback.progress = authoritativeProgress;
     }
     if (stageChanged && !mapViewUserSelected) {
       if (viewModel.lifecycle.stage === "handover_to_vehicle") mapViewMode = "overview";
@@ -1704,7 +1720,7 @@
   }
 
   const DRIVE_PLAYBACK_INTERVAL_MS = 650;
-  const MAP_MOTION_DURATION_MS = 520;
+  const MAP_MOTION_DURATION_MS = 440;
 
   function startDrivePlayback() {
     if (!drivePlaybackTimer) drivePlaybackTimer = window.setInterval(tickDrivePlayback, DRIVE_PLAYBACK_INTERVAL_MS);
@@ -1749,14 +1765,18 @@
 
   function navigationSnapshot() {
     const stage = viewModel.lifecycle.stage;
-    const progress = drivePlayback.progress ?? viewModel.navigation.route?.progress ?? STAGE_PROGRESS[stage] ?? 0.03;
     const driving = viewModel.lifecycle.scene === "driving" || ["handover_to_vehicle", "vehicle_observation", "takeover_L2", "takeover_L3", "planning", "service_prepared", "waiting_confirmation", "executing", "service_executed", "action_completed", "cooldown"].includes(stage);
+    const overview = !driving || ["handover_to_vehicle", "parked_review"].includes(stage) || mapViewMode === "overview";
+    const authoritativeProgress = Number(drivePlayback.authoritativeProgress);
+    const progress = overview && Number.isFinite(authoritativeProgress)
+      ? authoritativeProgress
+      : drivePlayback.progress ?? viewModel.navigation.route?.progress ?? STAGE_PROGRESS[stage] ?? 0.03;
     return {
       stage,
       progress,
       driving,
       showVehicle: driving,
-      overview: !driving || ["handover_to_vehicle", "parked_review"].includes(stage) || mapViewMode === "overview",
+      overview,
       stopped: ["stopped", "parked"].includes(driveProfile().mode),
       motionDurationMs: MAP_MOTION_DURATION_MS,
       riskLevel: viewModel.risk.level,
@@ -1802,8 +1822,11 @@
         if (["follow", "overview"].includes(action)) {
           mapViewMode = action;
           mapViewUserSelected = true;
+          mapAdapter.update(navigationSnapshot());
+          mapAdapter.control(action);
+        } else {
+          mapAdapter.control(action);
         }
-        mapAdapter.control(action);
         renderMapControlState();
       });
     });

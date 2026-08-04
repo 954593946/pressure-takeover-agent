@@ -102,6 +102,42 @@
     return { path: normalizedPath, cumulative, totalDistance: cumulative.at(-1) || 0 };
   }
 
+  function mercatorY(latitude) {
+    const bounded = Math.max(-85.05112878, Math.min(85.05112878, Number(latitude) || 0));
+    const radians = bounded * Math.PI / 180;
+    return (1 - Math.log(Math.tan(radians) + (1 / Math.cos(radians))) / Math.PI) / 2;
+  }
+
+  function latitudeFromMercatorY(value) {
+    return Math.atan(Math.sinh(Math.PI * (1 - 2 * value))) * 180 / Math.PI;
+  }
+
+  function routeOverviewCamera(path, width = 1000, height = 700) {
+    const points = (Array.isArray(path) ? path : [])
+      .map(pointValue)
+      .filter((point) => point?.every(Number.isFinite));
+    if (!points.length) return { center: [120.791879, 31.33468], zoom: 13 };
+
+    const normalizedWidth = Math.max(320, Number(width) || 1000);
+    const normalizedHeight = Math.max(260, Number(height) || 700);
+    const longitudes = points.map((point) => point[0]);
+    const mercatorValues = points.map((point) => mercatorY(point[1]));
+    const minLng = Math.min(...longitudes);
+    const maxLng = Math.max(...longitudes);
+    const minY = Math.min(...mercatorValues);
+    const maxY = Math.max(...mercatorValues);
+    const centerY = (minY + maxY) / 2;
+    const center = [(minLng + maxLng) / 2, latitudeFromMercatorY(centerY)];
+    const longitudeSpan = Math.max(1 / 360000, (maxLng - minLng) / 360);
+    const mercatorSpan = Math.max(1 / 360000, maxY - minY);
+    const usableWidth = Math.max(220, normalizedWidth - 260);
+    const usableHeight = Math.max(200, normalizedHeight - 230);
+    const longitudeZoom = Math.log2(usableWidth / (256 * longitudeSpan));
+    const latitudeZoom = Math.log2(usableHeight / (256 * mercatorSpan));
+    const zoom = Math.max(10, Math.min(16, Math.min(longitudeZoom, latitudeZoom) - 0.12));
+    return { center, zoom };
+  }
+
   function appendUnique(path, point) {
     const previous = path.at(-1);
     if (!previous || previous[0] !== point[0] || previous[1] !== point[1]) path.push(point);
@@ -308,10 +344,16 @@
       this.lastStage = null;
       this.lastCameraHeading = null;
       this.lastCameraRotation = null;
+      this.lastCameraPitch = null;
       this.lastAnimatedPoint = null;
+      this.markerProgress = null;
+      this.motionTargetProgress = null;
+      this.pendingMotionProgress = null;
       this.motionActive = false;
       this.motionOverlapCount = 0;
       this.motionCompletedCount = 0;
+      this.motionSequence = 0;
+      this.motionFallbackTimer = null;
       this.lastMotionPlannedDurationMs = 0;
       this.lastRouteMetaKey = null;
       this.lastMetaProgress = null;
@@ -321,6 +363,7 @@
       this.pendingRoutePromise = null;
       this.failedRouteKey = null;
       this.failedRouteReason = null;
+      this.fixedVehicle = null;
     }
 
     async init(config) {
@@ -356,7 +399,7 @@
           showBuildingBlock: true,
           buildingAnimation: true,
           skyColor: "#e9eef5",
-          showLabel: true,
+          showLabel: false,
           resizeEnable: true,
           rotateEnable: true,
           pitchEnable: true,
@@ -392,7 +435,12 @@
       this.drivingRoute = null;
       this.lastProgress = null;
       this.lastAnimatedPoint = null;
+      this.markerProgress = null;
+      this.motionTargetProgress = null;
+      this.pendingMotionProgress = null;
       this.motionActive = false;
+      if (this.motionFallbackTimer !== null) root.clearTimeout?.(this.motionFallbackTimer);
+      this.motionFallbackTimer = null;
       this.motionOverlapCount = 0;
       this.motionCompletedCount = 0;
       this.lastMotionPlannedDurationMs = 0;
@@ -515,11 +563,18 @@
           this.setVehicleHeading(bearing(previous, point));
         }
         this.lastAnimatedPoint = point;
+        if (!this.lastSnapshot?.stopped) this.mapWrap.dataset.vehicleMotion = "moving";
       });
       this.overlays.vehicleMarker.on?.("moveend", () => {
-        this.motionActive = false;
-        this.motionCompletedCount += 1;
+        this.completeMarkerMotion(false);
       });
+      if (!this.fixedVehicle && this.mapWrap?.appendChild) {
+        this.fixedVehicle = root.document.createElement("div");
+        this.fixedVehicle.className = "auri-amap-fixed-vehicle";
+        this.fixedVehicle.setAttribute("aria-hidden", "true");
+        this.fixedVehicle.innerHTML = '<span></span><i></i><b>AURI</b>';
+        this.mapWrap.appendChild(this.fixedVehicle);
+      }
       this.overlays.originMarker = new AMap.Marker({ position: this.routePath[0], content: markerContent("auri-amap-origin", routeConfig.originName || "博世苏州"), anchor: "bottom-left", zIndex: 109 });
       this.overlays.destinationMarker = new AMap.Marker({ position: this.routePath.at(-1), content: markerContent("auri-amap-destination", routeConfig.destinationName || "目的地"), anchor: "bottom-center", zIndex: 110 });
       const incident = markerContent("auri-amap-incident", "前方拥堵");
@@ -550,15 +605,76 @@
       this.applyOverviewCamera();
     }
 
+    completeMarkerMotion(stopMarker) {
+      if (!this.motionActive) return;
+      if (this.motionFallbackTimer !== null) root.clearTimeout?.(this.motionFallbackTimer);
+      this.motionFallbackTimer = null;
+      this.motionActive = false;
+      this.markerProgress = this.motionTargetProgress ?? this.markerProgress;
+      this.motionCompletedCount += 1;
+      if (stopMarker) this.overlays.vehicleMarker?.stopMove?.();
+      this.mapWrap.dataset.vehicleMotion = this.lastSnapshot?.stopped ? "stopped" : "settled";
+      const pendingProgress = this.pendingMotionProgress;
+      this.pendingMotionProgress = null;
+      if (
+        Number.isFinite(pendingProgress)
+        && pendingProgress > (this.markerProgress ?? -1)
+        && this.lastSnapshot?.showVehicle
+        && !this.lastSnapshot?.overview
+        && !this.lastSnapshot?.stopped
+      ) {
+        this.startMarkerMotion(this.lastSnapshot, pendingProgress);
+      }
+    }
+
+    startMarkerMotion(snapshot, progress) {
+      if (this.motionActive || !this.routeGeometry || typeof this.overlays.vehicleMarker?.moveAlong !== "function") return;
+      const startProgress = this.markerProgress ?? this.lastProgress ?? progress;
+      const location = locationAtProgress(this.routeGeometry, progress);
+      const motionPath = pathBetweenProgress(this.routeGeometry, startProgress, progress);
+      const currentPosition = pointValue(this.overlays.vehicleMarker.getPosition?.());
+      if (currentPosition && motionPath.length) motionPath[0] = currentPosition;
+      this.lastAnimatedPoint = motionPath[0] || currentPosition;
+      this.setVehicleHeading(motionPath.length > 1 ? bearing(motionPath[0], motionPath[1]) : location.heading);
+      const totalDuration = Math.max(120, Number(snapshot.motionDurationMs || 640));
+      const timedPath = buildTimedMotionPath(motionPath, totalDuration);
+      this.lastMotionPlannedDurationMs = timedPath.reduce((sum, item) => sum + item.duration, 0);
+      this.motionTargetProgress = progress;
+      this.motionActive = true;
+      const motionSequence = ++this.motionSequence;
+      this.motionFallbackTimer = root.setTimeout?.(() => {
+        if (!this.motionActive || motionSequence !== this.motionSequence) return;
+        this.completeMarkerMotion(true);
+      }, totalDuration + 80) ?? null;
+      this.overlays.vehicleMarker.moveAlong(timedPath, { autoRotation: false });
+      this.lastMotionMethod = "moveAlong";
+    }
+
     applyOverviewCamera() {
       if (!this.map || !this.overlays.routeShadow) return;
+      if (this.motionActive) {
+        this.motionActive = false;
+        if (this.motionFallbackTimer !== null) root.clearTimeout?.(this.motionFallbackTimer);
+        this.motionFallbackTimer = null;
+        this.overlays.vehicleMarker?.stopMove?.();
+      }
+      this.pendingMotionProgress = null;
       this.cameraMode = "overview";
       this.mapWrap.dataset.cameraMode = "overview";
-      this.map.setFitView([this.overlays.originMarker, this.overlays.routeShadow, this.overlays.destinationMarker], true, [110, 130, 155, 105], 16);
-      this.map.setPitch?.(20, false, 520);
-      this.map.setRotation?.(0, false, 520);
+      if (this.native3d) {
+        this.map.setPitch?.(20, false, 520);
+        this.map.setRotation?.(0, false, 520);
+      }
+      const camera = routeOverviewCamera(
+        this.routePath,
+        this.container?.clientWidth || this.mapWrap?.clientWidth || 1000,
+        this.container?.clientHeight || this.mapWrap?.clientHeight || 700
+      );
+      this.map.setZoomAndCenter(camera.zoom, camera.center, false, 520);
       this.mapWrap.style?.setProperty?.("--auri-sim-map-rotation", "0deg");
+      this.mapWrap.style?.setProperty?.("--auri-sim-map-pitch", "0deg");
       this.lastCameraRotation = 0;
+      this.lastCameraPitch = this.native3d ? 20 : 0;
     }
 
     applyFollowCamera(snapshot, location, force = false) {
@@ -567,17 +683,21 @@
       const rawDelta = this.lastCameraHeading === null ? 360 : Math.abs(heading - this.lastCameraHeading) % 360;
       const delta = Math.min(rawDelta, 360 - rawDelta);
       const attention = ["takeover_L2", "takeover_L3", "planning", "waiting_confirmation"].includes(snapshot.stage);
-      const lookAhead = locationAtProgress(this.routeGeometry, Math.min(1, Number(snapshot.progress || 0) + 0.02));
+      const lookAheadOffset = attention ? 0.022 : 0.026;
+      const lookAhead = locationAtProgress(this.routeGeometry, Math.min(1, Number(snapshot.progress || 0) + lookAheadOffset));
       const meta = routeMeta(this.drivingRoute, snapshot.progress);
       const navigationZoom = meta.nextDistanceMeters <= 260 ? 18.15 : meta.nextDistanceMeters <= 900 ? 17.8 : 17.45;
       const cameraDuration = force ? 620 : Math.max(420, Math.min(720, Number(snapshot.motionDurationMs || 640)));
       const targetRotation = ((360 - heading) % 360 + 360) % 360;
+      const targetPitch = attention ? 55 : 61;
       this.cameraMode = "follow";
       this.mapWrap.dataset.cameraMode = "follow";
       this.map.setZoomAndCenter(attention ? Math.min(navigationZoom, 17.65) : navigationZoom, lookAhead.point, false, cameraDuration);
-      this.map.setPitch?.(attention ? 55 : 61, false, cameraDuration);
+      if (this.native3d) this.map.setPitch?.(targetPitch, false, cameraDuration);
+      this.mapWrap.style?.setProperty?.("--auri-sim-map-pitch", `${this.native3d ? 0 : 46}deg`);
+      this.lastCameraPitch = this.native3d ? targetPitch : 46;
       if (force || delta >= 1.5 || this.lastCameraRotation === null) {
-        this.map.setRotation?.(targetRotation, false, cameraDuration);
+        if (this.native3d) this.map.setRotation?.(targetRotation, false, cameraDuration);
         this.mapWrap.style?.setProperty?.("--auri-sim-map-rotation", `${targetRotation}deg`);
         this.lastCameraHeading = heading;
         this.lastCameraRotation = targetRotation;
@@ -648,36 +768,59 @@
       }
 
       if (snapshot.showVehicle) {
-        this.overlays.vehicleMarker.show();
-        if (this.lastProgress !== null && progressChanged && progress > this.lastProgress && typeof this.overlays.vehicleMarker.moveAlong === "function") {
-          const motionPath = pathBetweenProgress(this.routeGeometry, this.lastProgress, progress);
-          const currentPosition = pointValue(this.overlays.vehicleMarker.getPosition?.());
-          if (currentPosition && motionPath.length) motionPath[0] = currentPosition;
-          this.lastAnimatedPoint = motionPath[0] || currentPosition;
-          this.setVehicleHeading(motionPath.length > 1 ? bearing(motionPath[0], motionPath[1]) : location.heading);
-          const totalDuration = Math.max(120, Number(snapshot.motionDurationMs || 640));
-          const timedPath = buildTimedMotionPath(motionPath, totalDuration);
-          this.lastMotionPlannedDurationMs = timedPath.reduce((sum, item) => sum + item.duration, 0);
+        const fixedFollowVehicle = this.native3d === false && !snapshot.overview;
+        if (fixedFollowVehicle) this.overlays.vehicleMarker.hide();
+        else this.overlays.vehicleMarker.show();
+        this.mapWrap.dataset.vehicleVisible = "true";
+        this.mapWrap.dataset.vehicleMotion = snapshot.stopped ? "stopped" : this.motionActive ? "moving" : "settled";
+        if (snapshot.overview) {
+          if (this.motionActive) this.overlays.vehicleMarker.stopMove?.();
+          this.motionActive = false;
+          if (this.motionFallbackTimer !== null) root.clearTimeout?.(this.motionFallbackTimer);
+          this.motionFallbackTimer = null;
+          this.pendingMotionProgress = null;
+          this.setVehicleHeading(location.heading);
+          this.overlays.vehicleMarker.setPosition(location.point);
+          this.lastAnimatedPoint = location.point;
+          this.markerProgress = progress;
+          this.lastMotionMethod = "position";
+          this.mapWrap.dataset.vehicleMotion = snapshot.stopped ? "stopped" : "settled";
+        } else if (snapshot.stopped) {
           if (this.motionActive) {
-            this.motionOverlapCount += 1;
+            this.motionActive = false;
+            if (this.motionFallbackTimer !== null) root.clearTimeout?.(this.motionFallbackTimer);
+            this.motionFallbackTimer = null;
             this.overlays.vehicleMarker.stopMove?.();
           }
-          this.motionActive = true;
-          this.overlays.vehicleMarker.moveAlong(timedPath, { autoRotation: false });
-          this.lastMotionMethod = "moveAlong";
+          this.pendingMotionProgress = null;
+          this.setVehicleHeading(location.heading);
+          this.overlays.vehicleMarker.setPosition(location.point);
+          this.lastAnimatedPoint = location.point;
+          this.markerProgress = progress;
+          this.lastMotionMethod = "position";
+          this.mapWrap.dataset.vehicleMotion = "stopped";
+        } else if (this.lastProgress !== null && progressChanged && progress > this.lastProgress && typeof this.overlays.vehicleMarker.moveAlong === "function") {
+          if (this.motionActive) this.pendingMotionProgress = Math.max(this.pendingMotionProgress ?? 0, progress);
+          else this.startMarkerMotion(snapshot, progress);
         } else if (this.lastProgress !== null && progressChanged && typeof this.overlays.vehicleMarker.moveTo === "function") {
           if (this.motionActive) this.overlays.vehicleMarker.stopMove?.();
           this.motionActive = false;
           this.setVehicleHeading(location.heading);
           this.overlays.vehicleMarker.moveTo(location.point, { duration: Math.min(240, Number(snapshot.motionDurationMs || 640)), autoRotation: false });
           this.lastAnimatedPoint = location.point;
+          this.markerProgress = progress;
           this.lastMotionMethod = "moveTo";
         } else if (this.lastProgress === null) {
           this.setVehicleHeading(location.heading);
           this.overlays.vehicleMarker.setPosition(location.point);
           this.lastAnimatedPoint = location.point;
+          this.markerProgress = progress;
         } else if (!progressChanged) this.setVehicleHeading(location.heading);
-      } else this.overlays.vehicleMarker.hide();
+      } else {
+        this.overlays.vehicleMarker.hide();
+        this.mapWrap.dataset.vehicleVisible = "false";
+        this.mapWrap.dataset.vehicleMotion = "hidden";
+      }
       if (snapshot.overview) this.overlays.originMarker.show();
       else this.overlays.originMarker.hide();
 
@@ -718,8 +861,13 @@
 
     fallback(message, detail = null) {
       this.status = "offline";
+      if (this.motionFallbackTimer !== null) root.clearTimeout?.(this.motionFallbackTimer);
+      this.motionFallbackTimer = null;
       this.overlays.vehicleMarker?.stopMove?.();
       this.motionActive = false;
+      this.pendingMotionProgress = null;
+      this.mapWrap.dataset.vehicleVisible = "false";
+      this.mapWrap.dataset.vehicleMotion = "hidden";
       this.container.hidden = true;
       this.mapWrap.classList.remove("is-amap-online");
       this.onStatus({ mode: "offline", message, detail, usage: readUsage() });
@@ -730,8 +878,8 @@
     getCameraMode() { return this.cameraMode; }
     isTrafficVisible() { return this.trafficVisible; }
     getCameraHeading() { return this.lastCameraHeading; }
-    getCameraPitch() { return this.map?.getPitch?.() ?? null; }
-    getCameraRotation() { return this.map?.getRotation?.() ?? null; }
+    getCameraPitch() { return this.native3d === false ? this.lastCameraPitch : this.map?.getPitch?.() ?? null; }
+    getCameraRotation() { return this.native3d === false ? this.lastCameraRotation : this.map?.getRotation?.() ?? null; }
     get3dMode() { return this.native3d === false ? "simulated" : "native"; }
     getMotionMethod() { return this.lastMotionMethod || "position"; }
     getMotionDiagnostics() {
@@ -739,7 +887,10 @@
         active: this.motionActive,
         overlapCount: this.motionOverlapCount,
         completedCount: this.motionCompletedCount,
-        plannedDurationMs: this.lastMotionPlannedDurationMs
+        plannedDurationMs: this.lastMotionPlannedDurationMs,
+        markerProgress: this.markerProgress,
+        targetProgress: this.motionTargetProgress,
+        pendingProgress: this.pendingMotionProgress
       };
     }
   }
@@ -756,6 +907,7 @@
     flattenTrafficSegments,
     locationAtProgress,
     pathBetweenProgress,
+    routeOverviewCamera,
     routeMeta,
     screenHeading,
     trafficColor

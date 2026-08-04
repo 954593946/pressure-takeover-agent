@@ -4,6 +4,7 @@ const calls = [];
 const storageValues = new Map();
 let routePlanCount = 0;
 let drivingResultMode = "complete";
+let deferMoveEnd = false;
 
 class FakeClassList {
   constructor() {
@@ -32,6 +33,8 @@ class FakeElement {
     this.hidden = false;
     this.innerHTML = "";
     this.textContent = "";
+    this.clientWidth = 1000;
+    this.clientHeight = 700;
     this.style = {
       values: new Map(),
       setProperty: (name, value) => {
@@ -166,7 +169,7 @@ class FakeMarker {
       this.position = item?.position || item;
       this.listeners.get("moving")?.({ target: this, pos: this.position });
     });
-    this.listeners.get("moveend")?.({ target: this });
+    if (!deferMoveEnd) this.listeners.get("moveend")?.({ target: this });
     calls.push(["move-along", path.length, path.reduce((sum, item) => sum + Number(item?.duration || 0), 0)]);
   }
 
@@ -267,7 +270,8 @@ const amap = require("../src/amap-adapter.js");
 function createAdapter(options = {}) {
   const container = new FakeElement();
   container.hidden = true;
-  const mapWrap = { classList: new FakeClassList(), dataset: {} };
+  const mapWrap = new FakeElement();
+  mapWrap.classList = new FakeClassList();
   const statuses = [];
   const routeMetas = [];
   const adapter = amap.create({
@@ -288,6 +292,7 @@ function resetRuntime() {
   calls.length = 0;
   routePlanCount = 0;
   drivingResultMode = "complete";
+  deferMoveEnd = false;
   global.localStorage.clear();
 }
 
@@ -351,6 +356,11 @@ async function main() {
   assert.deepEqual(halfway.remaining[0], halfway.point);
   assert.ok(halfway.point[0] > flattened[1][0], "progress must be interpolated by distance, not point index");
 
+  const overviewCamera = amap.routeOverviewCamera(successfulRoute.steps.flatMap((step) => step.path), 753, 674);
+  assert.ok(overviewCamera.center[0] > 120.7359 && overviewCamera.center[0] < 120.791879);
+  assert.ok(overviewCamera.center[1] > 31.3048 && overviewCamera.center[1] < 31.33468);
+  assert.ok(overviewCamera.zoom > 13 && overviewCamera.zoom < 15, `overview zoom should fit the whole route, got ${overviewCamera.zoom}`);
+
   const middleSegment = amap.pathBetweenProgress(geometry, 0.25, 0.75);
   assertClose(middleSegment[0][0], 0.001, 0.00002);
   assertClose(middleSegment.at(-1)[0], 0.003, 0.00002);
@@ -411,6 +421,10 @@ async function main() {
   assert.equal(routePlanCount, 1, "same route key must not trigger another AMap.Driving search");
   assert.equal(online.adapter.getStatus(), "online");
   assert.equal(online.mapWrap.classList.contains("is-amap-online"), true);
+  const overviewCameraCall = calls.filter(([name]) => name === "zoom-center").at(-1);
+  assert.equal(overviewCameraCall[0], "zoom-center");
+  assertClose(overviewCameraCall[1], amap.routeOverviewCamera(online.adapter.routePath, 1000, 700).zoom);
+  assert.deepEqual(overviewCameraCall[2], amap.routeOverviewCamera(online.adapter.routePath, 1000, 700).center);
   assert.equal(online.routeMetas[0].roadName, "星龙街");
   assert.deepEqual(online.adapter.getUsage(), {
     month: currentLocalMonth(),
@@ -465,7 +479,10 @@ async function main() {
     active: false,
     overlapCount: 0,
     completedCount: 1,
-    plannedDurationMs: moveAlongCall[2]
+    plannedDurationMs: moveAlongCall[2],
+    markerProgress: 0.56,
+    targetProgress: 0.56,
+    pendingProgress: null
   });
   assert.equal(online.adapter.overlays.routeCongestionBands.every((band) => band.options.strokeOpacity === 1), true);
   online.adapter.update({
@@ -497,7 +514,72 @@ async function main() {
   const simulated = createAdapter();
   await simulated.adapter.init({ mapProvider: "amap", amapKey: "test-key", amapMonthlyMapLimit: 10, amapMonthlyRouteLimit: 10 });
   assert.equal(simulated.adapter.get3dMode(), "simulated", "boolean-form WebGL capability must be detected");
+  await simulated.adapter.setRoute(routeConfig, "simulated-route");
+  simulated.adapter.update({
+    stage: "vehicle_observation",
+    progress: 0.32,
+    showVehicle: true,
+    overview: false,
+    driving: true,
+    stopped: false,
+    motionDurationMs: 440,
+    riskLevel: "L0",
+    lateMinutes: 0
+  });
+  assert.equal(simulated.adapter.getCameraMode(), "follow");
+  assert.equal(simulated.adapter.getCameraPitch(), 46);
+  assert.notEqual(simulated.adapter.getCameraRotation(), 0);
+  assert.equal(simulated.mapWrap.dataset.vehicleVisible, "true");
+  assert.equal(simulated.mapWrap.style.getPropertyValue("--auri-sim-map-pitch"), "46deg");
   fakeAMap.Browser.isWebGL = () => true;
+
+  resetRuntime();
+  deferMoveEnd = true;
+  const coalesced = createAdapter();
+  await coalesced.adapter.init({ mapProvider: "amap", amapKey: "test-key", amapMonthlyMapLimit: 10, amapMonthlyRouteLimit: 10 });
+  await coalesced.adapter.setRoute(routeConfig, "coalesced-route");
+  const movingSnapshot = {
+    stage: "vehicle_observation",
+    showVehicle: true,
+    overview: false,
+    driving: true,
+    stopped: false,
+    motionDurationMs: 440,
+    riskLevel: "L0",
+    lateMinutes: 0
+  };
+  coalesced.adapter.update({ ...movingSnapshot, progress: 0.2 });
+  coalesced.adapter.update({ ...movingSnapshot, progress: 0.21 });
+  const moveCallsAfterFirst = calls.filter(([name]) => name === "move-along").length;
+  coalesced.adapter.update({ ...movingSnapshot, progress: 0.22 });
+  assert.equal(calls.filter(([name]) => name === "move-along").length, moveCallsAfterFirst, "an active marker animation must coalesce later progress updates");
+  assert.equal(coalesced.adapter.getMotionDiagnostics().overlapCount, 0);
+  coalesced.adapter.overlays.vehicleMarker.listeners.get("moveend")?.({ target: coalesced.adapter.overlays.vehicleMarker });
+  assert.equal(calls.filter(([name]) => name === "move-along").length, moveCallsAfterFirst + 1, "moveend must continue directly to the latest coalesced target");
+  assert.equal(coalesced.adapter.getMotionDiagnostics().targetProgress, 0.22);
+  coalesced.adapter.update({ ...movingSnapshot, progress: 0.23 });
+  assert.equal(calls.filter(([name]) => name === "move-along").length, moveCallsAfterFirst + 1, "the final frame must remain queued while the coalesced segment is active");
+  coalesced.adapter.overlays.vehicleMarker.listeners.get("moveend")?.({ target: coalesced.adapter.overlays.vehicleMarker });
+  assert.equal(calls.filter(([name]) => name === "move-along").length, moveCallsAfterFirst + 2, "the final queued frame must start without another state update");
+  coalesced.adapter.overlays.vehicleMarker.listeners.get("moveend")?.({ target: coalesced.adapter.overlays.vehicleMarker });
+  assert.equal(coalesced.adapter.getMotionDiagnostics().markerProgress, 0.23);
+  assert.equal(coalesced.adapter.getMotionDiagnostics().active, false);
+
+  resetRuntime();
+  deferMoveEnd = true;
+  const watchdog = createAdapter();
+  await watchdog.adapter.init({ mapProvider: "amap", amapKey: "test-key", amapMonthlyMapLimit: 10, amapMonthlyRouteLimit: 10 });
+  await watchdog.adapter.setRoute(routeConfig, "watchdog-route");
+  watchdog.adapter.update({ ...movingSnapshot, motionDurationMs: 120, progress: 0.1 });
+  watchdog.adapter.update({ ...movingSnapshot, motionDurationMs: 120, progress: 0.15 });
+  watchdog.adapter.update({ ...movingSnapshot, motionDurationMs: 120, progress: 0.18 });
+  await new Promise((resolve) => setTimeout(resolve, 230));
+  assert.equal(watchdog.adapter.getMotionDiagnostics().completedCount, 1, "watchdog must finish a segment when moveend is missing");
+  assert.equal(watchdog.adapter.getMotionDiagnostics().targetProgress, 0.18, "watchdog completion must continue to the queued final target");
+  watchdog.adapter.overlays.vehicleMarker.listeners.get("moveend")?.({ target: watchdog.adapter.overlays.vehicleMarker });
+  assert.equal(watchdog.adapter.getMotionDiagnostics().markerProgress, 0.18);
+  deferMoveEnd = false;
+
   assert.equal(online.adapter.routePath.length, 0);
   assert.equal(online.mapWrap.classList.contains("is-amap-online"), false);
   assert.equal(online.container.hidden, true);
