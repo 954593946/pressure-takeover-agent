@@ -20,6 +20,20 @@
     return Math.max(min, Math.min(max, Number(value) || 0));
   }
 
+  function runtimeSupportsWebgl(documentRef = root?.document) {
+    try {
+      const canvas = documentRef?.createElement?.("canvas");
+      if (!canvas?.getContext) return false;
+      return Boolean(
+        canvas.getContext("webgl2", { failIfMajorPerformanceCaveat: false })
+        || canvas.getContext("webgl", { failIfMajorPerformanceCaveat: false })
+        || canvas.getContext("experimental-webgl", { failIfMajorPerformanceCaveat: false })
+      );
+    } catch (_error) {
+      return false;
+    }
+  }
+
   function pointValue(point) {
     if (!point) return null;
     if (Array.isArray(point)) return [Number(point[0]), Number(point[1])];
@@ -51,6 +65,17 @@
 
   function screenHeading(heading, mapRotation = 0) {
     return ((Number(heading || 0) + Number(mapRotation || 0)) % 360 + 360) % 360;
+  }
+
+  function followCameraSpec(meta, attention = false) {
+    const nextDistanceMeters = Number(meta?.nextDistanceMeters || 0);
+    const routeZoom = nextDistanceMeters <= 260 ? 17.8 : nextDistanceMeters <= 900 ? 17.45 : 17.05;
+    return {
+      lookAheadOffset: 0.006,
+      zoom: attention ? Math.min(routeZoom, 17.3) : routeZoom,
+      pitch: attention ? 48 : 52,
+      rotationThreshold: 7
+    };
   }
 
   function trafficColor(status) {
@@ -364,6 +389,7 @@
       this.failedRouteKey = null;
       this.failedRouteReason = null;
       this.fixedVehicle = null;
+      this.congestionDiagnostics = [];
     }
 
     async init(config) {
@@ -382,24 +408,30 @@
       try {
         const AMap = await loadAmap(config);
         const webglCapability = AMap.Browser?.isWebGL;
-        this.native3d = typeof webglCapability === "function"
+        const amapReportedWebgl = typeof webglCapability === "function"
           ? Boolean(webglCapability.call(AMap.Browser))
-          : webglCapability !== false;
-        this.mapWrap.dataset.amap3d = this.native3d ? "native" : "simulated";
+          : webglCapability === true;
+        const runtimeWebgl = runtimeSupportsWebgl();
         this.container.hidden = false;
         recordUsage("mapLoads");
+        this.mapWrap.dataset.webglReported = amapReportedWebgl ? "true" : "false";
+        this.mapWrap.dataset.webglRuntime = runtimeWebgl ? "true" : "false";
+        const requestedStyle = config.amapStyle || "amap://styles/normal";
+        const mapStyle = !amapReportedWebgl && requestedStyle === "amap://styles/normal"
+          ? "amap://styles/whitesmoke"
+          : requestedStyle;
         this.map = new AMap.Map(this.container, {
           center: config.amapStart || [120.791879, 31.334680],
           zoom: 16.8,
           viewMode: "3D",
           pitch: 52,
           rotation: 0,
-          mapStyle: config.amapStyle || "amap://styles/normal",
-          features: ["bg", "road", "building", "point"],
+          mapStyle,
+          features: amapReportedWebgl ? ["bg", "road", "building", "point"] : ["bg", "road", "building"],
           showBuildingBlock: true,
           buildingAnimation: true,
           skyColor: "#e9eef5",
-          showLabel: false,
+          showLabel: amapReportedWebgl,
           resizeEnable: true,
           rotateEnable: true,
           pitchEnable: true,
@@ -409,6 +441,10 @@
           keyboardEnable: false,
           doubleClickZoom: true
         });
+        const effectivePitch = Number(this.map.getPitch?.() || 0);
+        this.native3d = amapReportedWebgl || (runtimeWebgl && effectivePitch >= 1);
+        this.mapWrap.dataset.amap3d = this.native3d ? "native" : "simulated";
+        this.mapWrap.dataset.webglEffective = this.native3d ? "true" : "false";
         this.overlays.trafficLayer = new AMap.TileLayer.Traffic({ autoRefresh: true, interval: 180, opacity: 0.2, zIndex: 8 });
         this.map.add(this.overlays.trafficLayer);
         this.status = "map_ready";
@@ -444,6 +480,7 @@
       this.motionOverlapCount = 0;
       this.motionCompletedCount = 0;
       this.lastMotionPlannedDurationMs = 0;
+      this.congestionDiagnostics = [];
       this.lastRouteMetaKey = null;
       this.lastMetaProgress = null;
     }
@@ -683,21 +720,23 @@
       const rawDelta = this.lastCameraHeading === null ? 360 : Math.abs(heading - this.lastCameraHeading) % 360;
       const delta = Math.min(rawDelta, 360 - rawDelta);
       const attention = ["takeover_L2", "takeover_L3", "planning", "waiting_confirmation"].includes(snapshot.stage);
-      const lookAheadOffset = attention ? 0.022 : 0.026;
-      const lookAhead = locationAtProgress(this.routeGeometry, Math.min(1, Number(snapshot.progress || 0) + lookAheadOffset));
+      // Keep the camera close enough to the current position that the locked
+      // vehicle remains on the route through bends. This mirrors the native
+      // navigation camera used before the CSS fallback was introduced.
       const meta = routeMeta(this.drivingRoute, snapshot.progress);
-      const navigationZoom = meta.nextDistanceMeters <= 260 ? 18.15 : meta.nextDistanceMeters <= 900 ? 17.8 : 17.45;
+      const cameraSpec = followCameraSpec(meta, attention);
+      const lookAhead = locationAtProgress(this.routeGeometry, Math.min(1, Number(snapshot.progress || 0) + cameraSpec.lookAheadOffset));
       const cameraDuration = force ? 620 : Math.max(420, Math.min(720, Number(snapshot.motionDurationMs || 640)));
       const targetRotation = ((360 - heading) % 360 + 360) % 360;
-      const targetPitch = attention ? 55 : 61;
+      const targetPitch = cameraSpec.pitch;
       this.cameraMode = "follow";
       this.mapWrap.dataset.cameraMode = "follow";
-      this.map.setZoomAndCenter(attention ? Math.min(navigationZoom, 17.65) : navigationZoom, lookAhead.point, false, cameraDuration);
-      if (this.native3d) this.map.setPitch?.(targetPitch, false, cameraDuration);
-      this.mapWrap.style?.setProperty?.("--auri-sim-map-pitch", `${this.native3d ? 0 : 46}deg`);
-      this.lastCameraPitch = this.native3d ? targetPitch : 46;
-      if (force || delta >= 1.5 || this.lastCameraRotation === null) {
-        if (this.native3d) this.map.setRotation?.(targetRotation, false, cameraDuration);
+      this.map.setZoomAndCenter(cameraSpec.zoom, lookAhead.point, false, cameraDuration);
+      this.map.setPitch?.(targetPitch, false, cameraDuration);
+      this.mapWrap.style?.setProperty?.("--auri-sim-map-pitch", `${this.native3d ? 0 : 32}deg`);
+      this.lastCameraPitch = this.native3d ? targetPitch : 32;
+      if (force || delta >= cameraSpec.rotationThreshold || this.lastCameraRotation === null) {
+        this.map.setRotation?.(targetRotation, false, cameraDuration);
         this.mapWrap.style?.setProperty?.("--auri-sim-map-rotation", `${targetRotation}deg`);
         this.lastCameraHeading = heading;
         this.lastCameraRotation = targetRotation;
@@ -739,12 +778,18 @@
 
       const riskActive = ["L2", "L3"].includes(snapshot.riskLevel);
       const completed = ["action_completed", "cooldown", "parked_review"].includes(snapshot.stage);
-      const congestionRanges = [[0.012, 0.04], [0.04, 0.068], [0.068, 0.094]];
+      // Keep all three traffic severities inside the short follow-camera
+      // horizon: slow, congested, then severe congestion farther ahead.
+      const congestionRanges = [[0.003, 0.008], [0.008, 0.014], [0.014, 0.021]];
+      const congestionColors = ["#e6a700", "#d1495b", "#8f2032"];
+      this.congestionDiagnostics = [];
       this.overlays.routeCongestionBands.forEach((band, index) => {
         const [startOffset, endOffset] = congestionRanges[index];
         const path = pathBetweenProgress(this.routeGeometry, Math.min(1, progress + startOffset), Math.min(1, progress + endOffset));
-        band.setOptions({ strokeOpacity: riskActive && this.trafficVisible ? 1 : 0 });
+        const visible = riskActive && this.trafficVisible;
+        band.setOptions({ strokeOpacity: visible ? 1 : 0 });
         band.setPath(riskActive && path.length > 1 ? path : fallback);
+        this.congestionDiagnostics.push({ color: congestionColors[index], visible, pointCount: path.length });
       });
       this.overlays.routeTrafficSegments.forEach((segment) => segment.setOptions({ strokeOpacity: this.trafficVisible ? 0.92 : 0 }));
       if (riskActive) {
@@ -882,6 +927,7 @@
     getCameraRotation() { return this.native3d === false ? this.lastCameraRotation : this.map?.getRotation?.() ?? null; }
     get3dMode() { return this.native3d === false ? "simulated" : "native"; }
     getMotionMethod() { return this.lastMotionMethod || "position"; }
+    getCongestionDiagnostics() { return this.congestionDiagnostics.map((item) => ({ ...item })); }
     getMotionDiagnostics() {
       return {
         active: this.motionActive,
@@ -905,10 +951,12 @@
     create(options) { return new AuriAmapAdapter(options); },
     flattenDrivingPath,
     flattenTrafficSegments,
+    followCameraSpec,
     locationAtProgress,
     pathBetweenProgress,
     routeOverviewCamera,
     routeMeta,
+    runtimeSupportsWebgl,
     screenHeading,
     trafficColor
   };

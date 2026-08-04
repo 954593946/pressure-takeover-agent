@@ -21,6 +21,7 @@ CHROME = os.getenv(
     "PLAYWRIGHT_CHROMIUM_EXECUTABLE",
     str(Path.home() / ".cache/ms-playwright/chromium-1228/chrome-linux64/chrome"),
 )
+HEADLESS = os.getenv("PLAYWRIGHT_HEADLESS", "1").strip().lower() not in {"0", "false", "no"}
 OUTPUT = Path(os.getenv("AURI_AMAP_VISUAL_DIR", "/tmp/auri-live-amap-navigation"))
 TZ = timezone(timedelta(hours=8))
 
@@ -63,6 +64,31 @@ def follow_metrics(page) -> dict:
       const actual=actualVehicle?.getBoundingClientRect();
       const origin=originNode?.getBoundingClientRect();
       const destination=destinationNode?.getBoundingClientRect();
+      const mapDesign=document.querySelector('.map-design');
+      const offlineCar=document.querySelector('.map-car-dot');
+      const offlineRoute=document.querySelector('.map-route-core');
+      const mapDesignStyle=mapDesign ? getComputedStyle(mapDesign) : null;
+      const canvasStyle=canvasNode ? getComputedStyle(canvasNode) : null;
+      const offlineCarRect=offlineCar?.getBoundingClientRect();
+      const routeSamples=[];
+      if (offlineRoute && offlineCarRect && typeof offlineRoute.getTotalLength === 'function') {
+        const total=offlineRoute.getTotalLength();
+        const matrix=offlineRoute.getScreenCTM();
+        for (let index=0; index<=100; index+=1) {
+          const point=offlineRoute.getPointAtLength(total * index / 100);
+          const screen=new DOMPoint(point.x, point.y).matrixTransform(matrix);
+          routeSamples.push({x:screen.x,y:screen.y});
+        }
+      }
+      const offlineCarCenter=offlineCarRect ? {x:offlineCarRect.x+offlineCarRect.width/2,y:offlineCarRect.y+offlineCarRect.height/2} : null;
+      const nearestRouteDistance=offlineCarCenter && routeSamples.length
+        ? Math.min(...routeSamples.map(point => Math.hypot(point.x-offlineCarCenter.x, point.y-offlineCarCenter.y)))
+        : null;
+      const traffic=[...document.querySelectorAll('.map-route-traffic')].map(node => {
+        const style=getComputedStyle(node);
+        return {display:style.display,stroke:style.stroke,opacity:Number(style.opacity)};
+      });
+      const zoomButtons=[...document.querySelectorAll('[data-map-control="zoom-in"], [data-map-control="zoom-out"]')];
       const chevrons=[...document.querySelectorAll('.auri-amap-chevron')]
         .map(node => {
           const rect=node.getBoundingClientRect();
@@ -72,6 +98,8 @@ def follow_metrics(page) -> dict:
         .filter(item => item.display !== 'none' && item.width > 0 && item.height > 0 && item.opacity > 0);
       const fixedStyle=fixedNode ? getComputedStyle(fixedNode) : null;
       const ringStyle=fixedRing ? getComputedStyle(fixedRing) : null;
+      const tile=canvasNode?.querySelector('.amap-layer-tile');
+      const tileStyle=tile ? getComputedStyle(tile) : null;
       return {
         canvas:{x:canvas?.x,y:canvas?.y,width:canvas?.width,height:canvas?.height},
         maps:{x:maps?.x,y:maps?.y,width:maps?.width,height:maps?.height},
@@ -83,7 +111,24 @@ def follow_metrics(page) -> dict:
           y:canvas && fixed ? (fixed.y + fixed.height / 2 - canvas.y) / canvas.height : null
         },
         fixedRingAnimation:ringStyle?.animationName || 'none',
+        tileOpacity:tileStyle ? Number(tileStyle.opacity) : null,
+        tileFilter:tileStyle?.filter || 'none',
+        amapCanvasOpacity:canvasStyle ? Number(canvasStyle.opacity) : null,
+        localRenderer:{
+          opacity:mapDesignStyle ? Number(mapDesignStyle.opacity) : null,
+          visibility:mapDesignStyle?.visibility || 'hidden',
+          car:offlineCarRect ? {x:offlineCarRect.x,y:offlineCarRect.y,width:offlineCarRect.width,height:offlineCarRect.height} : null,
+          carCenterRatio:{
+            x:canvas && offlineCarCenter ? (offlineCarCenter.x-canvas.x)/canvas.width : null,
+            y:canvas && offlineCarCenter ? (offlineCarCenter.y-canvas.y)/canvas.height : null
+          },
+          nearestRouteDistance,
+          pointsAhead:offlineCarCenter ? routeSamples.filter(point => point.y < offlineCarCenter.y - 24).length : 0,
+          traffic
+        },
         actualVehicle:{
+          x:actual?.x || 0,
+          y:actual?.y || 0,
           width:actual?.width || 0,
           height:actual?.height || 0,
           display:actualVehicle ? getComputedStyle(actualVehicle).display : 'none',
@@ -94,6 +139,10 @@ def follow_metrics(page) -> dict:
           destination:destination ? {x:destination.x,y:destination.y,width:destination.width,height:destination.height} : null
         },
         vehicleMotion:document.querySelector('.right-panel')?.dataset.vehicleMotion || '',
+        controls:{
+          zoomDisabled:zoomButtons.map(button => button.disabled),
+          trafficPressed:document.querySelector('[data-map-control="traffic"]')?.getAttribute('aria-pressed')
+        },
         chevrons
       };
     }""")
@@ -109,7 +158,11 @@ def main() -> None:
     OUTPUT.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(executable_path=CHROME, headless=True)
+        browser = playwright.chromium.launch(
+            executable_path=CHROME,
+            headless=HEADLESS,
+            args=["--enable-webgl", "--ignore-gpu-blocklist"],
+        )
         page = browser.new_page(viewport={"width": 1366, "height": 768})
         errors: list[str] = []
         page.on("pageerror", lambda error: errors.append(str(error)))
@@ -160,7 +213,13 @@ def main() -> None:
         page.wait_for_timeout(1300)
         stopped_after = page.evaluate("window.AURI_HMI_NEXT.getState().drivePlayback.progress")
         stopped_metrics = follow_metrics(page)
+        stopped_map = page.evaluate("window.AURI_HMI_NEXT.getState().map")
         page.screenshot(path=str(OUTPUT / "stopped-follow.png"))
+        page.locator('[data-map-control="traffic"]').click()
+        page.wait_for_timeout(120)
+        traffic_hidden_metrics = follow_metrics(page)
+        page.locator('[data-map-control="traffic"]').click()
+        page.wait_for_timeout(120)
 
         submit("user.utterance", {"text": "我还来得及吗？帮我处理", "input_mode": "voice"}, "mobile")
         page.wait_for_function("window.AURI_HMI_NEXT.getState().viewModel.lifecycle.stage === 'waiting_confirmation'", timeout=15000)
@@ -174,19 +233,34 @@ def main() -> None:
         page.wait_for_timeout(900)
         resumed_after = page.evaluate("window.AURI_HMI_NEXT.getState().drivePlayback.progress")
 
-        authoritative_progress = float(api("/v1/state")["navigation"]["progress"])
+        display_progress_before_overview = float(
+            page.evaluate("window.AURI_HMI_NEXT.getState().drivePlayback.progress")
+        )
+        resumed_map = page.evaluate("window.AURI_HMI_NEXT.getState().map")
         page.locator('[data-map-control="overview"]').click()
         page.wait_for_timeout(900)
         overview = page.evaluate("window.AURI_HMI_NEXT.getState().map")
+        display_progress_after_overview = float(
+            page.evaluate("window.AURI_HMI_NEXT.getState().drivePlayback.progress")
+        )
         overview_metrics = follow_metrics(page)
         overview_transform = overview_metrics["transform"]
         page.screenshot(path=str(OUTPUT / "overview.png"))
+        page.locator('[data-map-control="follow"]').click()
+        page.wait_for_timeout(900)
+        return_follow = page.evaluate("window.AURI_HMI_NEXT.getState().map")
+        return_follow_progress = float(page.evaluate("window.AURI_HMI_NEXT.getState().drivePlayback.progress"))
+        return_follow_metrics = follow_metrics(page)
+        page.screenshot(path=str(OUTPUT / "return-follow.png"))
         assert follow["cameraMode"] == "follow", follow
         assert overview["cameraMode"] == "overview", overview
+        assert return_follow["cameraMode"] == "follow", return_follow
         assert follow["motionMethod"] == "moveAlong", follow
         assert follow_label == ("3D 跟车" if follow["rendering3d"] == "native" else "跟车视角"), follow_label
         assert moving_after > moving_before, (moving_before, moving_after)
         assert abs(stopped_after - stopped_before) < 0.001, (stopped_before, stopped_after)
+        assert [item["color"] for item in stopped_map["congestion"]] == ["#e6a700", "#d1495b", "#8f2032"], stopped_map
+        assert all(item["visible"] and item["pointCount"] > 1 for item in stopped_map["congestion"]), stopped_map
         assert resumed_before < 0.55, resumed_before
         assert resumed_after > resumed_before, (resumed_before, resumed_after)
         assert timing["mapMotionDurationMs"] < timing["tickIntervalMs"], timing
@@ -194,20 +268,54 @@ def main() -> None:
         assert follow["motion"]["overlapCount"] == 0, follow
         assert follow["motion"]["completedCount"] > 0, follow
         assert overview["motion"]["overlapCount"] == 0, overview
-        assert abs(overview["motion"]["markerProgress"] - authoritative_progress) < 0.001, (overview, authoritative_progress)
+        assert 0 <= display_progress_after_overview - display_progress_before_overview < 0.02, (
+            display_progress_before_overview,
+            display_progress_after_overview,
+        )
+        assert abs(overview["motion"]["markerProgress"] - display_progress_after_overview) < 0.001, (
+            overview,
+            display_progress_after_overview,
+        )
+        assert abs(
+            overview["routeMeta"]["remainingDistanceMeters"]
+            - resumed_map["routeMeta"]["remainingDistanceMeters"]
+        ) < 100, (resumed_map, overview)
+        assert 0 <= return_follow_progress - display_progress_after_overview < 0.02, (
+            display_progress_after_overview,
+            return_follow_progress,
+        )
         if follow["rendering3d"] == "native":
             assert follow["cameraPitch"] >= 50 and overview["cameraPitch"] <= 20, (follow, overview)
         else:
-            ratio = moving_metrics["fixedCenterRatio"]
-            assert follow["cameraPitch"] >= 35, follow
-            assert moving_metrics["transform"] != "none", moving_metrics
-            assert moving_metrics["transform"] != overview_transform, (moving_metrics, overview_transform)
-            assert moving_metrics["fixedDisplay"] == "grid", moving_metrics
-            assert 0.45 <= ratio["x"] <= 0.55 and 0.72 <= ratio["y"] <= 0.86, moving_metrics
-            assert moving_metrics["fixedRingAnimation"] != "none", moving_metrics
-            assert stopped_metrics["fixedRingAnimation"] == "none", stopped_metrics
-            assert resumed_metrics["fixedRingAnimation"] != "none", resumed_metrics
+            assert 30 <= follow["cameraPitch"] <= 34, follow
             assert stopped_metrics["vehicleMotion"] == "stopped", stopped_metrics
+            for metrics in (moving_metrics, stopped_metrics, resumed_metrics, return_follow_metrics):
+                local = metrics["localRenderer"]
+                assert metrics["amapCanvasOpacity"] <= 0.01, metrics
+                assert metrics["fixedDisplay"] == "none", metrics
+                assert local["opacity"] >= 0.99 and local["visibility"] == "visible", metrics
+                assert local["car"] and local["car"]["width"] > 20 and local["car"]["height"] > 20, metrics
+                assert 0.35 <= local["carCenterRatio"]["x"] <= 0.65, metrics
+                assert 0.62 <= local["carCenterRatio"]["y"] <= 0.94, metrics
+                assert local["nearestRouteDistance"] is not None and local["nearestRouteDistance"] <= 24, metrics
+                assert local["pointsAhead"] >= 25, metrics
+
+            traffic = stopped_metrics["localRenderer"]["traffic"]
+            assert len(traffic) == 3, traffic
+            assert all(item["display"] != "none" and item["opacity"] > 0 for item in traffic), traffic
+            assert [item["stroke"] for item in traffic] == [
+                "rgb(230, 167, 0)",
+                "rgb(209, 73, 91)",
+                "rgb(143, 32, 50)",
+            ], traffic
+            assert all(item["display"] == "none" for item in traffic_hidden_metrics["localRenderer"]["traffic"]), traffic_hidden_metrics
+            assert traffic_hidden_metrics["controls"]["trafficPressed"] == "false", traffic_hidden_metrics
+            assert all(moving_metrics["controls"]["zoomDisabled"]), moving_metrics
+
+            assert overview_metrics["amapCanvasOpacity"] >= 0.99, overview_metrics
+            assert overview_metrics["localRenderer"]["opacity"] <= 0.01, overview_metrics
+            assert overview_metrics["localRenderer"]["visibility"] == "hidden", overview_metrics
+            assert not any(overview_metrics["controls"]["zoomDisabled"]), overview_metrics
             assert overview_metrics["fixedDisplay"] == "none", overview_metrics
             assert overview_metrics["actualVehicle"]["width"] > 0 and overview_metrics["actualVehicle"]["opacity"] > 0, overview_metrics
             for marker in overview_metrics["overviewMarkers"].values():
@@ -217,15 +325,12 @@ def main() -> None:
                 canvas = overview_metrics["canvas"]
                 assert canvas["x"] <= marker_center_x <= canvas["x"] + canvas["width"], overview_metrics
                 assert canvas["y"] <= marker_center_y <= canvas["y"] + canvas["height"], overview_metrics
-            fixed_y = moving_metrics["fixed"]["y"] + moving_metrics["fixed"]["height"] / 2
-            assert sum(1 for item in moving_metrics["chevrons"] if item["y"] < fixed_y) >= 2, moving_metrics
-            resumed_fixed_y = resumed_metrics["fixed"]["y"] + resumed_metrics["fixed"]["height"] / 2
-            assert sum(1 for item in resumed_metrics["chevrons"] if item["y"] < resumed_fixed_y) >= 2, resumed_metrics
         assert not errors, errors
         print(json.dumps({
             "follow": follow,
             "overview": overview,
-            "authoritativeOverviewProgress": authoritative_progress,
+            "displayProgressBeforeOverview": display_progress_before_overview,
+            "displayProgressAfterOverview": display_progress_after_overview,
             "motionProgress": {
                 "moving": [moving_before, moving_after],
                 "stopped": [stopped_before, stopped_after],
@@ -233,8 +338,11 @@ def main() -> None:
             },
             "movingMetrics": moving_metrics,
             "stoppedMetrics": stopped_metrics,
+            "trafficHiddenMetrics": traffic_hidden_metrics,
             "resumedMetrics": resumed_metrics,
             "overviewMetrics": overview_metrics,
+            "returnFollow": return_follow,
+            "returnFollowMetrics": return_follow_metrics,
             "followLabel": follow_label,
             "overviewTransform": overview_transform,
             "timing": timing,
@@ -243,6 +351,7 @@ def main() -> None:
                 str(OUTPUT / "stopped-follow.png"),
                 str(OUTPUT / "resumed-follow.png"),
                 str(OUTPUT / "overview.png"),
+                str(OUTPUT / "return-follow.png"),
             ],
             "javascriptErrors": errors,
         }, ensure_ascii=False))

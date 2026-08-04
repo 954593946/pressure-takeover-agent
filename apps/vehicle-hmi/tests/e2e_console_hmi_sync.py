@@ -86,15 +86,13 @@ def wait_same_revision(console: Page, hmi: Page, expected: int) -> None:
     )
 
 
-def click_console_action(page: Page, action: str, expected_stage: str) -> dict:
-    selector = f'button[data-action="{action}"]'
-    page.locator(selector).wait_for(state="visible")
+def click_director_step(page: Page, expected_stage: str) -> dict:
+    page.locator("#runCurrentStep").wait_for(state="visible")
     page.wait_for_function(
-        "selector => !document.querySelector(selector)?.disabled",
-        arg=selector,
+        "() => !document.querySelector('#runCurrentStep')?.disabled",
         timeout=15000,
     )
-    page.locator(selector).click()
+    page.locator("#runCurrentStep").click()
     wait_console_stage(page, expected_stage)
     return api("/v1/state")
 
@@ -141,10 +139,12 @@ def main() -> None:
         assert console.locator("#sessionId").inner_text() == initial["session_id"]
         assert hmi.evaluate("window.AURI_HMI_NEXT.getState().viewModel.meta.sessionId") == initial["session_id"]
         assert hmi.evaluate("window.AURI_HMI_NEXT.getState().viewModel.tasks.total") == 0
+        assert console.locator("#runCurrentStep").is_disabled()
+        assert "等待手机" in console.locator("#nextStepHint").inner_text()
 
-        # Step 1 is an acknowledgement only. The real task enters through the
-        # same mobile /v1/chat API used by the Android client.
-        console.locator('button[data-action="waitTask"]').click()
+        # The real task enters through the same mobile /v1/chat API used by the
+        # Android client. Console must detect the first task revision itself;
+        # no manual "sync task" acknowledgement is allowed in this path.
         chat_events = mobile_chat("今天18:10接孩子，之后去超市", initial["session_id"])
         assert any(event.get("type") == "done" for event in chat_events)
         task_state = api("/v1/state")
@@ -152,27 +152,36 @@ def main() -> None:
         wait_same_revision(console, hmi, task_state["revision"])
         assert "接孩子" in console.locator("#tasks").inner_text()
         assert "超市" in hmi.locator("#auri-responsibility-strip").inner_text()
+        console.wait_for_function(
+            "document.querySelector('#nextStepHint')?.textContent.includes('会议延迟')"
+            " && !document.querySelector('#runCurrentStep')?.disabled",
+            timeout=15000,
+        )
 
-        state = click_console_action(console, "meeting", "pre_departure_warning")
+        state = click_director_step(console, "pre_departure_warning")
         wait_same_revision(console, hmi, state["revision"])
         assert console.locator('button[data-action="vehicle"]').is_disabled()
         assert console.locator("#riskReasons").inner_text().strip()
-        state = click_console_action(console, "approach", "handover_to_vehicle")
+        state = click_director_step(console, "handover_to_vehicle")
         wait_same_revision(console, hmi, state["revision"])
-        state = click_console_action(console, "vehicle", "vehicle_observation")
+        state = click_director_step(console, "vehicle_observation")
         wait_same_revision(console, hmi, state["revision"])
         assert state["primary_surface"] == "vehicle_hmi"
-        state = click_console_action(console, "traffic", "takeover_L2")
+        state = click_director_step(console, "takeover_L2")
         wait_same_revision(console, hmi, state["revision"])
         assert state["risk"]["late_minutes"] == 18
         assert "压力辅助信号" in console.locator("#nextStepHint").inner_text()
         assert console.locator('button[data-action="utterance"]').is_disabled()
-        state = click_console_action(console, "stress", "takeover_L2")
+        state = click_director_step(console, "takeover_L2")
         wait_same_revision(console, hmi, state["revision"])
         assert state["wearable"]["heart_rate"] == 120
         assert "手机语音求助" in console.locator("#nextStepHint").inner_text()
         assert console.locator('button[data-action="utterance"]').is_enabled()
-        state = click_console_action(console, "utterance", "waiting_confirmation")
+
+        help_events = mobile_chat("我还来得及吗？帮我处理", state["session_id"])
+        assert any(event.get("type") == "done" for event in help_events)
+        wait_console_stage(console, "waiting_confirmation")
+        state = api("/v1/state")
         wait_same_revision(console, hmi, state["revision"])
         assert "预计晚到 18 分钟" in hmi.locator("#auri-takeover-risk").inner_text()
         assert "我还来得及吗" in hmi.locator("#auri-driver-utterance").inner_text()
@@ -219,7 +228,7 @@ def main() -> None:
         hmi.evaluate("window.AURI_HMI_NEXT.disconnect()")
         hmi.wait_for_function("window.AURI_HMI_NEXT.getState().syncMode === 'stopped'")
         disconnected_revision = hmi.evaluate("window.AURI_HMI_NEXT.getState().viewModel.meta.revision")
-        cooldown = click_console_action(console, "cooldown", "cooldown")
+        cooldown = click_director_step(console, "cooldown")
         console.wait_for_function(
             "revision => document.querySelector('#revision')?.textContent === `revision ${revision}`",
             arg=cooldown["revision"],
@@ -229,7 +238,7 @@ def main() -> None:
         hmi.wait_for_function("window.AURI_HMI_NEXT.getState().syncMode === 'streaming'", timeout=20000)
         wait_same_revision(console, hmi, cooldown["revision"])
 
-        parked = click_console_action(console, "parked", "parked_review")
+        parked = click_director_step(console, "parked_review")
         wait_same_revision(console, hmi, parked["revision"])
         assert parked["primary_surface"] == "mobile"
         assert not errors["console"], errors["console"]

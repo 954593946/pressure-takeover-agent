@@ -731,6 +731,30 @@ body {
   pointer-events: none;
 }
 
+/* AMap's 2D raster renderer cannot rotate labels and overlays as one plane.
+   Use the proven local route-forward renderer for follow mode, while keeping
+   the real AMap route and overview available. */
+.right-panel.is-amap-online[data-amap3d="simulated"][data-camera-mode="follow"] .auri-amap-canvas {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+.right-panel.is-amap-online[data-amap3d="simulated"][data-camera-mode="follow"] .map-design {
+  opacity: 1 !important;
+  visibility: visible;
+  pointer-events: none;
+  transition-delay: 0s;
+}
+
+.right-panel.is-amap-online[data-amap3d="simulated"][data-camera-mode="follow"] #rmap {
+  opacity: 1;
+  pointer-events: none;
+}
+
+.right-panel.is-amap-online[data-amap3d="simulated"][data-camera-mode="follow"] .auri-amap-fixed-vehicle {
+  display: none !important;
+}
+
 .auri-map-source {
   position: absolute;
   top: 18px;
@@ -821,6 +845,17 @@ body {
   transform: scale(0.94);
 }
 
+.auri-map-controls button:disabled {
+  color: rgba(11, 27, 51, 0.34);
+  background: rgba(255, 255, 255, 0.48);
+  cursor: not-allowed;
+  opacity: 0.64;
+}
+
+.right-panel[data-traffic-visible="false"] .map-route-traffic {
+  display: none !important;
+}
+
 .right-panel[data-amap3d="simulated"] #auri-amap-canvas {
   overflow: hidden;
   background: #dfe7ee;
@@ -829,39 +864,31 @@ body {
 .right-panel[data-amap3d="simulated"] #auri-amap-canvas .amap-maps {
   width: 100% !important;
   height: 100% !important;
-  transform: perspective(1200px) rotateX(var(--auri-sim-map-pitch, 46deg)) rotateZ(var(--auri-sim-map-rotation, 0deg)) scale(1.7);
-  transform-origin: 50% 53%;
+  transform: perspective(1450px) rotateX(var(--auri-sim-map-pitch, 32deg)) rotateZ(var(--auri-sim-map-rotation, 0deg)) scale(1.5);
+  transform-origin: 50% 50%;
   transition: transform 440ms cubic-bezier(.2, .72, .2, 1);
   will-change: transform;
 }
 
-/* Preserve the map's usable area while adding the depth cues of a driving
-   camera. The AMap canvas remains the real geographic surface underneath. */
-.right-panel[data-amap3d="simulated"][data-camera-mode="follow"] #auri-amap-canvas::before,
+.right-panel[data-amap3d="simulated"][data-camera-mode="follow"] #auri-amap-canvas .amap-layer-tile {
+  filter: saturate(0.24) contrast(0.68) brightness(1.14) blur(0.7px);
+  opacity: 0.12 !important;
+}
+
 .right-panel[data-amap3d="simulated"][data-camera-mode="follow"] #auri-amap-canvas::after {
   content: "";
   position: absolute;
-  inset-inline: 0;
-  z-index: 68;
+  inset: 0 0 auto;
+  height: 18%;
+  z-index: 44;
   pointer-events: none;
-}
-
-.right-panel[data-amap3d="simulated"][data-camera-mode="follow"] #auri-amap-canvas::before {
-  top: 0;
-  height: 24%;
-  background: linear-gradient(180deg, rgba(220, 231, 239, 0.42), rgba(237, 242, 245, 0.08) 62%, transparent);
-}
-
-.right-panel[data-amap3d="simulated"][data-camera-mode="follow"] #auri-amap-canvas::after {
-  bottom: 0;
-  height: 20%;
-  background: linear-gradient(0deg, rgba(11, 27, 51, 0.12), transparent 72%);
+  background: linear-gradient(180deg, rgba(245, 242, 236, 0.82), rgba(245, 242, 236, 0.2) 68%, transparent);
 }
 
 .auri-amap-fixed-vehicle {
   position: absolute;
   left: 50%;
-  top: 79%;
+  top: 69%;
   z-index: 76;
   width: 72px;
   height: 72px;

@@ -2,7 +2,7 @@
 
 ## 结论
 
-当前车机 HMI 默认接入高德地图 JS API 2.0。页面加载时先从 Agent 获取安全配置，再初始化真实 2D 地图；只有配置、网络或额度保护异常时才降级到离线地图。
+当前车机 HMI 默认接入高德地图 JS API 2.0。页面加载时先从 Agent 获取安全配置，再初始化真实地图和驾车路线；高德相机实际支持 3D 时使用原生俯仰/旋转相机，相机俯角回读为 0 时由历史本地导航层呈现跟车视角、真实高德呈现路线全览。只有配置、网络或额度保护异常时才完全降级到离线地图。
 
 本项目使用高德能力的边界是：
 
@@ -25,13 +25,14 @@ apps/vehicle-hmi/tests/amap-adapter.test.cjs
 
 | 能力 | 高德接口 | HMI 用法 |
 | --- | --- | --- |
-| 真实底图 | `AMap.Map` | 使用 `normal` 2D 地图，显示真实道路、建筑、POI 和高德版权信息 |
+| 真实底图 | `AMap.Map` | 使用 `normal` 地图，显示真实道路、建筑、POI 和高德版权信息；WebGL 可用时启用 `viewMode=3D` |
 | 驾车路线 | `AMap.Driving` | 获取路线坐标、道路指令、下一动作距离 |
 | 实时路况 | `AMap.TileLayer.Traffic` | 驾驶时低透明度展示，风险阶段提高强调 |
 | 路线绘制 | `AMap.Polyline` | 白色描边、灰色已行驶、蓝色剩余路线、黄色拥堵段 |
 | 车辆位置 | `AMap.Marker` + MoveAnimation | 按 World State 阶段进度沿路线移动并调整方向 |
 | 起点与目的地 | `AMap.Marker` | 显示“博世苏州・星龙街455号”和“阳光小学”标签 |
-| 地图操作 | Map zoom / fit view | 右侧 `+`、`-`、`北`按钮真实控制在线地图 |
+| 跟车/全览 | `setZoomAndCenter`、`setPitch`、`setRotation` + 本地导航渲染层 | 原生 3D 跟车时车头朝上并前视；无有效俯角时本地层保持自车靠下和路线朝前；全览始终显示真实高德地图 |
+| 地图操作 | Map zoom / overview | 跟车、路线全览和路况按钮控制当前可见层；无原生 3D 的本地跟车页禁用缩放，切到真实高德全览后恢复 `+`、`-` |
 | 失败降级 | HMI adapter | 自动切回 SVG 离线演示地图 |
 
 当前 Demo 起点采用博世公开办公地址“江苏省苏州工业园区星龙街455号”，坐标为高德公开地点页对应位置；终点使用非个人化冻结演示坐标并标记为“阳光小学”，不代表任何真实儿童学校，不提交家庭、联系人或个人轨迹。起终点由 `WorldState.navigation` 发布，详细契约见 [`navigation-location-contract.md`](navigation-location-contract.md)。
@@ -69,7 +70,7 @@ HMI 默认配置 `mapProvider=auto`。页面启动顺序：
 -> 获得 Web JS Key、/_AMapService 地址和 normal 样式
 -> 设置 window._AMapSecurityConfig.serviceHost
 -> 加载高德 JS API 2.0
--> 创建 2D 地图并规划一次驾车路线
+-> 创建 3D/伪 3D 双路径地图并规划一次驾车路线
 -> 地图失败不阻塞 World State 和车机交互
 ```
 
@@ -107,7 +108,7 @@ window.AURI_HMI_NEXT.getState().map
   "status": "online",
   "cameraMode": "follow",
   "usage": {
-    "mapInitializations": 1,
+    "mapLoads": 1,
     "routePlans": 1
   }
 }
@@ -214,7 +215,7 @@ Demo 要求：
 AMap JS API 2.0 加载成功
 AMap.Driving 路线规划成功
 博世苏州起点、Demo 学校终点和真实路线正常显示
-高德真实 2D 底图、道路 POI、实时交通图层、Logo 和版权信息正常显示
+高德真实底图、道路 POI、实时交通图层、Logo 和版权信息正常显示
 HMI map status = online
 下一道路指令和距离已由高德路线结果更新
 1600×814 车机视口无页面溢出或信息遮挡
@@ -311,6 +312,31 @@ Demo 使用建议：
 
 这可以避免车辆跳点、偏离路线、箭头方向错误以及不同路段进度不均匀。
 
+## 跟车视角与 SDK 边界
+
+当前跟车构图以历史版本 `6b9967e` 为基线：
+
+```text
+WebGL 可用
+-> 高德原生 3D 相机
+-> 车头朝上
+-> 约 0.006 路线进度（约 50 米）前视
+-> 常态约 52°、高注意阶段约 48° 俯角
+
+高德相机实际俯角为 0
+-> 高德继续提供真实驾车路线、TMC、道路指令、里程和 ETA 元数据
+-> 跟车页使用历史本地导航渲染层，不旋转高德栅格和地名
+-> 自车锁定在下方，路线从车前向屏幕上方延伸，保留城市道路伪 3D 纵深
+-> 拥堵阶段显示黄、红、深红三档路段，车辆停车；确认后从同一进度恢复
+-> 全览页切回真实高德 2D 底图，显示起点、终点和权威进度车标
+```
+
+3D 能力不能只根据浏览器能否创建 WebGL 上下文判断。适配器同时记录高德能力报告、浏览器 WebGL 上下文和高德相机实际俯角；只有高德报告支持，或 `getPitch()` 实际回读非零时，才标记为原生 3D。2026-08-04 本机 Chromium 的 WebGL/WebGL2 上下文可创建，但高德相机俯角无头和有界面运行均回读 `0`，因此跟车页使用本地导航渲染层，全览页使用真实高德 2D 地图，不再对真实高德 DOM 做 CSS 倾斜。
+
+历史视觉目标由两部分共同定义：旧版离线图提供“自车靠下、路线向上延伸、道路透视压缩”的构图；提交 `6b9967e` 提供真实高德相机的前视、缩放、俯角和旋转参数。后续优化不得恢复 `9d12713` 的 46° 整图强透视，也不得退回普通正北 2D 跟车。
+
+高德 Android 导航 SDK 原生提供锁车态、全览态、车头朝上/正北朝上、固定车标位置、车道信息、路口放大图和路况光柱等专业导航能力。当前项目是横屏 Web HMI，使用 JS API 2.0 的地图、路线、交通和 Marker 动画组合这些交互，不声称已经接入 Android 导航引擎。产品化若要求车道级导航、路口放大图、偏航重规划和真实 GPS，应切换到 Android 导航 SDK 或由车厂导航 SDK 提供标准接口。
+
 ## 官方资料
 
 - 博世苏州公开地址：<https://www.bosch-engineering.cn/公司/全球办事处/>
@@ -320,3 +346,5 @@ Demo 使用建议：
 - 驾车路线规划：<https://lbs.amap.com/api/javascript-api-v2/guide/services/navigation>
 - 高德官方图层：<https://lbs.amap.com/api/javascript-api-v2/guide/layers/official-layers>
 - 自定义地图样式：<https://lbs.amap.com/api/javascript-api-v2/guide/map/map-style/>
+- Android 导航 SDK 显示模式与视角：<https://lbs.amap.com/api/android-navi-sdk/guide/custom-ui/showmode-trackmode>
+- Android 导航 SDK 实时导航、车道与路口信息：<https://lbs.amap.com/api/android-navi-sdk/guide/navigation-map/navi-info>

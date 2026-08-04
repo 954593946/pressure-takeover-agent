@@ -204,7 +204,7 @@ service.mock.config
 
 | 按钮 | 接口 | 事件或操作 | 说明 |
 | --- | --- | --- | --- |
-| 同步手机语音任务 | `GET /v1/state` | 状态刷新 | 主线第 1 步；初始为空任务，等待手机端创建后同步。 |
+| 同步手机语音任务 | `GET /v1/state` + SSE | 状态刷新 | 主线第 1 步；初始为空任务，手机端创建首批任务后自动完成并进入“会议延迟”，无需点击第 1 步。 |
 | 载入演示预置任务 | `POST /v1/event` | `task.created` | 侧栏可选兜底：仅手机端不可用时模拟创建“18:10 接孩子，之后去超市”。 |
 | 会议延迟 | `POST /v1/event` | `meeting.overrun` | 会议延迟 20 分钟。 |
 | 接近车辆 | `POST /v1/event` | `scene.approaching` | 准备交接到车机。 |
@@ -223,6 +223,8 @@ service.mock.config
 | 重置 Demo | `POST /v1/session/reset` | - | 回到初始状态。 |
 
 “载入演示预置任务”无需先单独点击“连接 Agent”。填写当前 Agent API 和 Team Token 后可直接点击“载入”，控制台会保存配置、读取当前 State，再提交包含结构化 `tasks[]` 的 `task.created`，不等待 LLM 解析；如果共享 State 已有任务，按钮会锁定，避免覆盖手机端输入。
+
+正常手机主线不使用预置任务：手机通过 `/v1/chat` 或标准 `task.created` 写入首批任务后，控制台监听同一 Session 的 SSE revision，自动把“同步手机语音任务”标记为完成。此时主按钮应显示“下一步：会议延迟”并可直接执行；若仍停在第 1 步，应先核对手机、控制台是否连接同一 Agent URL 与 `session_id`，不要重复创建任务。
 
 公网服务冷启动时，按钮会显示“连接并载入中…”，`State Sync` 和 Event Log 同步显示连接/重试进度。Health 检查在 State 连接后后台执行，不阻塞任务载入；GET 请求三次失败或单次超过 45 秒后会显示明确错误，不会无限等待。
 

@@ -61,6 +61,14 @@ def playback(page) -> dict:
     return page.evaluate("window.AURI_HMI_NEXT.getState().drivePlayback")
 
 
+def playback_view(page) -> dict:
+    return page.evaluate("""() => ({
+      playback: window.AURI_HMI_NEXT.getState().drivePlayback,
+      displayedSpeed: Number(document.querySelector('#vd-speed')?.textContent || 0),
+      motion: document.querySelector('#hmi')?.getAttribute('data-auri-motion') || ''
+    })""")
+
+
 def main() -> None:
     validate_agent()
     api("/v1/session/reset", "POST", {"scenario_id": "hmi-drive-playback"})
@@ -90,11 +98,12 @@ def main() -> None:
         )
         moving_before = playback(page)
         page.wait_for_timeout(1800)
-        moving_after = playback(page)
+        moving_view = playback_view(page)
+        moving_after = moving_view["playback"]
         assert moving_after["progress"] > moving_before["progress"], (moving_before, moving_after)
         assert 0 < moving_after["speedKph"] <= 42, moving_after
-        assert page.locator("#hmi").get_attribute("data-auri-motion") == "moving"
-        assert int(page.locator("#vd-speed").inner_text()) == round(moving_after["speedKph"])
+        assert moving_view["motion"] == "moving"
+        assert moving_view["displayedSpeed"] == round(moving_after["speedKph"])
 
         state = api("/v1/state")
         rigid = next(task for task in state["tasks"] if task.get("task_type") == "rigid")
@@ -144,6 +153,14 @@ def main() -> None:
         )
         fixture_page.goto(f"{HMI}?offline=1", wait_until="load", timeout=30000)
         fixture_page.wait_for_function("window.AURI_HMI_NEXT")
+        fixture_page.evaluate("""() => {
+          const original = window.mapCarReset;
+          window.__auriMapResetCount = 0;
+          window.mapCarReset = (...args) => {
+            window.__auriMapResetCount += 1;
+            return original?.(...args);
+          };
+        }""")
         route_a = copy.deepcopy(authoritative)
         route_a["revision"] += 100
         route_a["navigation"]["route_id"] = "playback_route_a"
@@ -158,6 +175,7 @@ def main() -> None:
         assert fixture_page.evaluate("state => window.AURI_HMI_NEXT.applyState(state)", route_b) is not False
         progress_b = playback(fixture_page)["progress"]
         assert abs(progress_b - 0.12) < 0.01, (progress_a, progress_b)
+        assert fixture_page.evaluate("window.__auriMapResetCount") >= 2
 
         route_b_update = copy.deepcopy(route_b)
         route_b_update["revision"] += 1
@@ -165,6 +183,7 @@ def main() -> None:
         assert fixture_page.evaluate("state => window.AURI_HMI_NEXT.applyState(state)", route_b_update) is not False
         progress_b_update = playback(fixture_page)["progress"]
         assert abs(progress_b_update - 0.07) < 0.01, (progress_b, progress_b_update)
+        route_switch_local_resets = fixture_page.evaluate("window.__auriMapResetCount")
         fixture_page.close()
         assert not errors, errors
         print(json.dumps({
@@ -173,6 +192,7 @@ def main() -> None:
             "resumed_progress_delta": round(resumed_after["progress"] - resumed_before["progress"], 4),
             "right_view_speed": page.locator("#vd-speed").inner_text().strip(),
             "route_switch_progress": [progress_a, progress_b, progress_b_update],
+            "route_switch_local_resets": route_switch_local_resets,
             "javascript_errors": len(errors),
         }, ensure_ascii=False))
         browser.close()

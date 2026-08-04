@@ -267,6 +267,21 @@ global.AMap = fakeAMap;
 
 const amap = require("../src/amap-adapter.js");
 
+assert.deepEqual(amap.followCameraSpec({ nextDistanceMeters: 1200 }, false), {
+  lookAheadOffset: 0.006,
+  zoom: 17.05,
+  pitch: 52,
+  rotationThreshold: 7
+});
+assert.equal(amap.followCameraSpec({ nextDistanceMeters: 700 }, false).zoom, 17.45);
+assert.equal(amap.followCameraSpec({ nextDistanceMeters: 200 }, false).zoom, 17.8);
+assert.deepEqual(amap.followCameraSpec({ nextDistanceMeters: 200 }, true), {
+  lookAheadOffset: 0.006,
+  zoom: 17.3,
+  pitch: 48,
+  rotationThreshold: 7
+});
+
 function createAdapter(options = {}) {
   const container = new FakeElement();
   container.hidden = true;
@@ -444,7 +459,7 @@ async function main() {
   });
   assert.equal(online.adapter.getCameraMode(), "follow");
   assert.ok(online.adapter.getCameraRotation() > 0);
-  assert.equal(online.adapter.getCameraPitch(), 55);
+  assert.equal(online.adapter.getCameraPitch(), 48);
   assert.equal(
     online.adapter.overlays.vehicleContent.style.getPropertyValue("--auri-vehicle-heading"),
     "0deg",
@@ -511,11 +526,16 @@ async function main() {
 
   resetRuntime();
   fakeAMap.Browser.isWebGL = false;
-  const simulated = createAdapter();
-  await simulated.adapter.init({ mapProvider: "amap", amapKey: "test-key", amapMonthlyMapLimit: 10, amapMonthlyRouteLimit: 10 });
-  assert.equal(simulated.adapter.get3dMode(), "simulated", "boolean-form WebGL capability must be detected");
-  await simulated.adapter.setRoute(routeConfig, "simulated-route");
-  simulated.adapter.update({
+  const reportedFallback = createAdapter();
+  await reportedFallback.adapter.init({ mapProvider: "amap", amapKey: "test-key", amapMonthlyMapLimit: 10, amapMonthlyRouteLimit: 10 });
+  assert.equal(reportedFallback.adapter.get3dMode(), "simulated", "false WebGL capability must select the controlled pseudo-3D fallback");
+  assert.equal(reportedFallback.mapWrap.dataset.webglReported, "false");
+  assert.equal(reportedFallback.mapWrap.dataset.webglRuntime, "false");
+  assert.equal(reportedFallback.mapWrap.dataset.webglEffective, "false");
+  assert.equal(reportedFallback.adapter.map.options.mapStyle, "amap://styles/whitesmoke");
+  assert.deepEqual(reportedFallback.adapter.map.options.features, ["bg", "road", "building"]);
+  await reportedFallback.adapter.setRoute(routeConfig, "reported-fallback-route");
+  reportedFallback.adapter.update({
     stage: "vehicle_observation",
     progress: 0.32,
     showVehicle: true,
@@ -526,11 +546,26 @@ async function main() {
     riskLevel: "L0",
     lateMinutes: 0
   });
-  assert.equal(simulated.adapter.getCameraMode(), "follow");
-  assert.equal(simulated.adapter.getCameraPitch(), 46);
-  assert.notEqual(simulated.adapter.getCameraRotation(), 0);
-  assert.equal(simulated.mapWrap.dataset.vehicleVisible, "true");
-  assert.equal(simulated.mapWrap.style.getPropertyValue("--auri-sim-map-pitch"), "46deg");
+  assert.equal(reportedFallback.adapter.getCameraMode(), "follow");
+  assert.equal(reportedFallback.adapter.getCameraPitch(), 32);
+  assert.notEqual(reportedFallback.adapter.getCameraRotation(), 0);
+  assert.equal(reportedFallback.mapWrap.dataset.vehicleVisible, "true");
+  assert.equal(reportedFallback.mapWrap.dataset.amap3d, "simulated");
+  assert.equal(reportedFallback.mapWrap.style.getPropertyValue("--auri-sim-map-pitch"), "32deg");
+
+  const originalCreateElement = global.document.createElement;
+  global.document.createElement = (tagName) => {
+    if (tagName === "canvas") return { getContext: (type) => type === "webgl2" ? {} : null };
+    return originalCreateElement(tagName);
+  };
+  resetRuntime();
+  const runtimeWebgl = createAdapter();
+  await runtimeWebgl.adapter.init({ mapProvider: "amap", amapKey: "test-key", amapMonthlyMapLimit: 10, amapMonthlyRouteLimit: 10 });
+  assert.equal(runtimeWebgl.adapter.get3dMode(), "native", "a real WebGL context must override a stale negative AMap browser report");
+  assert.equal(runtimeWebgl.mapWrap.dataset.webglReported, "false");
+  assert.equal(runtimeWebgl.mapWrap.dataset.webglRuntime, "true");
+  assert.equal(runtimeWebgl.mapWrap.dataset.webglEffective, "true");
+  global.document.createElement = originalCreateElement;
   fakeAMap.Browser.isWebGL = () => true;
 
   resetRuntime();

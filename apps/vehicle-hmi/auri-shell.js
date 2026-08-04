@@ -1632,6 +1632,9 @@
     const authoritativeChanged = Number.isFinite(authoritativeProgress)
       && authoritativeProgress !== drivePlayback.authoritativeProgress;
     if (sessionChanged || routeChanged || drivePlayback.progress === null) {
+      if ((sessionChanged || routeChanged) && typeof window.mapCarReset === "function") {
+        try { window.mapCarReset(); } catch (_error) { /* local renderer reset remains optional */ }
+      }
       drivePlayback.progress = Number.isFinite(authoritativeProgress)
         ? authoritativeProgress
         : STAGE_PROGRESS[viewModel.lifecycle.stage] ?? 0.03;
@@ -1690,7 +1693,8 @@
     const firstFrame = lastAnimatedStage === null;
     lastAnimatedStage = stage;
     syncDrivePlayback();
-    if (firstFrame && mapAdapter.getStatus() !== "online" && Number.isFinite(drivePlayback.progress) && typeof window.mapCarTo === "function") {
+    const localFollow = mapAdapter.get3dMode() === "simulated" && mapAdapter.getCameraMode() === "follow";
+    if (firstFrame && (mapAdapter.getStatus() !== "online" || localFollow) && Number.isFinite(drivePlayback.progress) && typeof window.mapCarTo === "function") {
       try { window.mapCarTo(drivePlayback.progress, 240); } catch (_error) { /* initialize the offline route marker */ }
     }
   }
@@ -1712,9 +1716,10 @@
     renderNavigation();
     const snapshot = navigationSnapshot();
     if (mapAdapter.getStatus() === "online") mapAdapter.update(snapshot);
-    else if (profile.mode === "moving" && typeof window.mapCarTo === "function") {
+    const localFollow = mapAdapter.get3dMode() === "simulated" && mapAdapter.getCameraMode() === "follow";
+    if ((mapAdapter.getStatus() !== "online" || localFollow) && profile.mode === "moving" && typeof window.mapCarTo === "function") {
       try { window.mapCarTo(drivePlayback.progress, 720); } catch (_error) { /* offline visual controller stays optional */ }
-    } else if (["stopped", "parked"].includes(profile.mode)) {
+    } else if ((mapAdapter.getStatus() !== "online" || localFollow) && ["stopped", "parked"].includes(profile.mode)) {
       try { window.mapCarStop?.(); } catch (_error) { /* offline visual controller stays optional */ }
     }
   }
@@ -1767,10 +1772,10 @@
     const stage = viewModel.lifecycle.stage;
     const driving = viewModel.lifecycle.scene === "driving" || ["handover_to_vehicle", "vehicle_observation", "takeover_L2", "takeover_L3", "planning", "service_prepared", "waiting_confirmation", "executing", "service_executed", "action_completed", "cooldown"].includes(stage);
     const overview = !driving || ["handover_to_vehicle", "parked_review"].includes(stage) || mapViewMode === "overview";
-    const authoritativeProgress = Number(drivePlayback.authoritativeProgress);
-    const progress = overview && Number.isFinite(authoritativeProgress)
-      ? authoritativeProgress
-      : drivePlayback.progress ?? viewModel.navigation.route?.progress ?? STAGE_PROGRESS[stage] ?? 0.03;
+    // Follow and overview are two cameras over the same visible vehicle
+    // position. Switching cameras must not jump from the locally smoothed
+    // playback position to a newer backend checkpoint.
+    const progress = drivePlayback.progress ?? viewModel.navigation.route?.progress ?? STAGE_PROGRESS[stage] ?? 0.03;
     return {
       stage,
       progress,
@@ -1785,6 +1790,7 @@
   }
 
   function renderMapControlState() {
+    const mapWrap = document.querySelector(".right-panel");
     document.querySelectorAll("[data-map-control='follow'], [data-map-control='overview']").forEach((button) => {
       const active = button.dataset.mapControl === mapViewMode;
       button.classList.toggle("is-active", active);
@@ -1795,12 +1801,18 @@
       const active = mapAdapter.isTrafficVisible();
       traffic.classList.toggle("is-active", active);
       traffic.setAttribute("aria-pressed", String(active));
+      if (mapWrap) mapWrap.dataset.trafficVisible = String(active);
     }
     const follow = document.querySelector("[data-map-control='follow']");
     const followLabel = follow?.querySelector("span");
     const native3d = mapAdapter.get3dMode() === "native";
+    const localFollow = mapAdapter.getStatus() === "online" && !native3d && mapViewMode === "follow";
     if (followLabel) followLabel.textContent = native3d ? "3D 跟车" : "跟车视角";
     if (follow) follow.setAttribute("aria-label", native3d ? "切换到车头向上的三维跟车视角" : "切换到跟车视角");
+    document.querySelectorAll("[data-map-control='zoom-in'], [data-map-control='zoom-out']").forEach((button) => {
+      button.disabled = localFollow;
+      button.title = localFollow ? "切换到路线全览后可缩放" : button.getAttribute("aria-label");
+    });
   }
 
   function prepareMapControls() {
@@ -1994,7 +2006,7 @@
         worldState: client.getSnapshot(),
         viewModel,
         activeSection,
-        map: { status: mapAdapter.getStatus(), cameraMode: mapAdapter.getCameraMode(), cameraHeading: mapAdapter.getCameraHeading(), cameraRotation: mapAdapter.getCameraRotation(), cameraPitch: mapAdapter.getCameraPitch(), rendering3d: mapAdapter.get3dMode(), motionMethod: mapAdapter.getMotionMethod(), motion: mapAdapter.getMotionDiagnostics(), trafficVisible: mapAdapter.isTrafficVisible(), usage: mapAdapter.getUsage(), routeMeta },
+        map: { status: mapAdapter.getStatus(), cameraMode: mapAdapter.getCameraMode(), cameraHeading: mapAdapter.getCameraHeading(), cameraRotation: mapAdapter.getCameraRotation(), cameraPitch: mapAdapter.getCameraPitch(), rendering3d: mapAdapter.get3dMode(), motionMethod: mapAdapter.getMotionMethod(), motion: mapAdapter.getMotionDiagnostics(), congestion: mapAdapter.getCongestionDiagnostics(), trafficVisible: mapAdapter.isTrafficVisible(), usage: mapAdapter.getUsage(), routeMeta },
         drivePlayback: {
           ...drivePlayback,
           tickIntervalMs: DRIVE_PLAYBACK_INTERVAL_MS,

@@ -177,7 +177,7 @@ const stableEventIds = new Map();
 const completedStepKeys = new Set();
 
 const SCRIPT_STEPS = [
-  { key: "waitTask", stage: "同步手机任务", time: "0:00–0:25", cue: "先展示空任务状态，再由手机语音创建任务并同步到共享 World State。" },
+  { key: "waitTask", stage: "等待手机任务", time: "0:00–0:25", cue: "先展示空任务状态；手机语音创建任务后，控制台会自动进入下一步。" },
   { key: "meeting", stage: "会议延迟", time: "0:25–0:55", cue: "会议延迟压缩出发窗口，腕上进入黄色提醒。" },
   { key: "approach", stage: "接近车辆", time: "0:55–1:10", cue: "用户离开办公室靠近车辆，准备交接到车机。" },
   { key: "vehicle", stage: "进入车辆", time: "1:10–1:25", cue: "主交互端切到车机，手机进入只读 Companion。" },
@@ -342,6 +342,7 @@ async function loadState(reason = "load") {
 function consumeState(next, reason = "state") {
   if (!next || next.schema_version !== "0.2.0") return;
   if (worldState && next.session_id === worldState.session_id && next.revision <= lastRevision) return false;
+  const previousTaskCount = worldState?.session_id === next.session_id ? worldState.tasks?.length || 0 : 0;
   if (worldState && next.session_id !== worldState.session_id) {
     stableEventIds.clear();
     completedStepKeys.clear();
@@ -349,6 +350,11 @@ function consumeState(next, reason = "state") {
   }
   worldState = next;
   lastRevision = next.revision;
+  if (!mobileTaskSyncAcknowledged && next.tasks?.length && previousTaskCount === 0) {
+    mobileTaskSyncAcknowledged = true;
+    completedStepKeys.add("waitTask");
+    log("mobile", "task synced", `${next.tasks.length} 项任务 · r${next.revision}`);
+  }
   render();
   log(reason, `${next.stage}`, `r${next.revision}`);
   return true;
@@ -648,6 +654,7 @@ function blockedReason(actionKey) {
   const hasConfirmation = worldState?.confirmation?.status === "pending";
   if (!worldState && !["refresh", "waitTask", "presetTask"].includes(actionKey)) return "未连接 Agent";
   if (actionKey === "presetTask" && hasTasks) return "当前已有手机任务，无需载入演示预置";
+  if (actionKey === "waitTask" && !hasTasks) return "等待手机端创建任务，收到后会自动进入下一步";
   if (actionKey === "waitTask" && mobileTaskSyncAcknowledged) return "手机任务同步阶段已确认";
   if (["serviceSuccess", "serviceStock", "serviceBudget"].includes(actionKey) && hasTasks) return "主故事已开始，服务模拟配置已锁定";
   if (["meeting", "approach", "vehicle", "traffic", "stress", "utterance"].includes(actionKey) && !hasTasks) return "需要先创建任务";
