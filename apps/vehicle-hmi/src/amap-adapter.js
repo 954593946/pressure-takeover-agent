@@ -53,6 +53,34 @@
     return ((Number(heading || 0) + Number(mapRotation || 0)) % 360 + 360) % 360;
   }
 
+  function trafficColor(status) {
+    const normalized = String(status || "").trim();
+    if (/严重拥堵|极度拥堵/.test(normalized)) return "#8f2032";
+    if (/拥堵/.test(normalized)) return "#d1495b";
+    if (/缓行|慢行/.test(normalized)) return "#e6a700";
+    if (/畅通/.test(normalized)) return "#2e9d6f";
+    return "#2f6bff";
+  }
+
+  function flattenTrafficSegments(route) {
+    const segments = [];
+    (route?.steps || []).forEach((step) => {
+      (step?.tmcs || []).forEach((tmc) => {
+        const path = [];
+        (tmc?.path || []).forEach((point) => {
+          const pair = pointValue(point);
+          if (pair && pair.every(Number.isFinite)) appendUnique(path, pair);
+        });
+        if (path.length > 1) segments.push({
+          path,
+          status: String(tmc?.status || "").trim(),
+          color: trafficColor(tmc?.status)
+        });
+      });
+    });
+    return segments;
+  }
+
   function distanceMeters(from, to) {
     const radius = 6371008.8;
     const lat1 = from[1] * Math.PI / 180;
@@ -250,12 +278,14 @@
       this.routePath = [];
       this.routeGeometry = null;
       this.drivingRoute = null;
+      this.trafficVisible = true;
       this.overlays = {};
       this.lastSnapshot = null;
       this.lastProgress = null;
       this.lastStage = null;
       this.lastCameraHeading = null;
       this.lastRouteMetaKey = null;
+      this.lastMetaProgress = null;
       this.cameraMode = "overview";
       this.pendingRouteKey = null;
       this.pendingRoutePromise = null;
@@ -324,6 +354,7 @@
       this.drivingRoute = null;
       this.lastProgress = null;
       this.lastRouteMetaKey = null;
+      this.lastMetaProgress = null;
     }
 
     async setRoute(routeConfig, routeKey) {
@@ -381,7 +412,7 @@
           const meta = routeMeta(this.drivingRoute, 0);
           this.lastRouteMetaKey = `${meta.stepIndex}:${meta.nextDistance.value}:${meta.nextDistance.unit}`;
           this.onRouteMeta(meta);
-          this.onStatus({ mode: "online", message: "高德导航 · Demo 定位", usage: readUsage() });
+          this.onStatus({ mode: "online", message: "高德导航", usage: readUsage() });
           if (this.lastSnapshot) this.update(this.lastSnapshot);
           return { mode: "online", planned: true };
         } catch (error) {
@@ -405,7 +436,26 @@
       this.overlays.routeBase = new AMap.Polyline({ ...common, strokeColor: "#0b1b33", strokeOpacity: 0.2, strokeWeight: 16, zIndex: 46 });
       this.overlays.routeRemaining = new AMap.Polyline({ ...common, strokeColor: "#2f6bff", strokeOpacity: 1, strokeWeight: 11, zIndex: 48 });
       this.overlays.routePassed = new AMap.Polyline({ ...common, path: this.routePath.slice(0, 2), strokeColor: "#aab4be", strokeOpacity: 0, strokeWeight: 11, zIndex: 49 });
-      this.overlays.routeIncident = new AMap.Polyline({ ...common, path: this.routePath.slice(0, 2), strokeColor: "#e6a700", strokeOpacity: 0, strokeWeight: 12, zIndex: 51 });
+      this.overlays.routeTrafficSegments = flattenTrafficSegments(this.drivingRoute).map((segment) => new AMap.Polyline({
+        ...common,
+        path: segment.path,
+        strokeColor: segment.color,
+        strokeOpacity: 0.92,
+        strokeWeight: 12,
+        zIndex: 50
+      }));
+      this.overlays.routeCongestionBands = [
+        ["#e6a700", 51],
+        ["#d1495b", 52],
+        ["#8f2032", 53]
+      ].map(([strokeColor, zIndex]) => new AMap.Polyline({
+        ...common,
+        path: this.routePath.slice(0, 2),
+        strokeColor,
+        strokeOpacity: 0,
+        strokeWeight: 12,
+        zIndex
+      }));
 
       const vehicle = root.document.createElement("div");
       vehicle.className = "auri-amap-vehicle";
@@ -431,7 +481,8 @@
         this.overlays.routeBase,
         this.overlays.routeRemaining,
         this.overlays.routePassed,
-        this.overlays.routeIncident,
+        ...this.overlays.routeTrafficSegments,
+        ...this.overlays.routeCongestionBands,
         this.overlays.vehicleMarker,
         this.overlays.originMarker,
         this.overlays.destinationMarker,
@@ -494,18 +545,24 @@
 
       const riskActive = ["L2", "L3"].includes(snapshot.riskLevel);
       const completed = ["action_completed", "cooldown", "parked_review"].includes(snapshot.stage);
-      const incidentEnd = Math.min(1, progress + 0.08);
-      const incidentPath = pathBetweenProgress(this.routeGeometry, progress, incidentEnd);
-      this.overlays.routeIncident.setOptions({ strokeColor: completed ? "#2e9d6f" : "#e6a700", strokeOpacity: riskActive || completed ? 1 : 0 });
-      this.overlays.routeIncident.setPath(riskActive || completed ? incidentPath : fallback);
+      const congestionRanges = [[0.012, 0.04], [0.04, 0.068], [0.068, 0.094]];
+      this.overlays.routeCongestionBands.forEach((band, index) => {
+        const [startOffset, endOffset] = congestionRanges[index];
+        const path = pathBetweenProgress(this.routeGeometry, Math.min(1, progress + startOffset), Math.min(1, progress + endOffset));
+        band.setOptions({ strokeOpacity: riskActive && this.trafficVisible ? 1 : 0 });
+        band.setPath(riskActive && path.length > 1 ? path : fallback);
+      });
+      this.overlays.routeTrafficSegments.forEach((segment) => segment.setOptions({ strokeOpacity: this.trafficVisible ? 0.92 : 0 }));
       if (riskActive) {
-        this.overlays.incidentContent.textContent = snapshot.lateMinutes ? `拥堵 · 晚到 ${snapshot.lateMinutes} 分钟` : "前方拥堵";
+        this.overlays.incidentContent.textContent = snapshot.stopped
+          ? `严重拥堵 · 已停车等待`
+          : snapshot.lateMinutes ? `拥堵 · 晚到 ${snapshot.lateMinutes} 分钟` : "前方拥堵";
         this.overlays.incidentMarker.setPosition(locationAtProgress(this.routeGeometry, Math.min(1, progress + 0.04)).point);
         this.overlays.incidentMarker.show();
-        this.overlays.trafficLayer.setOpacity(0.5);
+        this.overlays.trafficLayer.setOpacity(this.trafficVisible ? 0.5 : 0);
       } else {
         this.overlays.incidentMarker.hide();
-        this.overlays.trafficLayer.setOpacity(snapshot.driving ? 0.3 : 0.16);
+        this.overlays.trafficLayer.setOpacity(this.trafficVisible ? (snapshot.driving ? 0.3 : 0.16) : 0);
       }
 
       const stageChanged = snapshot.stage !== this.lastStage;
@@ -519,10 +576,11 @@
         const markerAngle = screenHeading(location.heading, this.map?.getRotation?.() || 0);
         this.overlays.vehicleMarker.setAngle?.(markerAngle);
         this.overlays.vehicleContent?.style?.setProperty("--auri-marker-counter-rotation", `${-markerAngle}deg`);
-        if (this.lastProgress !== null && typeof this.overlays.vehicleMarker.moveTo === "function") {
+        const progressChanged = this.lastProgress === null || Math.abs(progress - this.lastProgress) >= 0.00005;
+        if (this.lastProgress !== null && progressChanged && typeof this.overlays.vehicleMarker.moveTo === "function") {
           this.overlays.vehicleMarker.stopMove?.();
-          this.overlays.vehicleMarker.moveTo(location.point, { duration: 1350, autoRotation: false });
-        } else this.overlays.vehicleMarker.setPosition(location.point);
+          this.overlays.vehicleMarker.moveTo(location.point, { duration: Number(snapshot.motionDurationMs || 760), autoRotation: false });
+        } else if (this.lastProgress === null) this.overlays.vehicleMarker.setPosition(location.point);
       } else this.overlays.vehicleMarker.hide();
       if (snapshot.overview) this.overlays.originMarker.show();
       else this.overlays.originMarker.hide();
@@ -530,8 +588,9 @@
       this.updateChevrons(snapshot);
       const meta = routeMeta(this.drivingRoute, progress);
       const key = `${meta.stepIndex}:${meta.nextDistance.value}:${meta.nextDistance.unit}`;
-      if (meta.instruction && key !== this.lastRouteMetaKey) {
+      if (meta.instruction && (key !== this.lastRouteMetaKey || Math.abs(progress - (this.lastMetaProgress ?? -1)) >= 0.002)) {
         this.lastRouteMetaKey = key;
+        this.lastMetaProgress = progress;
         this.onRouteMeta(meta);
       }
       this.lastProgress = progress;
@@ -543,6 +602,10 @@
       if (action === "zoom-in") this.map.zoomIn();
       else if (action === "zoom-out") this.map.zoomOut();
       else if (action === "overview") this.applyOverviewCamera();
+      else if (action === "traffic") {
+        this.trafficVisible = !this.trafficVisible;
+        if (this.lastSnapshot) this.update(this.lastSnapshot);
+      }
       else if (action === "follow" && this.lastSnapshot && this.routeGeometry) {
         this.applyFollowCamera(this.lastSnapshot, locationAtProgress(this.routeGeometry, this.lastSnapshot.progress), true);
       } else return false;
@@ -568,6 +631,7 @@
     getStatus() { return this.status; }
     getUsage() { return readUsage(); }
     getCameraMode() { return this.cameraMode; }
+    isTrafficVisible() { return this.trafficVisible; }
     getCameraHeading() { return this.lastCameraHeading; }
     getCameraRotation() { return this.map?.getRotation?.() ?? null; }
   }
@@ -580,9 +644,11 @@
     buildRouteGeometry,
     create(options) { return new AuriAmapAdapter(options); },
     flattenDrivingPath,
+    flattenTrafficSegments,
     locationAtProgress,
     pathBetweenProgress,
     routeMeta,
-    screenHeading
+    screenHeading,
+    trafficColor
   };
 });

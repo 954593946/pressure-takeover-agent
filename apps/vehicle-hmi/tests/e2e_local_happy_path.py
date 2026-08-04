@@ -163,7 +163,7 @@ def main():
         page.locator('[data-auri-section="home"]').click()
         page.locator('#auri-driver-overview [data-panel-target="sync"]').first.click()
         assert "设备同步" in page.locator("#auri-detail-title").inner_text()
-        assert all(label in page.locator("#auri-detail-body").inner_text() for label in ["手机", "腕上设备", "车机"])
+        assert all(label in page.locator("#auri-detail-body").inner_text() for label in ["手机", "腕表", "车机"])
         page.screenshot(path=SCREENSHOT_DIR / "auri-hmi-e2e-left-sync.png")
         page.locator("#auri-driver-back").click()
 

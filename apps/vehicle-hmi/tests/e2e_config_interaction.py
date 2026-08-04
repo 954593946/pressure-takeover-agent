@@ -16,6 +16,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_pla
 AGENT = os.getenv("AURI_AGENT_URL", "http://127.0.0.1:8795").rstrip("/")
 TOKEN = os.getenv("AURI_AGENT_TOKEN", "test-shared-token")
 HMI = os.getenv("AURI_HMI_URL", "http://127.0.0.1:5174/apps/vehicle-hmi/")
+SETUP_HMI = f"{HMI}{'&' if '?' in HMI else '?'}setup=1"
 CHROME = os.getenv(
     "PLAYWRIGHT_CHROMIUM_EXECUTABLE",
     str(Path.home() / ".cache/ms-playwright/chromium-1228/chrome-linux64/chrome"),
@@ -46,7 +47,7 @@ def main() -> None:
         page = context.new_page()
         errors: list[str] = []
         page.on("pageerror", lambda error: errors.append(str(error)))
-        page.goto(HMI, wait_until="load", timeout=30000)
+        page.goto(SETUP_HMI, wait_until="load", timeout=30000)
         page.locator("#tb-offline").click()
         page.locator("#auri-config-token").fill(TOKEN)
         page.locator(".auri-map-config summary").click()

@@ -171,6 +171,7 @@ const successfulRoute = {
     instruction: "沿现代大道行驶 1000 米后右转",
     road: "现代大道",
     distance: 1000,
+    tmcs: [{ status: "缓行", path: [[120.786, 31.331], [120.775, 31.325]] }],
     path: [
       [120.786, 31.331],
       [120.775, 31.325]
@@ -290,6 +291,15 @@ async function main() {
   assertClose(amap.bearing([120, 31], [120.01, 31]), 90);
   assertClose(amap.screenHeading(-90, 90), 0);
   assertClose(amap.screenHeading(90, 0), 90);
+  assert.equal(amap.trafficColor("畅通"), "#2e9d6f");
+  assert.equal(amap.trafficColor("缓行"), "#e6a700");
+  assert.equal(amap.trafficColor("拥堵"), "#d1495b");
+  assert.equal(amap.trafficColor("严重拥堵"), "#8f2032");
+  assert.deepEqual(amap.flattenTrafficSegments(successfulRoute), [{
+    path: [[120.786, 31.331], [120.775, 31.325]],
+    status: "缓行",
+    color: "#e6a700"
+  }]);
 
   const flattened = amap.flattenDrivingPath({
     steps: [
@@ -382,6 +392,28 @@ async function main() {
   );
   assert.equal(online.adapter.overlays.incidentMarker.visible, true);
   assert.equal(online.adapter.overlays.incidentContent.textContent, "拥堵 · 晚到 18 分钟");
+  assert.deepEqual(
+    online.adapter.overlays.routeCongestionBands.map((band) => band.options.strokeColor),
+    ["#e6a700", "#d1495b", "#8f2032"],
+    "congestion must progress from amber to red and deep red"
+  );
+  assert.equal(online.adapter.overlays.routeCongestionBands.every((band) => band.options.strokeOpacity === 1), true);
+  online.adapter.update({
+    stage: "waiting_confirmation",
+    progress: 0.5,
+    showVehicle: true,
+    overview: false,
+    driving: true,
+    stopped: true,
+    riskLevel: "L2",
+    lateMinutes: 18
+  });
+  assert.equal(online.adapter.overlays.incidentContent.textContent, "严重拥堵 · 已停车等待");
+  assert.equal(online.adapter.control("traffic"), true);
+  assert.equal(online.adapter.isTrafficVisible(), false);
+  assert.equal(online.adapter.overlays.routeCongestionBands.every((band) => band.options.strokeOpacity === 0), true);
+  assert.equal(online.adapter.control("traffic"), true);
+  assert.equal(online.adapter.isTrafficVisible(), true);
   assert.deepEqual(
     online.adapter.overlays.vehicleMarker.position,
     online.adapter.overlays.routePassed.path.at(-1),

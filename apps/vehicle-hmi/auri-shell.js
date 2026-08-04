@@ -48,8 +48,12 @@
     offline: ["离线导航", "offline"],
     loading: ["路线载入中", "loading"],
     map_ready: ["地图已连接", "loading"],
-    online: ["高德导航 · Demo 定位", "online"]
+    online: ["高德导航", "online"]
   };
+  const CONGESTION_STAGES = new Set([
+    "takeover_L2", "takeover_L3", "planning", "service_prepared",
+    "waiting_confirmation", "executing", "service_executed"
+  ]);
   const TAKEOVER_STAGES = new Set([
     "takeover_L2", "takeover_L3", "planning", "service_prepared",
     "waiting_confirmation", "executing", "service_executed", "action_completed",
@@ -96,6 +100,19 @@
   let stageNoticeTimer = null;
   let noticeHideTimer = null;
   let stageNoticeHideTimer = null;
+  let mapViewMode = "follow";
+  let mapViewUserSelected = false;
+  let drivePlaybackTimer = null;
+  const drivePlayback = {
+    sessionId: null,
+    routeId: null,
+    authoritativeProgress: null,
+    stage: null,
+    progress: null,
+    speedKph: 0,
+    lastAt: 0,
+    mode: "idle"
+  };
   const completionSpeechKeys = new Set((() => {
     try { return JSON.parse(sessionStorage.getItem("auri-hmi-next-completion-speech") || "[]"); }
     catch (_error) { return []; }
@@ -108,6 +125,39 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#039;");
+  }
+
+  function presentationText(value) {
+    return String(value ?? "")
+      .replace(/[（(][^）)]*(?:Demo|模拟|未连接真实)[^）)]*[）)]/gi, "")
+      .replace(/[（(]\s*模拟(?:消息|订单|配送|服务)?\s*[）)]/g, "")
+      .replace(/模拟商超/g, "商超")
+      .replace(/模拟配送/g, "配送")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  }
+
+  function actionDetailText(action) {
+    const text = presentationText(action?.summary);
+    return action?.type === "message"
+      ? text.replace(/^给.+?的消息草稿[：:]\s*/, "")
+      : text;
+  }
+
+  function actionTargetLabel(action) {
+    if (action?.type === "service_order") return "配送方案";
+    return presentationText(action?.target) || "Agent 动作";
+  }
+
+  function orderStatusLabel(status) {
+    return {
+      planned: "待处理",
+      previewed: "方案已准备",
+      awaiting_confirmation: "待确认",
+      submitted: "已安排",
+      completed: "已完成",
+      failed: "未完成"
+    }[status] || "处理中";
   }
 
   const ICON_PATHS = {
@@ -123,6 +173,7 @@
     route: '<circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M7.5 16.5 16.5 7.5M8 6h5M8 6l2-2M8 6l2 2"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
     distance: '<path d="M4 17h16M6 14v6m12-6v6M8 8l4-4 4 4M12 4v10"/>',
+    traffic: '<path d="M4 7h16M4 12h12M4 17h8"/><circle cx="19" cy="12" r="2"/><circle cx="15" cy="17" r="2"/>',
     devices: '<rect x="3" y="5" width="12" height="9" rx="1.5"/><path d="M7 18h4M9 14v4"/><rect x="17" y="7" width="4" height="10" rx="1"/>',
     climate: '<path d="M12 3v18M5.6 6.5l12.8 11M18.4 6.5l-12.8 11M4 12h16"/><circle cx="12" cy="12" r="2"/>',
     warning: '<path d="M12 3 2.5 20h19z"/><path d="M12 9v4m0 3h.01"/>',
@@ -337,16 +388,21 @@
     const actions = viewModel.actions.items.slice(0, 3).map((action) => {
       const order = action.type === "service_order"
         ? viewModel.serviceOrders.items.find((item) => item.id === action.detailsRef)
+          || viewModel.serviceOrders.items[0]
         : null;
-      const orderText = order
-        ? `模拟配送 · ${order.itemCount} 件/${order.itemKinds} 种 · ${order.total === null ? "金额待定" : `${order.total} 元`} · ${order.deliveryWindow || "配送待定"}`
-        : null;
-      const messageText = action.type === "message"
-        ? `给${action.target || "联系人"}的消息草稿已生成（模拟）`
-        : null;
+      const orderMeta = order ? [
+        `${order.itemCount} 件 · ${order.itemKinds} 种`,
+        order.total === null ? "金额待定" : `¥${order.total}`,
+        order.deliveryWindow || "时段待定"
+      ] : [];
+      const isMessage = action.type === "message";
       return {
         icon: action.status === "completed" ? "check" : action.type === "message" ? "message" : action.type === "service_order" ? "order" : "task",
-        text: orderText || messageText || action.preview,
+        title: order
+          ? action.status === "completed" ? "配送已安排" : "配送方案已准备"
+          : isMessage ? `通知${presentationText(action.target) || "联系人"}` : actionTargetLabel(action),
+        detail: order ? "" : isMessage ? "消息草稿已生成" : presentationText(action.preview),
+        meta: orderMeta,
         state: action.statusLabel,
         completed: action.status === "completed"
       };
@@ -354,8 +410,8 @@
     if (actions.length) return actions;
     if (["takeover_L2", "takeover_L3", "planning"].includes(viewModel.lifecycle.stage)) {
       return [
-        { icon: "clock", text: "核对 ETA 与刚性任务", state: "进行中" },
-        { icon: "flexible", text: "寻找可后置或可代办事项", state: "等待" }
+        { icon: "clock", title: "核对到达时间", detail: "优先保护刚性任务", meta: [], state: "进行中" },
+        { icon: "flexible", title: "调整弹性任务", detail: "寻找可后置或可代办事项", meta: [], state: "等待" }
       ];
     }
     return [];
@@ -490,17 +546,26 @@
     document.getElementById("auri-takeover-action-count").textContent = `${actions.length} 项`;
     document.getElementById("auri-takeover-actions").innerHTML = actions.map((action) => `
       <div class="auri-takeover-action${action.completed ? " is-completed" : ""}">
-        <span>${iconSvg(action.icon)}</span><b>${escapeHtml(action.text)}</b><small>${escapeHtml(action.state)}</small>
+        <span>${iconSvg(action.icon)}</span>
+        <span class="auri-takeover-action-copy">
+          <b>${escapeHtml(action.title)}</b>
+          ${action.detail ? `<em>${escapeHtml(action.detail)}</em>` : ""}
+          ${action.meta?.length ? `<span class="auri-order-meta">${action.meta.map((item) => `<i>${escapeHtml(item)}</i>`).join("")}</span>` : ""}
+        </span>
+        <small>${escapeHtml(action.state)}</small>
       </div>
     `).join("");
 
+    const connected = ["streaming", "polling_fallback"].includes(connectionStatus.type);
     const devices = [
-      ["手机", viewModel.lifecycle.primarySurface === "mobile" ? "当前主端" : viewModel.utterance.available ? "语音已同步" : "保持连接", viewModel.lifecycle.primarySurface === "mobile" || viewModel.utterance.available],
-      ["腕表", viewModel.wearable.connected ? viewModel.wearable.modeLabel : "未连接", viewModel.wearable.connected],
-      ["车机", viewModel.lifecycle.primarySurface === "vehicle_hmi" ? "当前主端" : stage === "parked_review" ? "本次结束" : "只读显示", true]
+      ["phone", "手机", !connected ? "等待同步" : viewModel.lifecycle.primarySurface === "mobile" ? "当前主端" : viewModel.utterance.available ? "语音已同步" : "保持连接", connected && (viewModel.lifecycle.primarySurface === "mobile" || viewModel.utterance.available), !connected ? "离线" : viewModel.lifecycle.primarySurface === "mobile" ? "主端" : "在线"],
+      ["watch", "腕表", !connected ? "等待同步" : viewModel.wearable.connected ? viewModel.wearable.modeLabel : "未连接", connected && viewModel.wearable.connected, connected && viewModel.wearable.connected ? "已同步" : "离线"],
+      ["car", "车机", !connected ? "等待同步" : viewModel.lifecycle.primarySurface === "vehicle_hmi" ? "当前主端" : stage === "parked_review" ? "本次结束" : "状态已同步", connected, !connected ? "离线" : viewModel.lifecycle.primarySurface === "vehicle_hmi" ? "主端" : "在线"]
     ];
-    document.getElementById("auri-takeover-devices").innerHTML = devices.map(([name, status, active]) => `
-      <span class="${active ? "is-active" : ""}"><i></i><b>${escapeHtml(name)}</b><small>${escapeHtml(status)}</small></span>
+    document.getElementById("auri-takeover-devices").innerHTML = devices.map(([icon, name, status, active, badge]) => `
+      <button type="button" data-panel-target="sync" aria-label="查看${escapeHtml(name)}同步状态" class="${active ? "is-active" : "is-offline"}">
+        <i>${iconSvg(icon)}</i><span><b>${escapeHtml(name)}</b><small>${escapeHtml(status)}</small></span><em>${escapeHtml(badge)}</em>
+      </button>
     `).join("");
 
     const button = document.getElementById("auri-takeover-confirm");
@@ -743,8 +808,9 @@
       return `<section class="auri-task-group is-${tone}">
         <header><span>${iconSvg(icon)}</span><div><b>${title}</b><small>${subtitle}</small></div><em>${items.length}</em></header>
         <div>${items.map((task) => `<button type="button" class="auri-task-card" data-panel-target="task:${escapeHtml(task.id)}">
-          <span><b>${escapeHtml(task.displayTitle)}</b><small>${escapeHtml(task.location || task.type)}</small></span>
-          <em>${escapeHtml(task.status)}</em>
+          <span class="auri-task-card-icon">${iconSvg(icon)}</span>
+          <span class="auri-task-card-copy"><small>${escapeHtml(task.type)}${task.time ? ` · ${escapeHtml(task.time)}` : ""}</small><b>${escapeHtml(task.title)}</b><em>${escapeHtml(task.location || (task.waitingParty.length ? task.waitingParty.join("、") : "暂无地点"))}</em></span>
+          <span class="auri-task-card-state">${escapeHtml(task.status)}</span>
         </button>`).join("")}</div>
       </section>`;
     }).join("");
@@ -756,28 +822,92 @@
         <span>${iconSvg("message")}</span><h3>等待 AURI 准备处理方案</h3>
         <p>风险成立后，这里会显示消息、任务调整与生活服务的执行进度。</p>
       </section>`;
-    const actions = vm.actions.items.map((action, index) => `
+    const actions = vm.actions.items.map((action) => {
+      const order = action.type === "service_order"
+        ? vm.serviceOrders.items.find((item) => item.id === action.detailsRef) || vm.serviceOrders.items[0]
+        : null;
+      const icon = action.type === "message" ? "message" : action.type === "service_order" ? "order" : "task";
+      const typeLabel = action.type === "message" ? "消息" : action.type === "service_order" ? "配送" : "任务调整";
+      const detail = order
+        ? `${order.itemCount} 件 · ${order.total === null ? "金额待定" : `¥${order.total}`} · ${order.deliveryWindow || "时段待定"}`
+        : actionDetailText(action);
+      return `
       <button type="button" class="auri-action-step is-${escapeHtml(action.status)}" data-panel-target="action:${escapeHtml(action.id)}">
-        <span class="auri-action-index">${action.status === "completed" ? iconSvg("check") : index + 1}</span>
-        <span><b>${escapeHtml(action.target || "Agent 动作")}</b><small>${escapeHtml(action.summary)}</small></span>
-        <em>${escapeHtml(action.statusLabel)}</em>
-      </button>`).join("");
-    return `<section class="auri-action-board"><header><b>处理队列</b><span>${vm.actions.counts.completed}/${vm.actions.counts.total} 完成</span></header>${actions}</section>`;
+        <span class="auri-action-index">${iconSvg(action.status === "completed" ? "check" : icon)}</span>
+        <span class="auri-action-step-copy"><small>${escapeHtml(typeLabel)}</small><b>${escapeHtml(actionTargetLabel(action))}</b><em>${escapeHtml(detail)}</em></span>
+        <span class="auri-action-step-state">${escapeHtml(action.statusLabel)}</span>
+      </button>`;
+    }).join("");
+    const linkedOrderIds = new Set(vm.actions.items.map((action) => action.detailsRef).filter(Boolean));
+    const unlinkedOrders = vm.serviceOrders.items.filter((order) => !linkedOrderIds.has(order.id));
+    const standaloneOrders = unlinkedOrders.map((order) => {
+      const completed = ["submitted", "completed"].includes(order.status);
+      return `<article class="auri-action-step${completed ? " is-completed" : ""}">
+        <span class="auri-action-index">${iconSvg(completed ? "check" : "order")}</span>
+        <span class="auri-action-step-copy"><small>配送</small><b>配送方案</b><em>${escapeHtml(`${order.itemCount} 件 · ${order.total === null ? "金额待定" : `¥${order.total}`} · ${order.deliveryWindow || "时段待定"}`)}</em></span>
+        <span class="auri-action-step-state">${escapeHtml(orderStatusLabel(order.status))}</span>
+      </article>`;
+    }).join("");
+    const completed = vm.actions.counts.completed
+      + unlinkedOrders.filter((order) => ["submitted", "completed"].includes(order.status)).length;
+    const total = vm.actions.counts.total + unlinkedOrders.length;
+    const percent = total ? Math.round((completed / total) * 100) : 0;
+    return `<section class="auri-action-board">
+      <header><span><small>处理进度</small><b>${completed}/${total} 已完成</b></span><em>${percent}%</em></header>
+      <div class="auri-action-progress" aria-label="处理进度 ${percent}%"><i style="width:${percent}%"></i></div>
+      <div class="auri-action-list">${actions}${standaloneOrders}</div>
+    </section>`;
+  }
+
+  function taskDetailContent(task) {
+    const icon = task.tone === "rigid" ? "calendar" : "flexible";
+    return `<section class="auri-task-detail is-${escapeHtml(task.tone)}">
+      <header><span>${iconSvg(icon)}</span><div><small>${escapeHtml(task.type)}</small><h3>${escapeHtml(task.title)}</h3></div><em>${escapeHtml(task.status)}</em></header>
+      <div class="auri-task-time"><small>${task.time ? "计划时间" : "时间安排"}</small><b>${escapeHtml(task.time || "待确定")}</b><span>${task.tone === "rigid" ? "优先保护时间窗口" : "可由 AURI 调整顺序"}</span></div>
+      <div class="auri-task-facts">
+        <article><span>${iconSvg("route")}</span><small>地点</small><b>${escapeHtml(task.location || "暂未提供")}</b></article>
+        <article><span>${iconSvg("devices")}</span><small>关联人员</small><b>${escapeHtml(task.waitingParty.length ? task.waitingParty.join("、") : "暂无")}</b></article>
+      </div>
+      ${task.location ? `<button type="button" class="auri-detail-primary" data-panel-target="route">${iconSvg("route")}<span>查看当前路线</span></button>` : ""}
+    </section>`;
+  }
+
+  function actionDetailContent(vm, action) {
+    const isMessage = action.type === "message";
+    const isOrder = action.type === "service_order";
+    const order = isOrder
+      ? vm.serviceOrders.items.find((item) => item.id === action.detailsRef) || vm.serviceOrders.items[0]
+      : null;
+    const icon = isMessage ? "message" : isOrder ? "order" : "task";
+    const heading = isMessage ? presentationText(action.target) || "联系人" : isOrder ? "配送方案" : actionTargetLabel(action);
+    const detail = order
+      ? `${order.itemCount} 件 · ${order.itemKinds} 种 · ${order.total === null ? "金额待定" : `¥${order.total}`}`
+      : actionDetailText(action);
+    return `<section class="auri-action-detail is-${escapeHtml(action.status)}">
+      <header><span>${iconSvg(icon)}</span><div><small>${isMessage ? "联系人" : isOrder ? "生活服务" : "Agent 动作"}</small><h3>${escapeHtml(heading)}</h3></div><em>${escapeHtml(action.statusLabel)}</em></header>
+      <div class="auri-action-preview">
+        <small>${isMessage ? "消息内容" : isOrder ? "配送摘要" : "调整结果"}</small>
+        <p>${escapeHtml(detail)}</p>
+        ${order ? `<div class="auri-action-preview-meta"><span>${iconSvg("order")} ${escapeHtml(order.deliveryWindow || "时段待定")}</span><span>${iconSvg("check")} ${escapeHtml(orderStatusLabel(order.status))}</span></div>` : ""}
+      </div>
+      <footer class="auri-action-assurance">${iconSvg(action.status === "completed" ? "check" : "info")}<span><b>${action.status === "completed" ? "处理结果已同步" : action.requiresConfirmation ? "等待一次确认" : "AURI 正在处理"}</b><small>${action.status === "completed" ? "手机、车机和腕表将显示相同结果" : action.requiresConfirmation ? "确认入口仅在当前主交互端显示" : "完成后会自动更新状态"}</small></span></footer>
+    </section>`;
   }
 
   function syncBoardContent(vm) {
     const primary = vm.lifecycle.primarySurface;
+    const connected = ["streaming", "polling_fallback"].includes(connectionStatus.type);
     const devices = [
-      ["phone", "手机", primary === "mobile" ? "当前主交互端" : vm.utterance.available ? "语音与任务已同步" : "任务与权限中心", primary === "mobile" || vm.utterance.available],
-      ["watch", "腕上设备", vm.wearable.connected ? `${vm.wearable.text} · ${vm.wearable.modeLabel}` : "尚未连接", vm.wearable.connected],
-      ["car", "车机", primary === "vehicle_hmi" ? "驾驶主交互端" : "导航与状态已就绪", connectionStatus.type === "streaming"]
+      ["phone", "手机", !connected ? "等待服务连接" : primary === "mobile" ? "当前主交互端" : vm.utterance.available ? "语音与任务已同步" : "任务与权限中心", connected && (primary === "mobile" || vm.utterance.available)],
+      ["watch", "腕表", !connected ? "等待服务连接" : vm.wearable.connected ? `${vm.wearable.text} · ${vm.wearable.modeLabel}` : "尚未连接", connected && vm.wearable.connected],
+      ["car", "车机", !connected ? "等待状态同步" : primary === "vehicle_hmi" ? "驾驶主交互端" : "导航与状态已就绪", connected]
     ];
     return `<section class="auri-sync-board">
       <div class="auri-sync-line" aria-hidden="true"></div>
       ${devices.map(([icon, title, copy, active]) => `<article class="${active ? "is-online" : "is-offline"}">
         <span>${iconSvg(icon)}</span><b>${escapeHtml(title)}</b><small>${escapeHtml(copy)}</small><em>${active ? "已同步" : "等待"}</em>
       </article>`).join("")}
-      <footer>${iconSvg("link")}<span><b>World State r${vm.meta.revision < 0 ? "--" : vm.meta.revision}</b><small>${connectionStatus.type === "streaming" ? "实时流已连接" : "正在恢复连接"}</small></span></footer>
+      <footer>${iconSvg("link")}<span><b>${connectionStatus.type !== "streaming" ? "正在恢复设备连接" : vm.wearable.connected ? "三端状态已同步" : "手机与车机已同步"}</b><small>${vm.wearable.connected ? "手机 · 车机 · 腕表" : "腕表连接后自动接续"}</small></span></footer>
     </section>`;
   }
 
@@ -803,7 +933,7 @@
         ${Object.entries(fanLabels).map(([value, label]) => `<button type="button" data-climate-fan="${value}" class="${draft.fan_speed === value ? "is-active" : ""}">${label}风</button>`).join("")}
       </div></div>
       <div class="auri-climate-sync">
-        <span>${iconSvg("link")}</span><span><b>${climateRequest ? "正在同步设置" : climateError ? "同步未完成" : "手机与车机使用同一状态"}</b><small>${climateError ? escapeHtml(climateError) : `World State · revision ${vm.meta.revision < 0 ? "--" : vm.meta.revision}`}</small></span>
+        <span>${iconSvg("link")}</span><span><b>${climateRequest ? "正在同步设置" : climateError ? "同步未完成" : "座舱设置已同步"}</b><small>${climateError ? escapeHtml(climateError) : "手机端将自动显示最新设置"}</small></span>
       </div>
       <button type="button" class="auri-climate-apply" data-climate-control="apply" ${climateRequest || !climateDraftDirty ? "disabled" : ""}>${climateRequest ? "正在同步…" : climateDraftDirty ? "应用到座舱" : "设置已同步"}</button>
     </section>`;
@@ -816,7 +946,7 @@
       <header><span>${iconSvg("route")}</span><div><small>当前目的地</small><h3>${escapeHtml(vm.navigation.destination)}</h3></div></header>
       <div class="auri-route-metrics"><article><small>预计到达</small><b>${escapeHtml(vm.navigation.etaLabel)}</b></article><article><small>剩余距离</small><b>${escapeHtml(remaining)}</b></article><article><small>路况影响</small><b>${vm.risk.lateMinutes ? `晚 ${vm.risk.lateMinutes} 分钟` : "基本畅通"}</b></article></div>
       <div class="auri-route-next"><span>${iconSvg("route")}</span><span><small>下一步</small><b>${escapeHtml(routeMeta?.instruction || "等待导航指引")}</b></span><em>${routeMeta?.nextDistance ? `${routeMeta.nextDistance.value} ${routeMeta.nextDistance.unit}` : "--"}</em></div>
-      <p>${mapStatus.mode === "online" ? "高德真实底图与路线 · 车辆位置为 Demo 状态回放" : "当前使用离线路线演示"}</p>
+      <p>${mapStatus.mode === "online" ? "高德地图 · 实时路况已开启" : "导航网络不可用，已切换离线路线"}</p>
     </section>`;
   }
 
@@ -835,10 +965,10 @@
         tone: vm.risk.tone,
         rows: [
           vm.utterance.available
-            ? row("声", "手机语音", vm.utterance.preview, vm.utterance.receivedAtLabel || "刚刚", "processing")
-            : emptyRow("声", "手机语音", "等待用户在手机端求助"),
-          row(vm.wearable.connected ? "腕" : "○", "腕上设备", vm.wearable.connected ? vm.wearable.text : "尚未连接", vm.wearable.connected ? vm.wearable.modeLabel : "离线", vm.wearable.mode),
-          rowButton("联", "设备状态", "查看手机、腕表与车机当前同步状态", "查看", "sync")
+            ? row("mic", "手机语音", vm.utterance.preview, vm.utterance.receivedAtLabel || "刚刚", "processing")
+            : emptyRow("mic", "手机语音", "等待用户在手机端求助"),
+          row("watch", "腕上设备", vm.wearable.connected ? vm.wearable.text : "尚未连接", vm.wearable.connected ? vm.wearable.modeLabel : "离线", vm.wearable.mode),
+          rowButton("devices", "设备状态", "查看手机、腕表与车机当前同步状态", "查看", "sync")
         ]
       };
     }
@@ -881,6 +1011,7 @@
           : task.waitingParty.length ? `关联：${task.waitingParty.join("、")}` : "暂无更多任务说明。",
         status: task.status,
         tone: task.tone === "rigid" ? "warning" : "processing",
+        content: taskDetailContent(task),
         rows: [
           row(task.tone === "rigid" ? "刚" : "弹", task.type, task.tone === "rigid" ? "优先保护时间窗口" : "可由 Agent 调整顺序", task.status, task.tone),
           task.location
@@ -942,6 +1073,7 @@
         copy: action.requiresConfirmation ? "确认后，AURI 将执行这项处理。" : "处理结果已同步到车机。",
         status: action.statusLabel,
         tone: action.status === "completed" ? "success" : action.status === "failed" || action.status === "blocked" ? "critical" : "processing",
+        content: actionDetailContent(vm, action),
         rows: detailRows
       };
     }
@@ -955,7 +1087,7 @@
         : "等待路线数据";
       return {
         title: "行程详情",
-        subtitle: mapStatus.mode === "online" ? "高德导航 · Demo 定位" : "离线导航",
+        subtitle: mapStatus.mode === "online" ? "高德导航" : "离线导航",
         lead: vm.navigation.hasDestination ? vm.navigation.destination : "等待手机同步路线",
         copy: vm.risk.lateMinutes
           ? `当前预计晚到 ${vm.risk.lateMinutes} 分钟，请保持安全驾驶。`
@@ -988,7 +1120,7 @@
         content: syncBoardContent(vm),
         rows: [
           row("手", "手机", vm.utterance.available ? `最近语音：“${vm.utterance.preview}”` : "任务与权限中心", phoneState, primary === "mobile" ? "success" : "processing"),
-          row("腕", "腕表", vm.wearable.connected ? `${vm.wearable.text} · ${HAPTIC_LABEL[vm.wearable.haptic] || "无触觉"}` : "连接状态待更新", vm.wearable.connected ? vm.wearable.modeLabel : "离线", vm.wearable.connected ? vm.wearable.mode : "idle"),
+          row("watch", "腕表", vm.wearable.connected ? `${vm.wearable.text} · ${HAPTIC_LABEL[vm.wearable.haptic] || "无触觉"}` : "连接状态待更新", vm.wearable.connected ? vm.wearable.modeLabel : "离线", vm.wearable.connected ? vm.wearable.mode : "idle"),
           row("车", "车机", vm.navigation.hasDestination ? `导航至 ${vm.navigation.destination}` : "等待路线", carState, primary === "vehicle_hmi" ? "success" : "processing")
         ]
       };
@@ -1016,6 +1148,21 @@
   function connectionPanel() {
     const config = client.getConfig();
     const statusLabel = STATUS_VIEW[connectionStatus.type]?.[0] || "等待连接";
+    const setupMode = new URLSearchParams(window.location.search).get("setup") === "1";
+    if (!setupMode) {
+      const connected = ["streaming", "polling_fallback"].includes(connectionStatus.type);
+      return {
+        title: "连接状态",
+        subtitle: statusLabel,
+        content: `<section class="auri-public-connection is-${connected ? "online" : "offline"}">
+          <span>${iconSvg(connected ? "check" : "warning")}</span>
+          <h3>${connected ? "AURI 服务已连接" : "正在恢复连接"}</h3>
+          <p>${connected ? "任务、路线和处理状态会自动保持同步。" : "当前页面会自动重试，也可以立即重新连接。"}</p>
+          <button type="button" data-connection-reload>${connected ? "刷新状态" : "重新连接"}</button>
+        </section>`,
+        rows: []
+      };
+    }
     const session = viewModel.meta.sessionId ? `…${viewModel.meta.sessionId.slice(-8)}` : "--";
     const revision = viewModel.meta.revision >= 0 ? String(viewModel.meta.revision) : "--";
     const schema = lastHealth?.schema_version || viewModel.meta.schemaVersion || "--";
@@ -1064,7 +1211,10 @@
     if (activeSection !== "connection") return;
     const panel = connectionPanel();
     const body = document.getElementById("auri-detail-body");
-    if (!body?.querySelector("#auri-config-form")) return;
+    if (!body?.querySelector("#auri-config-form")) {
+      openPanel("connection");
+      return;
+    }
     const subtitle = document.getElementById("auri-detail-subtitle");
     const copy = body.querySelector(".auri-shell-copy");
     const status = body.querySelector(".auri-shell-status");
@@ -1179,6 +1329,7 @@
     body.querySelectorAll("[data-panel-target]").forEach((button) => {
       button.addEventListener("click", () => openPanel(button.dataset.panelTarget));
     });
+    body.querySelector("[data-connection-reload]")?.addEventListener("click", () => window.location.reload());
     body.querySelector('[data-climate-control="power"]')?.addEventListener("click", () => {
       const draft = ensureClimateDraft();
       updateClimateDraft({ ac_on: !draft.ac_on });
@@ -1349,7 +1500,7 @@
     const minutes = document.getElementById("vd-nav-min");
     const kilometers = document.getElementById("vd-nav-km");
     const progress = document.getElementById("vd-nav-progress");
-    const stageProgress = vm.navigation.route?.progress ?? STAGE_PROGRESS[vm.lifecycle.stage] ?? 0.03;
+    const stageProgress = drivePlayback.progress ?? vm.navigation.route?.progress ?? STAGE_PROGRESS[vm.lifecycle.stage] ?? 0.03;
     if (card) {
       card.dataset.risk = vm.risk.tone;
       card.classList.toggle("is-default", !vm.navigation.hasDestination);
@@ -1439,25 +1590,109 @@
     if (fan) fan.title = climate.available ? climate.summary : "等待座舱状态同步";
   }
 
+  function driveProfile(vm = viewModel) {
+    const stage = vm.lifecycle.stage;
+    if (stage === "parked_review" || vm.lifecycle.scene === "parked") return { mode: "parked", speedKph: 0, rate: 0, ceiling: 0.98, label: "车辆已停稳" };
+    if (CONGESTION_STAGES.has(stage)) return { mode: "stopped", speedKph: 0, rate: 0, ceiling: 0.94, label: "严重拥堵 · 停车等待" };
+    if (["action_completed", "cooldown"].includes(stage)) return { mode: "moving", speedKph: 32, rate: 0.0048, ceiling: 0.94, label: "路况缓解 · 恢复跟车" };
+    if (stage === "vehicle_observation" || vm.lifecycle.scene === "driving") return { mode: "moving", speedKph: 42, rate: 0.0058, ceiling: 0.44, label: "跟车行驶中" };
+    if (stage === "handover_to_vehicle") return { mode: "ready", speedKph: 0, rate: 0, ceiling: 0.18, label: "路线接续完成" };
+    return { mode: "idle", speedKph: 0, rate: 0, ceiling: 0.98, label: "车辆未在行驶" };
+  }
+
+  function syncDrivePlayback() {
+    const sessionChanged = drivePlayback.sessionId !== viewModel.meta.sessionId;
+    const stageChanged = drivePlayback.stage !== viewModel.lifecycle.stage;
+    const route = viewModel.navigation.route;
+    const routeId = route?.id || routeDefinition()?.id || null;
+    const routeChanged = drivePlayback.routeId !== routeId;
+    const authoritativeProgress = route?.progress === null || route?.progress === undefined
+      ? Number.NaN
+      : Number(route.progress);
+    const authoritativeChanged = Number.isFinite(authoritativeProgress)
+      && authoritativeProgress !== drivePlayback.authoritativeProgress;
+    if (sessionChanged || routeChanged || drivePlayback.progress === null) {
+      drivePlayback.progress = Number.isFinite(authoritativeProgress)
+        ? authoritativeProgress
+        : STAGE_PROGRESS[viewModel.lifecycle.stage] ?? 0.03;
+      drivePlayback.speedKph = 0;
+      mapViewUserSelected = false;
+    } else if (authoritativeChanged) {
+      drivePlayback.progress = authoritativeProgress;
+    }
+    if (stageChanged && !mapViewUserSelected) {
+      if (viewModel.lifecycle.stage === "handover_to_vehicle") mapViewMode = "overview";
+      else if (["vehicle_observation", "takeover_L2", "action_completed", "cooldown"].includes(viewModel.lifecycle.stage)) mapViewMode = "follow";
+    }
+    drivePlayback.sessionId = viewModel.meta.sessionId;
+    drivePlayback.routeId = routeId;
+    drivePlayback.authoritativeProgress = Number.isFinite(authoritativeProgress) ? authoritativeProgress : null;
+    drivePlayback.stage = viewModel.lifecycle.stage;
+    drivePlayback.mode = driveProfile().mode;
+    drivePlayback.lastAt = performance.now();
+  }
+
   function renderDrivingStatus() {
-    const driving = ["driving", "high_load_driving"].includes(viewModel.lifecycle.scene);
+    const profile = driveProfile();
+    const speedKph = Math.max(0, Math.round(drivePlayback.speedKph));
     const speed = document.getElementById("vd-speed");
     const arrow = document.getElementById("vd-speed-arrow");
     if (speed) {
-      speed.textContent = driving ? "68" : "0";
-      speed.title = driving ? "Demo 车辆信号" : "车辆未在行驶";
+      speed.textContent = String(speedKph);
+      speed.title = profile.label;
     }
-    if (arrow) arrow.hidden = !driving;
+    const legacySpeed = document.getElementById("s3d-spd");
+    if (legacySpeed) legacySpeed.textContent = String(speedKph);
+    if (arrow) {
+      arrow.hidden = profile.mode !== "moving";
+      const decelerating = speedKph > profile.speedKph;
+      arrow.classList.toggle("dn", decelerating);
+      arrow.textContent = decelerating ? "▼" : "▲";
+    }
+    const road = document.getElementById("vd-top-road");
+    const meta = document.getElementById("vd-top-meta");
+    if (road) road.textContent = routeMeta?.roadName || viewModel.navigation.destination || "当前道路";
+    if (meta) meta.textContent = `${profile.label}${speedKph ? ` · ${speedKph} km/h` : ""}`;
+    document.getElementById("hmi")?.setAttribute("data-auri-motion", profile.mode);
+    document.getElementById("scene3d")?.setAttribute("data-motion", profile.mode);
   }
 
   function animateStage() {
     const stage = viewModel.lifecycle.stage;
-    if (stage === lastAnimatedStage) return;
+    const firstFrame = lastAnimatedStage === null;
     lastAnimatedStage = stage;
-    const progress = viewModel.navigation.route?.progress ?? STAGE_PROGRESS[stage];
-    if (mapAdapter.getStatus() !== "online" && Number.isFinite(progress) && typeof window.mapCarTo === "function") {
-      try { window.mapCarTo(progress, 1150); } catch (_error) { /* visual controller stays optional */ }
+    syncDrivePlayback();
+    if (firstFrame && mapAdapter.getStatus() !== "online" && Number.isFinite(drivePlayback.progress) && typeof window.mapCarTo === "function") {
+      try { window.mapCarTo(drivePlayback.progress, 240); } catch (_error) { /* initialize the offline route marker */ }
     }
+  }
+
+  function tickDrivePlayback() {
+    if (drivePlayback.progress === null) return;
+    const now = performance.now();
+    const elapsed = Math.max(0, Math.min(1.2, (now - (drivePlayback.lastAt || now)) / 1000));
+    drivePlayback.lastAt = now;
+    const profile = driveProfile();
+    const deltaSpeed = profile.speedKph - drivePlayback.speedKph;
+    const acceleration = deltaSpeed < 0 ? 36 : 22;
+    drivePlayback.speedKph += Math.sign(deltaSpeed) * Math.min(Math.abs(deltaSpeed), acceleration * elapsed);
+    if (profile.mode === "moving" && drivePlayback.progress < profile.ceiling) {
+      const speedRatio = drivePlayback.speedKph / Math.max(1, profile.speedKph);
+      drivePlayback.progress = Math.min(profile.ceiling, drivePlayback.progress + profile.rate * elapsed * speedRatio);
+    }
+    renderDrivingStatus();
+    renderNavigation();
+    const snapshot = navigationSnapshot();
+    if (mapAdapter.getStatus() === "online") mapAdapter.update(snapshot);
+    else if (profile.mode === "moving" && typeof window.mapCarTo === "function") {
+      try { window.mapCarTo(drivePlayback.progress, 720); } catch (_error) { /* offline visual controller stays optional */ }
+    } else if (["stopped", "parked"].includes(profile.mode)) {
+      try { window.mapCarStop?.(); } catch (_error) { /* offline visual controller stays optional */ }
+    }
+  }
+
+  function startDrivePlayback() {
+    if (!drivePlaybackTimer) drivePlaybackTimer = window.setInterval(tickDrivePlayback, 650);
   }
 
   function coordinatesFromTask(task) {
@@ -1499,17 +1734,60 @@
 
   function navigationSnapshot() {
     const stage = viewModel.lifecycle.stage;
-    const progress = viewModel.navigation.route?.progress ?? STAGE_PROGRESS[stage] ?? 0.03;
+    const progress = drivePlayback.progress ?? viewModel.navigation.route?.progress ?? STAGE_PROGRESS[stage] ?? 0.03;
     const driving = viewModel.lifecycle.scene === "driving" || ["handover_to_vehicle", "vehicle_observation", "takeover_L2", "takeover_L3", "planning", "service_prepared", "waiting_confirmation", "executing", "service_executed", "action_completed", "cooldown"].includes(stage);
     return {
       stage,
       progress,
       driving,
       showVehicle: driving,
-      overview: !driving || ["handover_to_vehicle", "parked_review"].includes(stage),
+      overview: !driving || ["handover_to_vehicle", "parked_review"].includes(stage) || mapViewMode === "overview",
+      stopped: ["stopped", "parked"].includes(driveProfile().mode),
+      motionDurationMs: 720,
       riskLevel: viewModel.risk.level,
       lateMinutes: viewModel.risk.lateMinutes
     };
+  }
+
+  function renderMapControlState() {
+    document.querySelectorAll("[data-map-control='follow'], [data-map-control='overview']").forEach((button) => {
+      const active = button.dataset.mapControl === mapViewMode;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+    const traffic = document.querySelector("[data-map-control='traffic']");
+    if (traffic) {
+      const active = mapAdapter.isTrafficVisible();
+      traffic.classList.toggle("is-active", active);
+      traffic.setAttribute("aria-pressed", String(active));
+    }
+  }
+
+  function prepareMapControls() {
+    const controls = document.getElementById("auri-map-controls");
+    if (!controls) return;
+    controls.innerHTML = `
+      <div class="auri-map-view-toggle" role="group" aria-label="导航视角">
+        <button type="button" data-map-control="follow" aria-label="跟车视角">${iconSvg("car")}<span>跟车</span></button>
+        <button type="button" data-map-control="overview" aria-label="路线全览">${iconSvg("route")}<span>全览</span></button>
+      </div>
+      <button type="button" class="auri-map-traffic" data-map-control="traffic" aria-label="显示实时路况">${iconSvg("traffic")}<span>路况</span></button>
+      <div class="auri-map-zoom" role="group" aria-label="地图缩放">
+        <button type="button" data-map-control="zoom-in" aria-label="放大地图">＋</button>
+        <button type="button" data-map-control="zoom-out" aria-label="缩小地图">−</button>
+      </div>`;
+    controls.querySelectorAll("[data-map-control]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const action = button.dataset.mapControl;
+        if (["follow", "overview"].includes(action)) {
+          mapViewMode = action;
+          mapViewUserSelected = true;
+        }
+        mapAdapter.control(action);
+        renderMapControlState();
+      });
+    });
+    renderMapControlState();
   }
 
   async function ensureMapRoute() {
@@ -1548,6 +1826,7 @@
       lastAnimatedStage = null;
       animateStage();
     }
+    renderMapControlState();
     refreshConnectionPanel();
   }
 
@@ -1602,6 +1881,7 @@
       hmi.dataset.auriRisk = viewModel.risk.tone;
       hmi.dataset.auriPrimarySurface = viewModel.lifecycle.primarySurface;
     }
+    animateStage();
     renderNavigation();
     renderResponsibilityStrip();
     renderDrivingStatus();
@@ -1611,7 +1891,6 @@
     renderDeviceNotice();
     renderStageNotice();
     announceCompletion();
-    animateStage();
     if (mapAdapter.getStatus() === "online") mapAdapter.update(navigationSnapshot());
     void ensureMapRoute();
     if (activeSection === "connection") refreshConnectionPanel();
@@ -1641,13 +1920,12 @@
     prepareClimateControls();
     replaceCarBranding();
     ensureTakeoverUi();
+    prepareMapControls();
     bindDock();
     disableLegacyDemoShortcuts();
     closePanel();
     renderWorldState(null);
-    document.querySelectorAll("[data-map-control]").forEach((button) => {
-      button.addEventListener("click", () => mapAdapter.control(button.dataset.mapControl));
-    });
+    startDrivePlayback();
     document.documentElement.dataset.auriShell = "phase-3";
     const offline = new URLSearchParams(window.location.search).get("offline") === "1";
     if (!offline) {
@@ -1673,14 +1951,18 @@
         worldState: client.getSnapshot(),
         viewModel,
         activeSection,
-        map: { status: mapAdapter.getStatus(), cameraMode: mapAdapter.getCameraMode(), cameraHeading: mapAdapter.getCameraHeading(), cameraRotation: mapAdapter.getCameraRotation(), usage: mapAdapter.getUsage(), routeMeta }
+        map: { status: mapAdapter.getStatus(), cameraMode: mapAdapter.getCameraMode(), cameraHeading: mapAdapter.getCameraHeading(), cameraRotation: mapAdapter.getCameraRotation(), trafficVisible: mapAdapter.isTrafficVisible(), usage: mapAdapter.getUsage(), routeMeta },
+        drivePlayback: { ...drivePlayback }
       };
     },
     openPanel,
     closePanel
   };
 
-  window.addEventListener("beforeunload", () => client.stop(), { once: true });
+  window.addEventListener("beforeunload", () => {
+    client.stop();
+    if (drivePlaybackTimer) window.clearInterval(drivePlaybackTimer);
+  }, { once: true });
   window.addEventListener("storage", (event) => {
     if (event.key !== agentModule.SHARED_STORAGE_KEY || !event.newValue) return;
     try {

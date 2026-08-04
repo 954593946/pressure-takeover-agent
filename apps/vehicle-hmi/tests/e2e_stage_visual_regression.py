@@ -450,14 +450,22 @@ def assert_real_route_progression(captures: list[dict]) -> dict:
         }
         for index in range(1, len(captures))
     ]
-    unchanged = [item for item in transitions if not item["changed"]]
-    assert not unchanged, f"Offline route transform did not advance: {unchanged}"
-    assert len(set(transforms)) == len(REAL_STAGES)
+    moving_targets = {"vehicle_observation", "action_completed", "cooldown"}
+    missing_motion = [
+        item for item in transitions if item["to"] in moving_targets and not item["changed"]
+    ]
+    assert not missing_motion, f"Offline route did not advance during driving: {missing_motion}"
+    congestion_holds = [
+        item for item in transitions
+        if item["from"] == "takeover_L2" and item["to"] == "waiting_confirmation"
+    ]
+    assert congestion_holds and not congestion_holds[0]["changed"], congestion_holds
+    assert len(set(transforms)) >= 4
     return {
         "selector": ".map-design .map-scroll-layer",
         "unique_transforms": len(set(transforms)),
-        "expected_unique_transforms": len(REAL_STAGES),
-        "all_stage_transitions_changed": True,
+        "expected_motion_targets": sorted(moving_targets),
+        "congestion_hold_verified": True,
         "transitions": transitions,
     }
 
@@ -548,6 +556,17 @@ def main() -> None:
             {"eta": (scheduled + timedelta(minutes=18)).isoformat(), "late_minutes": 18},
         )
         capture_real(takeover)
+        offline_traffic = real_page.evaluate(
+            """() => Array.from(document.querySelectorAll('.map-route-traffic')).map(node => ({
+              display:getComputedStyle(node).display,
+              stroke:getComputedStyle(node).stroke,
+              className:node.getAttribute('class')
+            }))"""
+        )
+        assert len(offline_traffic) == 3, offline_traffic
+        assert all(item["display"] != "none" for item in offline_traffic), offline_traffic
+        assert len({item["stroke"] for item in offline_traffic}) == 3, offline_traffic
+        summary["offline_congestion_colors"] = offline_traffic
         waiting = submit(
             "user.utterance",
             {"text": "我还来得及吗？帮我处理", "input_mode": "voice"},
@@ -569,8 +588,11 @@ def main() -> None:
         capture_real(parked)
         summary["offline_route_animation"] = assert_real_route_progression(real_captures)
         for item in real_captures:
-            expected_speed = "68" if item["scene"] in {"driving", "high_load_driving"} else "0"
-            assert item["displayed_speed"] == expected_speed, item
+            speed = int(item["displayed_speed"])
+            if item["stage"] in {"vehicle_observation", "action_completed", "cooldown"}:
+                assert 0 < speed <= 42, item
+            else:
+                assert speed == 0, item
 
         fixture_page = context.new_page()
         fixture_page.on(
