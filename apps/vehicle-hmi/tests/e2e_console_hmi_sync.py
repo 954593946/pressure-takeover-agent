@@ -217,14 +217,17 @@ def main() -> None:
             )
         hmi.screenshot(path=SCREENSHOT_DIR / "waiting-confirmation-1920x720.png")
 
-        progress_triggers = hmi.locator('.auri-takeover-section-head, #auri-takeover-actions [data-panel-target="messages"]')
-        trigger_count = progress_triggers.count()
-        assert trigger_count >= 4
-        for index in range(trigger_count):
-            progress_triggers.nth(index).click()
-            hmi.wait_for_function("document.querySelector('#auri-detail-title')?.textContent === '处理进度'")
-            waiting_detail = hmi.locator("#auri-driver-detail").inner_text()
-            assert "0/3 已完成" in waiting_detail
+        hmi.locator(".auri-takeover-section-head").click()
+        hmi.wait_for_function("document.querySelector('#auri-detail-title')?.textContent === '处理进度'")
+        assert "0/3 已完成" in hmi.locator("#auri-driver-detail").inner_text()
+        hmi.locator("#auri-driver-back").click()
+        action_triggers = hmi.locator('#auri-takeover-actions [data-panel-target^="action:"]')
+        assert action_triggers.count() == len(state["actions"])
+        for index, action in enumerate(state["actions"]):
+            action_triggers.nth(index).click()
+            hmi.wait_for_function("document.querySelector('#auri-driver-detail')?.hidden === false")
+            action_detail = hmi.locator("#auri-driver-detail").inner_text()
+            assert action["target"] in action_detail
             hmi.locator("#auri-driver-back").click()
             hmi.wait_for_function("document.querySelector('#auri-driver-detail')?.hidden === true")
 
@@ -243,16 +246,21 @@ def main() -> None:
         assert "AURI 已完成处理" in completed_speech[1], completed_speech
         assert "2条消息和1项配送方案已完成" in completed_speech[1], completed_speech
         assert hmi.evaluate("window.__systemSpeechCalls.length") == 0
-        completed_triggers = hmi.locator('.auri-takeover-section-head, #auri-takeover-actions [data-panel-target="messages"]')
-        assert completed_triggers.count() >= 4
-        for index in range(completed_triggers.count()):
+        hmi.locator(".auri-takeover-section-head").click()
+        hmi.wait_for_function("document.querySelector('#auri-detail-title')?.textContent === '处理进度'")
+        detail_text = hmi.locator("#auri-driver-detail").inner_text()
+        assert "3/3 已完成" in detail_text
+        assert "100%" in detail_text
+        hmi.screenshot(path=SCREENSHOT_DIR / "completed-progress-1920x720.png")
+        hmi.locator("#auri-driver-back").click()
+        completed_triggers = hmi.locator('#auri-takeover-actions [data-panel-target^="action:"]')
+        assert completed_triggers.count() == len(completed["actions"])
+        for index, action in enumerate(completed["actions"]):
             completed_triggers.nth(index).click()
-            hmi.wait_for_function("document.querySelector('#auri-detail-title')?.textContent === '处理进度'")
-            detail_text = hmi.locator("#auri-driver-detail").inner_text()
-            assert "3/3 已完成" in detail_text
-            assert "100%" in detail_text
-            if index == 0:
-                hmi.screenshot(path=SCREENSHOT_DIR / "completed-progress-1920x720.png")
+            hmi.wait_for_function("document.querySelector('#auri-driver-detail')?.hidden === false")
+            action_detail = hmi.locator("#auri-driver-detail").inner_text()
+            assert action["target"] in action_detail
+            assert "已完成" in action_detail
             hmi.locator("#auri-driver-back").click()
             hmi.wait_for_function("document.querySelector('#auri-driver-detail')?.hidden === true")
 
