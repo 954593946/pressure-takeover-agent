@@ -302,9 +302,33 @@
       : text;
   }
 
+  function linkedOrder(vm, action) {
+    const reference = String(action?.detailsRef || "").trim();
+    return reference ? vm.serviceOrders.items.find((item) => item.id === reference) || null : null;
+  }
+
+  function actionPresentation(vm, action) {
+    const type = String(action?.type || "unknown").trim() || "unknown";
+    const isMessage = type === "message";
+    const isOrder = type === "service_order";
+    const order = isOrder ? linkedOrder(vm, action) : null;
+    const target = presentationText(action?.target);
+    const summary = actionDetailText(action);
+    const orderDetail = order
+      ? `Demo · ${order.itemCount} 件 · ${order.itemKinds} 种 · ${order.total === null ? "金额待定" : `¥${order.total}`} · ${order.deliveryWindow || "时段待定"}`
+      : "";
+    return {
+      order,
+      icon: action?.status === "completed" ? "check" : isMessage ? "message" : isOrder ? "order" : "task",
+      typeLabel: isMessage ? "消息" : isOrder ? "生活服务" : `Agent 动作 · ${type}`,
+      title: target || (isMessage ? "未指定收件人" : isOrder ? "未指定服务对象" : summary || "Agent 动作"),
+      detail: orderDetail || summary || "暂无附加说明",
+      detailLabel: isMessage ? "消息内容" : isOrder ? "服务摘要" : "动作说明"
+    };
+  }
+
   function actionTargetLabel(action) {
-    if (action?.type === "service_order") return "配送方案";
-    return presentationText(action?.target) || "Agent 动作";
+    return presentationText(action?.target) || presentationText(action?.summary) || "Agent 动作";
   }
 
   function orderStatusLabel(status) {
@@ -548,36 +572,18 @@
   }
 
   function takeoverActions() {
-    const actions = viewModel.actions.items.slice(0, 3).map((action) => {
-      const order = action.type === "service_order"
-        ? viewModel.serviceOrders.items.find((item) => item.id === action.detailsRef)
-          || viewModel.serviceOrders.items[0]
-        : null;
-      const orderMeta = order ? [
-        `${order.itemCount} 件 · ${order.itemKinds} 种`,
-        order.total === null ? "金额待定" : `¥${order.total}`,
-        order.deliveryWindow || "时段待定"
-      ] : [];
-      const isMessage = action.type === "message";
+    return viewModel.actions.items.map((action) => {
+      const item = actionPresentation(viewModel, action);
       return {
-        icon: action.status === "completed" ? "check" : action.type === "message" ? "message" : action.type === "service_order" ? "order" : "task",
-        title: order
-          ? action.status === "completed" ? "配送已安排" : "配送方案已准备"
-          : isMessage ? `通知${presentationText(action.target) || "联系人"}` : actionTargetLabel(action),
-        detail: order ? "模拟订单" : isMessage ? "消息草稿已生成 · 模拟消息" : presentationText(action.preview),
-        meta: order ? [...orderMeta, "Demo 数据"] : orderMeta,
+        id: action.id,
+        icon: item.icon,
+        title: item.title,
+        detail: item.detail,
+        meta: item.order ? [item.order.deliveryWindow || "时段待定"] : [],
         state: action.statusLabel,
         completed: action.status === "completed"
       };
     });
-    if (actions.length) return actions;
-    if (["takeover_L2", "takeover_L3", "planning"].includes(viewModel.lifecycle.stage)) {
-      return [
-        { icon: "clock", title: "核对到达时间", detail: "优先保护刚性任务", meta: [], state: "进行中" },
-        { icon: "flexible", title: "调整弹性任务", detail: "寻找可后置或可代办事项", meta: [], state: "等待" }
-      ];
-    }
-    return [];
   }
 
   function driverSummaryView() {
@@ -717,8 +723,8 @@
 
     const actions = takeoverActions();
     document.getElementById("auri-takeover-action-count").textContent = `${actions.length} 项`;
-    document.getElementById("auri-takeover-actions").innerHTML = actions.map((action) => `
-      <button type="button" data-panel-target="messages" aria-label="查看处理进度：${escapeHtml(action.title)}" class="auri-takeover-action${action.completed ? " is-completed" : ""}">
+    document.getElementById("auri-takeover-actions").innerHTML = actions.length ? actions.map((action) => `
+      <button type="button" data-panel-target="action:${escapeHtml(action.id)}" aria-label="查看处理方案：${escapeHtml(action.title)}" class="auri-takeover-action${action.completed ? " is-completed" : ""}">
         <span>${iconSvg(action.icon)}</span>
         <span class="auri-takeover-action-copy">
           <b>${escapeHtml(action.title)}</b>
@@ -727,7 +733,7 @@
         </span>
         <small>${escapeHtml(action.state)}</small>
       </button>
-    `).join("");
+    `).join("") : `<div class="auri-takeover-action-empty">等待 Agent 生成处理方案</div>`;
 
     const connected = ["streaming", "polling_fallback"].includes(connectionStatus.type);
     const devices = [
@@ -1093,18 +1099,11 @@
         <p>风险成立后，这里会显示消息、任务调整与生活服务的执行进度。</p>
       </section>`;
     const actions = vm.actions.items.map((action) => {
-      const order = action.type === "service_order"
-        ? vm.serviceOrders.items.find((item) => item.id === action.detailsRef) || vm.serviceOrders.items[0]
-        : null;
-      const icon = action.type === "message" ? "message" : action.type === "service_order" ? "order" : "task";
-      const typeLabel = action.type === "message" ? "模拟消息" : action.type === "service_order" ? "模拟配送" : "任务调整";
-      const detail = order
-        ? `Demo · ${order.itemCount} 件 · ${order.total === null ? "金额待定" : `¥${order.total}`} · ${order.deliveryWindow || "时段待定"}`
-        : actionDetailText(action);
+      const item = actionPresentation(vm, action);
       return `
       <button type="button" class="auri-action-step is-${escapeHtml(action.status)}" data-panel-target="action:${escapeHtml(action.id)}">
-        <span class="auri-action-index">${iconSvg(action.status === "completed" ? "check" : icon)}</span>
-        <span class="auri-action-step-copy"><small>${escapeHtml(typeLabel)}</small><b>${escapeHtml(action.type === "message" ? presentationText(action.target) || "联系人" : action.type === "service_order" ? "配送方案" : actionTargetLabel(action))}</b><em>${escapeHtml(detail)}</em></span>
+        <span class="auri-action-index">${iconSvg(item.icon)}</span>
+        <span class="auri-action-step-copy"><small>${escapeHtml(item.typeLabel)}</small><b>${escapeHtml(item.title)}</b><em>${escapeHtml(item.detail)}</em></span>
         <span class="auri-action-step-state">${escapeHtml(action.statusLabel)}</span>
       </button>`;
     }).join("");
@@ -1143,21 +1142,13 @@
   }
 
   function actionDetailContent(vm, action) {
-    const isMessage = action.type === "message";
-    const isOrder = action.type === "service_order";
-    const order = isOrder
-      ? vm.serviceOrders.items.find((item) => item.id === action.detailsRef) || vm.serviceOrders.items[0]
-      : null;
-    const icon = isMessage ? "message" : isOrder ? "order" : "task";
-    const heading = isMessage ? presentationText(action.target) || "联系人" : isOrder ? "配送方案" : actionTargetLabel(action);
-    const detail = order
-      ? `Demo · ${order.itemCount} 件 · ${order.itemKinds} 种 · ${order.total === null ? "金额待定" : `¥${order.total}`}`
-      : actionDetailText(action);
+    const item = actionPresentation(vm, action);
+    const order = item.order;
     return `<section class="auri-action-detail is-${escapeHtml(action.status)}">
-      <header><span>${iconSvg(icon)}</span><div><small>${isMessage ? "模拟消息" : isOrder ? "模拟生活服务" : "Agent 动作"}</small><h3>${escapeHtml(heading)}</h3></div><em>${escapeHtml(action.statusLabel)}</em></header>
+      <header><span>${iconSvg(item.icon)}</span><div><small>${escapeHtml(item.typeLabel)}</small><h3>${escapeHtml(item.title)}</h3></div><em>${escapeHtml(action.statusLabel)}</em></header>
       <div class="auri-action-preview">
-        <small>${isMessage ? "模拟消息内容" : isOrder ? "模拟配送摘要" : "调整结果"}</small>
-        <p>${escapeHtml(detail)}</p>
+        <small>${escapeHtml(item.detailLabel)}</small>
+        <p>${escapeHtml(item.detail)}</p>
         ${order ? `<div class="auri-action-preview-meta"><span>${iconSvg("order")} Demo · ${escapeHtml(order.deliveryWindow || "时段待定")}</span><span>${iconSvg("check")} 模拟 · ${escapeHtml(orderStatusLabel(order.status))}</span></div>` : ""}
       </div>
       <footer class="auri-action-assurance">${iconSvg(action.status === "completed" ? "check" : "info")}<span><b>${action.status === "completed" ? "处理结果已同步" : action.requiresConfirmation ? "等待一次确认" : "AURI 正在处理"}</b><small>${action.status === "completed" ? "手机、车机和腕表将显示相同结果" : action.requiresConfirmation ? "确认入口仅在当前主交互端显示" : "完成后会自动更新状态"}</small></span></footer>

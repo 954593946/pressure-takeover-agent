@@ -211,7 +211,7 @@ def main():
         assert "我还来得及吗" in page.locator("#auri-driver-utterance").inner_text()
         assert page.locator("#auri-takeover-conclusion").inner_text() == "无法准点，预计晚到 18 分钟"
         assert "下一步你说" not in page.locator("#auri-driver-panel").inner_text()
-        assert page.locator(".auri-takeover-action").count() == len(prepared["actions"][:3])
+        assert page.locator(".auri-takeover-action").count() == len(prepared["actions"])
         action_metrics = page.evaluate(
             """() => Array.from(document.querySelectorAll('.auri-takeover-action')).map(node => {
               const rect=node.getBoundingClientRect(); const style=getComputedStyle(node);

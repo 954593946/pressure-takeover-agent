@@ -41,6 +41,28 @@ assert.equal(vm.serviceOrders.items[0].itemKinds, 8);
 assert.equal(vm.serviceOrders.items[0].itemCount, 9);
 assert.equal(vm.serviceOrders.totalAmount, 186);
 
+// The shell must receive every action verbatim: varying targets and unknown types
+// are rendered dynamically rather than being reduced to the demo's three actions.
+for (const count of [0, 1, 2, 5]) {
+  const actions = Array.from({ length: count }, (_, index) => ({
+    action_id: `dynamic-${index}`,
+    type: ["message", "service_order", "calendar_adjustment", "unknown_provider", "message"][index],
+    target: ["王老师", "社区配送", "工作日程", "外部服务", "爷爷"][index],
+    status: ["awaiting_confirmation", "completed", "failed", "blocked", "planned"][index],
+    summary: `动态动作 ${index} 的完整详情`,
+    details_ref: index === 1 ? fixture.service_orders[0].preview_id : null,
+    requires_confirmation: index === 0
+  }));
+  const dynamicVm = model.buildVehicleHmiViewModel({ ...fixture, revision: 40 + count, actions }, { now });
+  assert.equal(dynamicVm.actions.items.length, count);
+  assert.deepEqual(dynamicVm.actions.items.map((action) => action.id), actions.map((action) => action.action_id));
+  if (count === 5) {
+    assert.equal(dynamicVm.actions.items[3].type, "unknown_provider");
+    assert.equal(dynamicVm.actions.items[4].target, "爷爷");
+    assert.equal(dynamicVm.actions.items[2].status, "failed");
+  }
+}
+
 const climateOutput = model.buildVehicleHmiViewModel({
   ...fixture,
   revision: 12,

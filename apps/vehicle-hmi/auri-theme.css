@@ -3159,6 +3159,8 @@ body {
 .auri-action-preview { padding: 18px; border: 1px solid rgba(245, 242, 236, 0.09); border-radius: 18px; background: rgba(245, 242, 236, 0.04); }
 .auri-action-preview > small { color: #9ebdff; font-size: 13px; font-weight: 680; }
 .auri-action-preview > p { margin: 10px 0 0; color: var(--auri-ivory); font-size: 19px; line-height: 1.55; }
+.auri-action-preview > p { overflow-wrap: anywhere; white-space: pre-wrap; }
+.auri-takeover-action-empty { min-height: 54px; display: grid; place-items: center; padding: 8px 12px; border: 1px dashed rgba(245, 242, 236, 0.18); border-radius: 12px; color: rgba(245, 242, 236, 0.58); font-size: 13px; text-align: center; }
 .auri-action-preview-meta { margin-top: 15px; padding-top: 13px; display: flex; flex-wrap: wrap; gap: 8px 14px; border-top: 1px solid rgba(245, 242, 236, 0.08); }
 .auri-action-preview-meta span { display: flex; align-items: center; gap: 6px; color: rgba(245, 242, 236, 0.58); font-size: 14px; }
 .auri-action-preview-meta .auri-icon { width: 17px; height: 17px; color: var(--auri-gold); }
