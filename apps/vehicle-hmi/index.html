@@ -3135,7 +3135,7 @@ body{background:#000814;}
 .dc-toggle:hover{background:rgba(255,255,255,.12);color:#fff;}
 </style>
 <link rel="stylesheet" href="rds_figma_theme.css">
-  <link rel="stylesheet" href="auri-theme.css?v=auri-next-20260805s">
+  <link rel="stylesheet" href="auri-theme.css?v=auri-next-20260806b">
 </head>
 <body>
 <!-- ══ Demo Playback Controls · 倒退/快进/跳转 ══ -->
@@ -11254,6 +11254,10 @@ function unlockAudio(){
       if(_audioUnlocked){
         _decodeFatigueBufs();   // context 就绪 → 解码三级疲劳警示音 (warn1/2/3) 供后续播放
         _playUnlockPulse(ctx);
+        document.documentElement.dataset.auriAudio='ready';
+        const control=document.getElementById('tb-mute');
+        if(control) control.title='勿扰 · 静音非紧急语音播报';
+        try{window.dispatchEvent(new CustomEvent('auri:audio-ready'));}catch(e){}
       }
     };
     if(ctx.state==='suspended') ctx.resume().then(finish).catch(()=>{});
@@ -11555,6 +11559,11 @@ window.__voiceMuted=false;
 function _voiceMuteState(){return !!window.__voiceMuted;}
 function _voiceSuppressed(priority){return window.__voiceMuted && priority!=='high';}
 function toggleVoiceMute(){
+  if(!_audioUnlocked){
+    unlockAudio();
+    window.__voiceMuted=false;
+    return false;
+  }
   window.__voiceMuted=!window.__voiceMuted;
   const el=document.getElementById('tb-mute');
   if(el){
@@ -11589,18 +11598,18 @@ async function speakText(text,voice='longxiaochun',onStart,opts){
   };
   try{
     stopTTS();
-    if(!text){fireStart();return;}
+    if(!text){fireStart();return false;}
     // 勿扰/静音:非紧急语音不出声,但卡片照常渲染(fireStart)并保留可读停留,场景不跳。
     if(_voiceSuppressed(priority)){
       fireStart();
       await sleep(Math.min(text.length*45,1200));
-      return;
+      return false;
     }
     if(!_TTS_KEY){
       // 离线演示:无音频,卡片立即渲染并按文本长度模拟语音时长
       fireStart();
       await sleep(text.length*75);
-      return;
+      return false;
     }
     let blob=usePrepared
       ?await _consumePreparedTTS(text,voice,{model,generation})
@@ -11610,10 +11619,12 @@ async function speakText(text,voice='longxiaochun',onStart,opts){
     if(usePrepared&&generation!==_demoGen) return;
     const played=await playTTSBlob(blob,fireStart);
     if(!played){fireStart();await sleep(text.length*75);}
+    return played===true;
   }catch(e){
     console.warn('[TTS]',e);
     fireStart();
     await sleep(text.length*75);
+    return false;
   }finally{
     if(_coffeeSpeechEpoch&&typeof _coffeeVoiceMarkTtsEnd==='function'){
       _coffeeVoiceMarkTtsEnd(_coffeeSpeechEpoch);
@@ -14556,6 +14567,6 @@ window.addEventListener('load',()=>{
 <script src="src/world-state-model.js?v=auri-next-20260803b"></script>
 <script src="src/agent-client.js?v=auri-next-20260803d"></script>
   <script src="src/amap-adapter.js?v=auri-next-20260805s"></script>
-  <script src="auri-shell.js?v=auri-next-20260805s"></script>
+  <script src="auri-shell.js?v=auri-next-20260806a"></script>
 </body>
 </html>

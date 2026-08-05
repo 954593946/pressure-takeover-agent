@@ -283,6 +283,8 @@
     try { return JSON.parse(sessionStorage.getItem("auri-hmi-next-solution-briefing") || "[]"); }
     catch (_error) { return []; }
   })());
+  const pendingSolutionBriefingKeys = new Set();
+  const pendingCompletionSpeechKeys = new Set();
   let latestSolutionBriefing = null;
 
   function escapeHtml(value) {
@@ -321,7 +323,7 @@
     const order = isOrder ? linkedOrder(vm, action) : null;
     const target = presentationText(action?.target);
     const summary = isMessage
-      ? presentationText(action?.messageBody) || actionDetailText(action)
+      ? String(action?.messageBody || "").trim() || actionDetailText(action)
       : actionDetailText(action);
     const orderDetail = order
       ? `Demo · ${order.itemCount}件/${order.itemKinds}种 · ${order.total === null ? "金额待定" : `¥${order.total}`} · ${order.deliveryWindow || "时段待定"}`
@@ -479,7 +481,7 @@
         openPanel(target.dataset.panelTarget);
       }
     });
-    panel.querySelector("#auri-driver-back")?.addEventListener("click", closePanel);
+    panel.querySelector("#auri-driver-back")?.addEventListener("click", navigatePanelBack);
   }
 
   function ensureNavigationHud() {
@@ -741,14 +743,15 @@
           ${action.meta?.length ? `<span class="auri-order-meta">${action.meta.map((item) => `<i>${escapeHtml(item)}</i>`).join("")}</span>` : ""}
         </span>
         <small>${escapeHtml(action.state)}</small>
+        <i class="auri-action-disclosure">${iconSvg("back")}</i>
       </button>
     `).join("") : `<div class="auri-takeover-action-empty">等待 Agent 生成处理方案</div>`;
 
     const connected = ["streaming", "polling_fallback"].includes(connectionStatus.type);
     const devices = [
-      ["phone", "手机", !connected ? "等待同步" : viewModel.lifecycle.primarySurface === "mobile" ? "当前主端" : viewModel.utterance.available ? "语音已同步" : "保持连接", connected && (viewModel.lifecycle.primarySurface === "mobile" || viewModel.utterance.available), !connected ? "离线" : viewModel.lifecycle.primarySurface === "mobile" ? "主端" : "在线"],
+      ["phone", "手机", !connected ? "等待同步" : viewModel.lifecycle.primarySurface === "mobile" ? "正在使用" : viewModel.utterance.available ? "语音已同步" : "保持连接", connected && (viewModel.lifecycle.primarySurface === "mobile" || viewModel.utterance.available), !connected ? "离线" : viewModel.lifecycle.primarySurface === "mobile" ? "使用中" : "在线"],
       ["watch", "腕表", !connected ? "等待同步" : viewModel.wearable.connected ? viewModel.wearable.modeLabel : "未连接", connected && viewModel.wearable.connected, connected && viewModel.wearable.connected ? "已同步" : "离线"],
-      ["car", "车机", !connected ? "等待同步" : viewModel.lifecycle.primarySurface === "vehicle_hmi" ? "当前主端" : stage === "parked_review" ? "本次结束" : "状态已同步", connected, !connected ? "离线" : viewModel.lifecycle.primarySurface === "vehicle_hmi" ? "主端" : "在线"]
+      ["car", "车机", !connected ? "等待同步" : viewModel.lifecycle.primarySurface === "vehicle_hmi" ? "驾驶中" : stage === "parked_review" ? "本次结束" : "状态已同步", connected, !connected ? "离线" : viewModel.lifecycle.primarySurface === "vehicle_hmi" ? "使用中" : "在线"]
     ];
     document.getElementById("auri-takeover-devices").innerHTML = devices.map(([icon, name, status, active, badge]) => `
       <button type="button" data-panel-target="sync" aria-label="查看${escapeHtml(name)}同步状态" class="${active ? "is-active" : "is-offline"}">
@@ -943,19 +946,28 @@
     }
   }
 
-  function announceCompletion() {
+  function rememberSpeechKey(storageKey, keys, key, limit) {
+    keys.add(key);
+    try {
+      sessionStorage.setItem(storageKey, JSON.stringify([...keys].slice(-limit)));
+    } catch (_error) { /* Session persistence is only a duplicate-speech guard. */ }
+  }
+
+  async function announceCompletion() {
     if (viewModel.lifecycle.stage !== "action_completed" || viewModel.lifecycle.primarySurface !== "vehicle_hmi") return;
     const state = client.getSnapshot();
     const briefing = speechBriefing.buildCompletion(state);
     if (!briefing) return;
     const key = speechBriefing.completionKeyFor(state);
     if (!key) return;
-    if (completionSpeechKeys.has(key)) return;
-    completionSpeechKeys.add(key);
+    if (completionSpeechKeys.has(key) || pendingCompletionSpeechKeys.has(key)) return;
+    pendingCompletionSpeechKeys.add(key);
     try {
-      sessionStorage.setItem("auri-hmi-next-completion-speech", JSON.stringify([...completionSpeechKeys].slice(-30)));
-      speakSolutionBriefing(briefing);
+      if (await speakSolutionBriefing(briefing)) {
+        rememberSpeechKey("auri-hmi-next-completion-speech", completionSpeechKeys, key, 30);
+      }
     } catch (_error) { /* TTS is a non-blocking output channel. */ }
+    finally { pendingCompletionSpeechKeys.delete(key); }
   }
 
   function isSpeechMuted() {
@@ -968,18 +980,17 @@
     }
   }
 
-  function speakSolutionBriefing(briefing) {
+  async function speakSolutionBriefing(briefing) {
     if (!briefing || isSpeechMuted()) return false;
     try {
       // An explicitly injected vehicle/test adapter owns the channel. The
       // browser Bosch TTS client remains the default when no adapter exists.
       if (typeof window.AURI_HMI_SPEECH_ADAPTER?.speak === "function") {
         window.AURI_HMI_SPEECH_ADAPTER.cancel?.();
-        return window.AURI_HMI_SPEECH_ADAPTER.speak(briefing) !== false;
+        return (await window.AURI_HMI_SPEECH_ADAPTER.speak(briefing)) !== false;
       }
       if (window.SAFEDRIVER_CONFIG?.ttsKey && typeof window.speakText === "function") {
-        void Promise.resolve(window.speakText(briefing, "longxiaochun", null, { priority: "medium" }));
-        return true;
+        return (await window.speakText(briefing, "longxiaochun", null, { priority: "medium" })) === true;
       }
       // Linux speech engines can advertise a zh voice while spelling every
       // Han character as "Chinese letter". Keep that fallback opt-in only.
@@ -1003,21 +1014,28 @@
     }
   }
 
-  function announceSolutionReadiness(state) {
+  async function announceSolutionReadiness(state) {
     const key = speechBriefing.keyFor(state);
     const briefing = speechBriefing.build(state);
     if (!key || !briefing) return;
     latestSolutionBriefing = { key, briefing };
-    if (solutionBriefingKeys.has(key)) return;
-    solutionBriefingKeys.add(key);
+    if (solutionBriefingKeys.has(key) || pendingSolutionBriefingKeys.has(key)) return;
+    pendingSolutionBriefingKeys.add(key);
     try {
-      sessionStorage.setItem("auri-hmi-next-solution-briefing", JSON.stringify([...solutionBriefingKeys].slice(-40)));
-    } catch (_error) { /* Session persistence is only a duplicate-speech guard. */ }
-    speakSolutionBriefing(briefing);
+      if (await speakSolutionBriefing(briefing)) {
+        rememberSpeechKey("auri-hmi-next-solution-briefing", solutionBriefingKeys, key, 40);
+      }
+    } finally { pendingSolutionBriefingKeys.delete(key); }
   }
 
-  function replaySolutionBriefing() {
-    return speakSolutionBriefing(latestSolutionBriefing?.briefing || "");
+  async function replaySolutionBriefing() {
+    const current = latestSolutionBriefing;
+    if (!current || solutionBriefingKeys.has(current.key) || pendingSolutionBriefingKeys.has(current.key)) return false;
+    const spoken = await speakSolutionBriefing(current.briefing);
+    if (spoken) {
+      rememberSpeechKey("auri-hmi-next-solution-briefing", solutionBriefingKeys, current.key, 40);
+    }
+    return spoken;
   }
 
   function confirmationErrorMessage(error) {
@@ -1116,6 +1134,7 @@
         <span class="auri-action-index">${iconSvg(item.icon)}</span>
         <span class="auri-action-step-copy"><small>${escapeHtml(item.typeLabel)}</small><b>${escapeHtml(item.title)}</b><em>${escapeHtml(item.detail)}</em></span>
         <span class="auri-action-step-state">${escapeHtml(action.statusLabel)}</span>
+        <span class="auri-action-disclosure">${iconSvg("back")}</span>
       </button>`;
     }).join("");
     const linkedOrderIds = new Set(vm.actions.items.map((action) => action.detailsRef).filter(Boolean));
@@ -1355,7 +1374,7 @@
         subtitle: action.statusLabel,
         lead: action.type === "message" ? action.messageBody : action.summary,
         copy: action.type === "message"
-          ? "这是 Agent 根据当前任务和到达时间生成的 Demo 消息；未连接真实通讯服务。"
+          ? "消息仅作演示，确认后模拟发送。"
           : action.type === "service_order"
             ? "这是 Agent 生成的 Demo 采购清单；未发生真实支付。"
             : action.requiresConfirmation ? "确认后，AURI 将执行这项处理。" : "处理结果已同步到车机。",
@@ -1394,8 +1413,8 @@
 
     if (section === "sync") {
       const primary = vm.lifecycle.primarySurface;
-      const phoneState = primary === "mobile" ? "当前主端" : vm.utterance.available ? "语音已同步" : "保持连接";
-      const carState = primary === "vehicle_hmi" ? "当前主端" : vm.lifecycle.stage === "parked_review" ? "本次结束" : "只读显示";
+      const phoneState = primary === "mobile" ? "正在使用" : vm.utterance.available ? "语音已同步" : "保持连接";
+      const carState = primary === "vehicle_hmi" ? "驾驶中" : vm.lifecycle.stage === "parked_review" ? "本次结束" : "状态同步";
       return {
         title: "设备同步",
         subtitle: "手机 · 腕表 · 车机",
@@ -1420,7 +1439,7 @@
         title: "座舱状态",
         subtitle: "座舱舒适",
         lead: climate.available ? climate.summary : "等待座舱状态同步",
-        copy: "车机控制经 Agent 校验后写入共享状态，手机同步显示结果。",
+        copy: "座舱设置将在手机端同步显示。",
         status: climate.available ? "状态已同步" : "等待",
         tone: climate.available ? "success" : "idle",
         content: vehicleBoardContent(vm),
@@ -1539,6 +1558,18 @@
     document.querySelectorAll("[data-auri-section]").forEach((item) => {
       item.classList.toggle("active", item.dataset.auriSection === "navigation");
     });
+  }
+
+  function navigatePanelBack() {
+    if (activeSection?.startsWith("action:")) {
+      openPanel("messages");
+      return;
+    }
+    if (activeSection?.startsWith("task:")) {
+      openPanel("tasks");
+      return;
+    }
+    closePanel();
   }
 
   function bindConfigForm() {
@@ -1661,6 +1692,8 @@
     const title = document.getElementById("auri-detail-title");
     const subtitle = document.getElementById("auri-detail-subtitle");
     const body = document.getElementById("auri-detail-body");
+    const back = document.getElementById("auri-driver-back");
+    if (back) back.setAttribute("aria-label", section.startsWith("action:") ? "返回处理进度" : section.startsWith("task:") ? "返回任务列表" : "返回 AURI 概览");
     if (title) title.textContent = config.title;
     if (subtitle) subtitle.textContent = config.subtitle;
     if (body) {
@@ -2214,8 +2247,8 @@
     renderTakeover();
     renderDeviceNotice();
     renderStageNotice();
-    announceSolutionReadiness(state);
-    announceCompletion();
+    void announceSolutionReadiness(state);
+    void announceCompletion();
     if (mapAdapter.getStatus() === "online") mapAdapter.update(navigationSnapshot());
     void ensureMapRoute();
     if (activeSection === "connection") refreshConnectionPanel();
@@ -2251,6 +2284,12 @@
     closePanel();
     renderWorldState(null);
     startDrivePlayback();
+    const armAudio = () => {
+      try { window.unlockAudio?.(); } catch (_error) { /* Audio remains optional until the next gesture. */ }
+    };
+    document.addEventListener("pointerdown", armAudio, { passive: true });
+    document.addEventListener("keydown", armAudio);
+    window.addEventListener("auri:audio-ready", () => { void replaySolutionBriefing(); });
     document.documentElement.dataset.auriShell = "phase-3";
     const offline = new URLSearchParams(window.location.search).get("offline") === "1";
     if (!offline) {

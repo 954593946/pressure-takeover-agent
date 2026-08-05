@@ -226,8 +226,7 @@ def main() -> None:
         hmi.locator(".auri-takeover-section-head").click()
         hmi.wait_for_function("document.querySelector('#auri-detail-title')?.textContent === '处理进度'")
         assert f"0/{len(state['actions'])} 已完成" in hmi.locator("#auri-driver-detail").inner_text()
-        hmi.locator("#auri-driver-back").click()
-        action_triggers = hmi.locator('#auri-takeover-actions [data-panel-target^="action:"]')
+        action_triggers = hmi.locator('#auri-detail-body [data-panel-target^="action:"]')
         assert action_triggers.count() == len(state["actions"])
         for index, action in enumerate(state["actions"]):
             action_triggers.nth(index).click()
@@ -235,7 +234,9 @@ def main() -> None:
             action_detail = hmi.locator("#auri-driver-detail").inner_text()
             assert action["target"] in action_detail
             hmi.locator("#auri-driver-back").click()
-            hmi.wait_for_function("document.querySelector('#auri-driver-detail')?.hidden === true")
+            hmi.wait_for_function("document.querySelector('#auri-detail-title')?.textContent === '处理进度'")
+        hmi.locator("#auri-driver-back").click()
+        hmi.wait_for_function("document.querySelector('#auri-driver-detail')?.hidden === true")
 
         ready_speech = hmi.evaluate("window.__auriSpoken")
         assert len(ready_speech) == 1, ready_speech
@@ -271,7 +272,9 @@ def main() -> None:
         assert "100%" in detail_text
         hmi.screenshot(path=SCREENSHOT_DIR / "completed-progress-1920x720.png")
         hmi.locator("#auri-driver-back").click()
-        completed_triggers = hmi.locator('#auri-takeover-actions [data-panel-target^="action:"]')
+        hmi.locator(".auri-takeover-section-head").click()
+        hmi.wait_for_function("document.querySelector('#auri-detail-title')?.textContent === '处理进度'")
+        completed_triggers = hmi.locator('#auri-detail-body [data-panel-target^="action:"]')
         assert completed_triggers.count() == len(completed["actions"])
         for index, action in enumerate(completed["actions"]):
             completed_triggers.nth(index).click()
@@ -280,7 +283,9 @@ def main() -> None:
             assert action["target"] in action_detail
             assert "已完成" in action_detail
             hmi.locator("#auri-driver-back").click()
-            hmi.wait_for_function("document.querySelector('#auri-driver-detail')?.hidden === true")
+            hmi.wait_for_function("document.querySelector('#auri-detail-title')?.textContent === '处理进度'")
+        hmi.locator("#auri-driver-back").click()
+        hmi.wait_for_function("document.querySelector('#auri-driver-detail')?.hidden === true")
 
         # A standalone mobile AC instruction updates the shared vehicle state;
         # neither the Console nor HMI is allowed to keep a local copy.

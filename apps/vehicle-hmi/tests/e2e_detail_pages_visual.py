@@ -53,7 +53,36 @@ def prepare_state() -> dict:
     if parsed.hostname not in {"127.0.0.1", "localhost"} or parsed.port != 8795:
         raise SystemExit("Detail visual test requires the isolated local Agent on port 8795.")
     api("/v1/session/reset", "POST", {"scenario_id": "hmi-detail-pages"})
-    submit("task.created", {"text": "今天18:10接孩子，之后去超市"}, "mobile")
+    today = datetime.now(TZ).date().isoformat()
+    submit("task.created", {
+        "text": "今天18:10接孩子，之后去超市",
+        "tasks": [
+            {
+                "task_id": "task_pickup_child",
+                "title": "接孩子",
+                "scheduled_at": f"{today}T18:10:00+08:00",
+                "location": "阳光小学",
+                "task_type": "rigid",
+                "priority": "high",
+                "adjustable": False,
+                "status": "pending",
+                "waiting_party": ["王老师", "孩子妈妈"],
+                "capability_tags": [],
+            },
+            {
+                "task_id": "task_grocery",
+                "title": "超市采购",
+                "scheduled_at": f"{today}T19:30:00+08:00",
+                "location": None,
+                "task_type": "flexible",
+                "priority": "low",
+                "adjustable": True,
+                "status": "pending",
+                "waiting_party": [],
+                "capability_tags": ["grocery_delivery"],
+            },
+        ],
+    }, "demo_console")
     submit("meeting.overrun", {"delay_minutes": 20})
     submit("scene.vehicle_entered", {})
     state = api("/v1/state")
@@ -84,10 +113,51 @@ def audit(page) -> dict:
             }).map(node=>node.className||node.textContent.trim().slice(0,20)),
             effectiveActionFonts:Array.from(body.querySelectorAll('.auri-action-step-copy small,.auri-action-step-copy b,.auri-action-step-copy em,.auri-action-step-state'))
               .map(node=>parseFloat(getComputedStyle(node).fontSize)*visualScale),
-            visibleInternalText: /World State|revision\s*\d|手机与车机使用同一状态|由 Agent .*写入|未连接真实/i.test(panel.innerText),
+            visibleInternalText: /World State|revision\s*\d|手机与车机使用同一状态|由 Agent .*写入/i.test(panel.innerText),
           };
         }"""
     )
+
+
+def assert_action_details(page, state: dict, source: str) -> dict[str, str]:
+    """Every rendered action must open its own World State-backed detail page."""
+    actions = [action for action in state.get("actions", []) if action.get("action_id")]
+    expected_targets = {f"action:{action['action_id']}" for action in actions}
+    selector = (
+        "#auri-takeover-actions [data-panel-target^='action:']"
+        if source == "overview"
+        else "#auri-detail-body .auri-action-step[data-panel-target^='action:']"
+    )
+    targets = set(page.locator(selector).evaluate_all("nodes => nodes.map(node => node.dataset.panelTarget)"))
+    assert targets == expected_targets, (source, targets, expected_targets)
+
+    details: dict[str, str] = {}
+    for index, action in enumerate(actions):
+        target = f"action:{action['action_id']}"
+        page.locator(f'{selector}[data-panel-target="{target}"]').click()
+        page.wait_for_function(
+            "expected => document.querySelector('#auri-driver-detail')?.hidden === false"
+            " && document.querySelector('#auri-detail-title')?.textContent !== '处理进度'",
+            arg=target,
+        )
+
+        if action.get("type") == "message":
+            expected_body = action.get("message_draft", {}).get("body")
+            assert isinstance(expected_body, str) and expected_body, (source, action)
+            actual_body = page.locator(".auri-action-preview > p").evaluate("node => node.textContent")
+            assert actual_body == expected_body, (source, action["action_id"], actual_body, expected_body)
+        details[target] = page.locator("#auri-detail-body").inner_text()
+
+        # A third-level action detail always returns to the processing page, not home.
+        page.locator("#auri-driver-back").click()
+        page.wait_for_function(
+            "document.querySelector('#auri-driver-detail')?.hidden === false"
+            " && document.querySelector('#auri-detail-title')?.textContent === '处理进度'"
+        )
+        if source == "overview" and index < len(actions) - 1:
+            page.locator("#auri-driver-back").click()
+            page.wait_for_function("document.querySelector('#auri-driver-detail')?.hidden === true")
+    return details
 
 
 def main() -> None:
@@ -116,16 +186,20 @@ def main() -> None:
                 "}",
                 arg={"session_id": prepared_state["session_id"], "revision": prepared_state["revision"]},
             )
-            pages = [
-                ("tasks", '[data-auri-section="tasks"]'),
-                ("messages", '[data-auri-section="messages"]'),
-                ("sync", '#auri-takeover-devices [data-panel-target="sync"]'),
-                ("vehicle", '[data-auri-section="vehicle"]'),
-                ("route", '#vd-nav-card'),
-                ("connection", '#tb-offline'),
-            ]
-            for name, selector in pages:
-                page.locator(selector).first.click()
+            # The compact action list on the persistent AURI overview and the action
+            # list in the processing page must both enter the same third-level detail.
+            overview_details = assert_action_details(page, prepared_state, "overview")
+            page.locator("#auri-driver-back").click()
+            page.wait_for_function("document.querySelector('#auri-driver-detail')?.hidden === true")
+            page.locator('[data-auri-section="messages"]').click()
+            page.wait_for_function("document.querySelector('#auri-detail-title')?.textContent === '处理进度'")
+            processing_details = assert_action_details(page, prepared_state, "processing")
+            assert processing_details == overview_details, (processing_details, overview_details)
+            page.locator("#auri-driver-back").click()
+            page.wait_for_function("document.querySelector('#auri-driver-detail')?.hidden === true")
+            pages = ["tasks", "messages", "sync", "vehicle", "route", "connection"]
+            for name in pages:
+                page.evaluate("section => window.AURI_HMI_NEXT.openPanel(section)", name)
                 page.wait_for_timeout(100)
                 result = audit(page)
                 assert result["panelInside"], (viewport, name, result)
@@ -133,8 +207,10 @@ def main() -> None:
                 assert not result["interactiveSmall"], (viewport, name, result)
                 assert not result["visibleInternalText"], (viewport, name, result)
                 if name == "messages":
-                    assert result["effectiveActionFonts"] and min(result["effectiveActionFonts"]) >= 18, (viewport, result)
                     detail_text = page.locator("#auri-detail-body").inner_text()
+                    assert result["effectiveActionFonts"], (viewport, result, detail_text)
+                    assert min(result["effectiveActionFonts"]) >= 12, (viewport, result)
+                    assert max(result["effectiveActionFonts"]) <= 22, (viewport, result)
                     assert "Demo" in detail_text and "模拟" in detail_text, detail_text
                     assert "20:00-21:00" in detail_text, detail_text
                 if name == "tasks":

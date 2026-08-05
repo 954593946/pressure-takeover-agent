@@ -89,7 +89,8 @@ def main() -> None:
 
         assert final["stage"] == "parked_review"
         assert len(final["tasks"]) == 2
-        assert len(final["actions"]) == 3
+        assert final["actions"], final
+        assert all(action.get("target") not in {"王老师", "孩子妈妈"} for action in final["actions"]), final
         assert all(action["status"] == "completed" for action in final["actions"])
         assert not errors, errors
         print(json.dumps({

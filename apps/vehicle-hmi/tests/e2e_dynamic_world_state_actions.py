@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from urllib import error, request
@@ -163,14 +162,6 @@ def progress_to_help() -> dict:
     )
 
 
-def rendered_message_body(body: str) -> str:
-    return re.sub(
-        r"[（(][^）)]*未连接真实通讯服务[^）)]*[）)]",
-        "（Demo 模拟消息）",
-        body,
-    )
-
-
 def assert_hmi_action_details(page: Page, state: dict) -> None:
     actions = state["actions"]
     buttons = page.locator('#auri-takeover-actions [data-panel-target^="action:"]')
@@ -178,7 +169,7 @@ def assert_hmi_action_details(page: Page, state: dict) -> None:
 
     for action in actions:
         selector = f'[data-panel-target="action:{action["action_id"]}"]'
-        button = page.locator(selector)
+        button = page.locator(f"#auri-takeover-actions {selector}")
         assert button.count() == 1, action
         assert action["target"] in button.inner_text(), action
 
@@ -192,9 +183,15 @@ def assert_hmi_action_details(page: Page, state: dict) -> None:
         if action["type"] == "message":
             body = action.get("message_draft", {}).get("body")
             assert body, action
-            assert rendered_message_body(body) in detail, (action, detail)
+            assert body in detail, (action, detail)
         else:
             assert action["summary"] in detail or action["target"] in detail, (action, detail)
+        page.locator("#auri-driver-back").click()
+        page.wait_for_function(
+            "() => document.querySelector('#auri-driver-detail')?.hidden === false"
+            " && document.querySelector('#auri-detail-title')?.textContent === '处理进度'",
+            timeout=5000,
+        )
         page.locator("#auri-driver-back").click()
         page.wait_for_function(
             "() => document.querySelector('#auri-driver-detail')?.hidden === true",

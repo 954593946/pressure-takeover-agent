@@ -107,7 +107,7 @@ def main() -> None:
                 page.locator("#apiBase").fill("https://example.invalid")
                 page.locator("#preflightBtn").click()
                 page.wait_for_function(
-                    "Array.from(document.querySelectorAll('#eventLog .log-row')).some(row => row.dataset.raw.includes('不是团队 canonical 地址'))",
+                    "Array.from(document.querySelectorAll('#eventLog .log-row')).some(row => row.dataset.raw.includes('不是团队主地址、备用地址或本地开发地址'))",
                     timeout=5000,
                 )
                 page.locator("#apiBase").fill(AGENT)

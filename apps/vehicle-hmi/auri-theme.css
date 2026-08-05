@@ -3821,16 +3821,16 @@ article.auri-action-step {
 @media (max-width: 1500px) and (max-height: 800px) {
   .auri-action-board > header { min-height: 52px; padding: 9px 12px; }
   .auri-action-board > header > span small { display: none; }
-  .auri-action-board > header > span b { margin: 0; font-size: 25px; line-height: 1.15; }
-  .auri-action-board > header > em { min-width: 42px; padding: 5px 8px; font-size: 20px; }
+  .auri-action-board > header > span b { margin: 0; font-size: 28px; line-height: 1.15; }
+  .auri-action-board > header > em { min-width: 42px; padding: 5px 8px; font-size: 24px; }
   .auri-action-progress { height: 4px; }
   .auri-action-list { gap: 7px; }
   .auri-action-step { min-height: 76px; padding: 10px 12px; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 10px; }
   button.auri-action-step { grid-template-columns: 40px minmax(0, 1fr) auto 18px; }
-  .auri-action-step-copy small { font-size: 19px; }
-  .auri-action-step-copy b { margin-top: 2px; font-size: 25px; }
-  .auri-action-step-copy em { margin-top: 3px; font-size: 20px; -webkit-line-clamp: 1; }
-  .auri-action-step-state { padding: 4px 7px; font-size: 19px; }
+  .auri-action-step-copy small { font-size: 24px; }
+  .auri-action-step-copy b { margin-top: 2px; font-size: 28px; }
+  .auri-action-step-copy em { margin-top: 3px; font-size: 24px; -webkit-line-clamp: 1; }
+  .auri-action-step-state { padding: 4px 7px; font-size: 23px; }
   .auri-driver-panel .auri-takeover-action { grid-template-columns: 40px minmax(0, 1fr) auto 18px; }
 }
 
