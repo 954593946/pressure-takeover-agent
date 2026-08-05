@@ -133,6 +133,20 @@ class WearableGateway @Inject constructor(
         queueDebugCommand(command)
     }
 
+    fun sendDebugPressureRise() {
+        val command = WearableCommandMapper.toWatchCommand(
+            commandId = "android-debug-pressure-rise-${System.currentTimeMillis()}",
+            mode = WearableMode.WARNING,
+            icon = "!",
+            title = "压力可能上升",
+            text = "检测到负荷上升，请关注节奏",
+            color = WearableColor.YELLOW,
+            haptic = HapticPattern.DOUBLE_SHORT,
+            source = "android-debug",
+        )
+        queueDebugCommand(command)
+    }
+
     fun sendDebugHaptic(haptic: HapticPattern, mode: WearableMode = latestModeForDebug()) {
         val command = WearableCommandMapper.toWatchCommand(
             commandId = "android-haptic-${haptic.name.lowercase()}-${System.currentTimeMillis()}",

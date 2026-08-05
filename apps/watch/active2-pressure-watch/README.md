@@ -98,7 +98,8 @@ Android Wearable Gateway / Agent
 
 - `pre_departure_warning / L1`: yellow `warning`, 3-pulse vibration.
 - `handover_to_vehicle`, `vehicle_observation`: cyan `handover` visual state, 2-pulse Agent-driven vibration.
-- `takeover_L2`, `planning`, `waiting_confirmation`: purple-blue breathing `processing` visual state, 4-pulse Agent-driven vibration.
+- `takeover_L2`: yellow `warning` pressure prompt, `压力可能上升`, 3-pulse vibration when workload/risk rises.
+- `takeover_L3`, `planning`, `waiting_confirmation`: purple-blue breathing `processing` visual state, 4-pulse Agent-driven vibration.
 - `action_completed` and `cooldown`: green `completed`, 1-pulse vibration, then local auto-return to `idle` after about 5 seconds. If recovery `idle` arrives immediately, the watch defers that render until the completion window ends.
 - `parked_review`: low-interruption `idle`, no vibration.
 - The watch never owns confirmation in the demo; confirmation remains on `vehicle_hmi`.

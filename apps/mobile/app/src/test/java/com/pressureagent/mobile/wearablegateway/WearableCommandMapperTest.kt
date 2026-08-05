@@ -11,6 +11,7 @@ import com.pressureagent.mobile.domain.model.WorldState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class WearableCommandMapperTest {
     @Test
@@ -100,11 +101,37 @@ class WearableCommandMapperTest {
     }
 
     @Test
+    fun mapsTakeoverL2TrafficRiskToPressureRiseWarning() {
+        val command = WearableCommandMapper.toWatchCommand(
+            WorldState(
+                sessionId = "demo",
+                revision = 3,
+                stage = Stage.TAKEOVER_L2,
+                risk = Risk(
+                    pressureLevel = PressureLevel.L2,
+                    lateMinutes = 18,
+                ),
+                wearable = null,
+            ),
+        )
+
+        assertNotNull(command)
+        assertEquals("world-demo-3", command.commandId)
+        assertEquals("warning", command.mode)
+        assertEquals("!", command.icon)
+        assertEquals("压力可能上升", command.title)
+        assertTrue(command.text.contains("负荷上升"))
+        assertTrue(command.text.contains("18"))
+        assertEquals("double_short", command.haptic)
+        assertEquals(0xe6a700, command.color)
+    }
+
+    @Test
     fun mapsDrivingAndPlanningStagesToAgentDrivenHaptics() {
         listOf(
             Triple(Stage.HANDOVER_TO_VEHICLE, "handover", "single_pulse"),
             Triple(Stage.VEHICLE_OBSERVATION, "handover", "single_pulse"),
-            Triple(Stage.TAKEOVER_L2, "processing", "three_beat"),
+            Triple(Stage.TAKEOVER_L3, "processing", "three_beat"),
             Triple(Stage.PLANNING, "processing", "three_beat"),
             Triple(Stage.WAITING_CONFIRMATION, "processing", "three_beat"),
         ).forEachIndexed { index, (stage, expectedMode, expectedHaptic) ->
