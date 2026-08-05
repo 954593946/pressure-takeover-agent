@@ -153,7 +153,7 @@ def configure_page(page: Page, *, connect: bool) -> None:
         "try{localStorage.removeItem('auri-hmi-next-config')}catch(_e){};"
         "try{sessionStorage.clear()}catch(_e){};"
         "window.__auriSpoken=[];"
-        "try{window.speechSynthesis.speak=(item)=>window.__auriSpoken.push(item.text)}catch(_e){}"
+        "window.AURI_HMI_SPEECH_ADAPTER={speak:(text)=>{window.__auriSpoken.push(text);return true}};"
     )
     target = HMI if connect else f"{HMI}{'&' if '?' in HMI else '?'}offline=1"
     page.goto(target, wait_until="load", timeout=30000)
@@ -286,9 +286,14 @@ def capture(page: Page, state: dict, index: int, source: str) -> dict:
           const iconTexts=iconSelectors.flatMap(selector=>Array.from(document.querySelectorAll(selector))).filter(node=>visibleNode(node)).map(node=>node.textContent.trim()).filter(Boolean);
           const actionRows=Array.from(document.querySelectorAll('.auri-takeover-action')).filter(node=>visibleNode(node)).map(node=>{
             const copy=node.querySelector('.auri-takeover-action-copy');
+            const title=copy?.querySelector('b');
             const box=copy?.getBoundingClientRect();
-            return {title:copy?.querySelector('b')?.textContent.trim()||'',copyWidth:box?.width||0};
+            return {title:title?.textContent.trim()||'',copyWidth:box?.width||0,titleFontPx:Number.parseFloat(getComputedStyle(title).fontSize)||0};
           });
+          const planSection=document.querySelector('.auri-takeover-section-head');
+          const planNotice=document.querySelector('#auri-stage-notice');
+          const confirm=document.querySelector('#auri-takeover-confirm');
+          const confirmRect=confirm?.getBoundingClientRect();
           function visibleNode(node){
             const style=getComputedStyle(node); const box=node.getBoundingClientRect();
             return !node.hidden && style.display!=='none' && style.visibility!=='hidden' && box.width>0 && box.height>0;
@@ -298,6 +303,11 @@ def capture(page: Page, state: dict, index: int, source: str) -> dict:
             driverVisible:visible('#auri-driver-panel'), navCardVisible:visible('#vd-nav-card'), navHudVisible:visible('#auri-nav-hud'),
             stageNoticeVisible:visible('#auri-stage-notice'), deviceNoticeVisible:visible('#auri-device-notice'),
             processPoisVisible:visible('.map-poi-layer'), iconTexts, actionRows,
+            planSectionText:planSection?.textContent.replace(/\\s+/g,' ').trim()||'',
+            planNoticeText:planNotice?.textContent.replace(/\\s+/g,' ').trim()||'',
+            planNoticeReady:planNotice?.classList.contains('is-plan-ready')||false,
+            confirmVisible:visible('#auri-takeover-confirm'),
+            confirmHeight:confirmRect?.height||0,
             bottomLauncherVisible:visible('.sidebar')
           };
         }"""
@@ -313,6 +323,18 @@ def capture(page: Page, state: dict, index: int, source: str) -> dict:
     banned_icons = {"声", "腕", "表", "联", "刚", "弹", "信", "单", "路", "务", "返", "调", "距", "温"}
     assert not banned_icons.intersection(quality["iconTexts"]), quality
     assert all(len(row["title"]) >= 2 and row["copyWidth"] >= 100 for row in quality["actionRows"]), quality
+    if state["stage"] in {"service_prepared", "waiting_confirmation", "action_completed"}:
+        assert "Agent 处理方案" in quality["planSectionText"], quality
+        assert quality["actionRows"], quality
+        assert min(row["titleFontPx"] for row in quality["actionRows"]) >= 20, quality
+    if state["stage"] == "waiting_confirmation":
+        assert quality["confirmVisible"] is True, quality
+        assert quality["confirmHeight"] >= 80, quality
+    if state["stage"] in {"service_prepared", "waiting_confirmation"}:
+        assert quality["stageNoticeVisible"] is True, quality
+        assert quality["deviceNoticeVisible"] is False, quality
+        assert quality["planNoticeReady"] is True, quality
+        assert "AURI 处理方案已准备" in quality["planNoticeText"], quality
     # Stage and device notifications share one visual lane. Showing both at
     # once recreates the map occlusion this regression is intended to catch.
     assert not (
@@ -580,6 +602,10 @@ def main() -> None:
         )
         assert waiting["confirmation"]["owner_surface"] == "vehicle_hmi"
         capture_real(waiting)
+        ready_speech = real_page.evaluate("window.__auriSpoken")
+        assert len(ready_speech) == 1, ready_speech
+        assert "AURI 已准备处理方案" in ready_speech[0], ready_speech
+        assert "2条消息和1项配送方案已准备" in ready_speech[0], ready_speech
 
         real_page.locator("#auri-takeover-confirm").click()
         real_page.wait_for_function(
@@ -588,6 +614,15 @@ def main() -> None:
         )
         completed = api("/v1/state")
         capture_real(completed)
+        completed_speech = real_page.evaluate("window.__auriSpoken")
+        assert len(completed_speech) == 2, completed_speech
+        assert "AURI 已完成处理" in completed_speech[1], completed_speech
+        summary["speech_briefings"] = {
+            "ready": ready_speech[0],
+            "completed": completed_speech[1],
+            "dynamic_world_state": True,
+            "duplicate_count": 0,
+        }
         cooldown = submit("cooldown.elapsed", {})
         capture_real(cooldown)
         parked = submit("scene.parked", {})

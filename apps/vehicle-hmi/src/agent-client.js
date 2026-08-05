@@ -20,6 +20,8 @@
     amapSecurityJsCode: "",
     amapServiceHost: "",
     amapStyle: "amap://styles/normal",
+    amapLoadTimeoutMs: 12000,
+    amapRouteTimeoutMs: 8000,
     amapMonthlyMapLimit: 200,
     amapMonthlyRouteLimit: 200
   };
@@ -94,6 +96,8 @@
       amapSecurityJsCode: String(raw.amapSecurityJsCode || "").trim(),
       amapServiceHost: normalizeOptionalUrl(raw.amapServiceHost),
       amapStyle: String(raw.amapStyle || DEFAULT_CONFIG.amapStyle),
+      amapLoadTimeoutMs: clampInteger(raw.amapLoadTimeoutMs, DEFAULT_CONFIG.amapLoadTimeoutMs, 10, 15000),
+      amapRouteTimeoutMs: clampInteger(raw.amapRouteTimeoutMs, DEFAULT_CONFIG.amapRouteTimeoutMs, 10, 12000),
       amapMonthlyMapLimit: clampInteger(raw.amapMonthlyMapLimit, DEFAULT_CONFIG.amapMonthlyMapLimit, 1, 10000),
       amapMonthlyRouteLimit: clampInteger(raw.amapMonthlyRouteLimit, DEFAULT_CONFIG.amapMonthlyRouteLimit, 1, 10000)
     };

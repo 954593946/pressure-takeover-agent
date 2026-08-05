@@ -6,8 +6,12 @@
   "use strict";
 
   const USAGE_KEY = "auri-hmi-next-amap-usage";
-  const DEFAULT_LIMITS = { mapLoads: 200, routePlans: 200 };
+  const DEFAULT_LIMITS = { mapLoads: 200, routePlans: 200, poiSearches: 60 };
   const MAX_FAILURE_FALLBACK_MS = 1800;
+  const DEFAULT_SCRIPT_LOAD_TIMEOUT_MS = 12000;
+  const MAX_SCRIPT_LOAD_TIMEOUT_MS = 15000;
+  const DEFAULT_ROUTE_TIMEOUT_MS = 8000;
+  const MAX_ROUTE_TIMEOUT_MS = 12000;
   let loaderPromise = null;
   let loaderWebglHintApplied = false;
 
@@ -15,6 +19,18 @@
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed <= 0) return MAX_FAILURE_FALLBACK_MS;
     return Math.min(MAX_FAILURE_FALLBACK_MS, Math.max(10, Math.round(parsed)));
+  }
+
+  function boundedScriptLoadTimeoutMs(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_SCRIPT_LOAD_TIMEOUT_MS;
+    return Math.min(MAX_SCRIPT_LOAD_TIMEOUT_MS, Math.max(10, Math.round(parsed)));
+  }
+
+  function boundedRouteTimeoutMs(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_ROUTE_TIMEOUT_MS;
+    return Math.min(MAX_ROUTE_TIMEOUT_MS, Math.max(10, Math.round(parsed)));
   }
 
   function clamp(value, min = 0, max = 1) {
@@ -78,12 +94,15 @@
 
   function followCameraSpec(meta, attention = false) {
     const nextDistanceMeters = Number(meta?.nextDistanceMeters || 0);
-    const routeZoom = nextDistanceMeters <= 180 ? 18.05 : nextDistanceMeters <= 600 ? 17.65 : 17.25;
-    const lookAheadMeters = nextDistanceMeters <= 180 ? 58 : nextDistanceMeters <= 600 ? 88 : 118;
+    // Keep enough map context for AMap's native road, community and POI labels.
+    // The route marker still animates independently; the map camera changes
+    // only when its actual center/heading bucket changes.
+    const routeZoom = nextDistanceMeters <= 180 ? 16.2 : nextDistanceMeters <= 600 ? 16.0 : 15.8;
+    const lookAheadMeters = nextDistanceMeters <= 180 ? 118 : nextDistanceMeters <= 600 ? 178 : 245;
     return {
-      lookAheadMeters: attention ? Math.min(lookAheadMeters, 78) : lookAheadMeters,
-      zoom: attention ? Math.min(routeZoom, 17.45) : routeZoom,
-      pitch: attention ? 50 : 56,
+      lookAheadMeters: attention ? Math.min(lookAheadMeters, 154) : lookAheadMeters,
+      zoom: attention ? Math.min(routeZoom, 15.95) : routeZoom,
+      pitch: attention ? 24 : 28,
       anchorY: 0.72,
       rotationThreshold: 4
     };
@@ -102,6 +121,27 @@
       const timer = root.setTimeout?.(finish, timeoutMs);
       map.once("complete", () => root.requestAnimationFrame ? root.requestAnimationFrame(finish) : finish());
     });
+  }
+
+  function waitForMapLabels(map, timeoutMs = 3200) {
+    if (!map || typeof map.on !== "function") return Promise.resolve(false);
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (loaded) => {
+        if (settled) return;
+        settled = true;
+        root.clearTimeout?.(timer);
+        map.off?.("complete", onMapComplete);
+        resolve(loaded);
+      };
+      const onMapComplete = () => finish(true);
+      const timer = root.setTimeout?.(() => finish(false), timeoutMs);
+      map.on("complete", onMapComplete);
+    });
+  }
+
+  function hasRenderedMapSurface(container) {
+    return Boolean(container?.querySelector?.(".amap-maps, .amap-layer, canvas"));
   }
 
   function trafficColor(status) {
@@ -130,6 +170,20 @@
       });
     });
     return segments;
+  }
+
+  function routeRoadLabels(route, limit = 8) {
+    const seen = new Set();
+    const labels = [];
+    for (const step of route?.steps || []) {
+      const name = String(step?.road || "").trim();
+      const path = (step?.path || []).map(pointValue).filter((point) => point?.every(Number.isFinite));
+      if (!name || /^(无名道路|当前道路)$/.test(name) || seen.has(name) || !path.length) continue;
+      seen.add(name);
+      labels.push({ name, position: path[Math.floor((path.length - 1) * 0.5)] });
+      if (labels.length >= limit) break;
+    }
+    return labels;
   }
 
   function distanceMeters(from, to) {
@@ -268,7 +322,7 @@
     const maneuver = /掉头/.test(instruction) ? "uturn" : /左/.test(instruction) ? "left" : /右|出口|匝道/.test(instruction) ? "right" : /到达|目的地/.test(instruction) ? "arrive" : "straight";
     const roadName = String(step?.road || "").trim()
       || instruction.match(/(?:进入|沿|驶入)([^，。]+?)(?:后|行驶|靠|左转|右转|$)/)?.[1]
-      || "当前道路";
+      || "";
     const totalDurationSeconds = Number(route?.time || 0);
     const trafficStatus = String(step?.tmcs?.find?.((item) => item?.status)?.status || "").trim() || "路况正常";
     return {
@@ -294,14 +348,15 @@
   }
 
   function readUsage(storage = root?.localStorage) {
-    const empty = { month: currentMonth(), mapLoads: 0, routePlans: 0 };
+    const empty = { month: currentMonth(), mapLoads: 0, routePlans: 0, poiSearches: 0 };
     try {
       const stored = JSON.parse(storage?.getItem(USAGE_KEY) || "null");
       if (!stored || stored.month !== empty.month) return empty;
       return {
         month: empty.month,
         mapLoads: Math.max(0, Number(stored.mapLoads || 0)),
-        routePlans: Math.max(0, Number(stored.routePlans || 0))
+        routePlans: Math.max(0, Number(stored.routePlans || 0)),
+        poiSearches: Math.max(0, Number(stored.poiSearches || 0))
       };
     } catch (_error) {
       return empty;
@@ -315,7 +370,8 @@
   function usageLimits(config) {
     return {
       mapLoads: Math.max(1, Number(config.amapMonthlyMapLimit || DEFAULT_LIMITS.mapLoads)),
-      routePlans: Math.max(1, Number(config.amapMonthlyRouteLimit || DEFAULT_LIMITS.routePlans))
+      routePlans: Math.max(1, Number(config.amapMonthlyRouteLimit || DEFAULT_LIMITS.routePlans)),
+      poiSearches: Math.max(1, Number(config.amapMonthlyPoiLimit || DEFAULT_LIMITS.poiSearches))
     };
   }
 
@@ -366,8 +422,8 @@
       const script = root.document.createElement("script");
       script.async = true;
       script.dataset.auriAmap = "true";
-      script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(config.amapKey)}&plugin=AMap.Driving,AMap.MoveAnimation`;
-      const timeoutMs = boundedTimeoutMs(config.amapLoadTimeoutMs);
+      script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(config.amapKey)}&plugin=AMap.Driving,AMap.MoveAnimation,AMap.PlaceSearch`;
+      const timeoutMs = boundedScriptLoadTimeoutMs(config.amapLoadTimeoutMs);
       let settled = false;
       let timer = null;
       const finish = (callback, value, removeScript = false) => {
@@ -428,6 +484,7 @@
       this.lastCameraRotation = null;
       this.lastEffectiveRotation = null;
       this.lastCameraPitch = null;
+      this.lastCameraZoom = null;
       this.lastAnimatedPoint = null;
       this.markerProgress = null;
       this.motionTargetProgress = null;
@@ -449,6 +506,13 @@
       this.fixedVehicle = null;
       this.congestionDiagnostics = [];
       this.anchorDiagnostics = null;
+      this.renderCompleteCount = 0;
+      this.labelsReady = false;
+      this.labelsReadyModes = new Set();
+      this.pendingLabelMode = null;
+      this.labelReadyTimer = null;
+      this.poiRouteKey = null;
+      this.poiSearchStatus = "idle";
     }
 
     async init(config) {
@@ -485,6 +549,8 @@
           rotation: 0,
           mapStyle,
           features: ["bg", "road", "building", "point"],
+          labelRejectMask: true,
+          isHotspot: true,
           showBuildingBlock: true,
           buildingAnimation: true,
           skyColor: "#e9eef5",
@@ -492,14 +558,36 @@
           resizeEnable: true,
           rotateEnable: true,
           pitchEnable: true,
-          animateEnable: true,
+          jogEnable: false,
+          animateEnable: false,
           dragEnable: true,
           zoomEnable: true,
           keyboardEnable: false,
           doubleClickZoom: true
         });
+        this.map.on?.("complete", () => {
+          this.renderCompleteCount += 1;
+          if (this.pendingLabelMode) this.completeLabelMode(this.pendingLabelMode);
+          else this.labelsReady = true;
+        });
+        const labelPaintPromise = waitForMapLabels(this.map);
         await waitForMapReady(this.map);
-        this.map.setPitch?.(52, true, 0);
+        // Keep road and POI labels visible beneath route overlays. Some AMap
+        // runtimes restore their default feature set after the first render,
+        // so enforce the navigation label contract once the map is ready.
+        this.map.setFeatures?.(["bg", "road", "building", "point"]);
+        this.map.setLabelRejectMask?.(true);
+        this.map.setStatus?.({ showLabel: true });
+        this.map.resize?.();
+        const labelPaintedFromEvent = await labelPaintPromise;
+        // AMap may complete synchronously on a warm tile cache before event
+        // listeners can be attached. A real rendered map surface is the
+        // fallback checkpoint; test doubles without a surface do not qualify.
+        if (!labelPaintedFromEvent && hasRenderedMapSurface(this.container)) {
+          this.renderCompleteCount = Math.max(1, this.renderCompleteCount);
+          this.labelsReady = true;
+        }
+        this.map.setPitch?.(42, true, 0);
         this.map.setRotation?.(1, true, 0);
         await new Promise((resolve) => root.setTimeout?.(resolve, 80) ?? resolve());
         const effectivePitch = Number(this.map.getPitch?.() || 0);
@@ -549,6 +637,8 @@
       this.anchorDiagnostics = null;
       this.lastRouteMetaKey = null;
       this.lastMetaProgress = null;
+      this.poiRouteKey = null;
+      this.poiSearchStatus = "idle";
     }
 
     async setRoute(routeConfig, routeKey) {
@@ -569,7 +659,7 @@
       this.pendingRoutePromise = (async () => {
         try {
           const route = await new Promise((resolve, reject) => {
-            const timeoutMs = boundedTimeoutMs(this.config?.amapRouteTimeoutMs);
+            const timeoutMs = boundedRouteTimeoutMs(this.config?.amapRouteTimeoutMs);
             const driving = new AMap.Driving({ policy: AMap.DrivingPolicy?.LEAST_TIME ?? 0, extensions: "all", hideMarkers: true, showTraffic: true });
             let settled = false;
             let timer = null;
@@ -680,6 +770,22 @@
       }
       this.overlays.originMarker = new AMap.Marker({ position: this.routePath[0], content: markerContent("auri-amap-origin", routeConfig.originName || "博世苏州"), anchor: "bottom-left", zIndex: 109 });
       this.overlays.destinationMarker = new AMap.Marker({ position: this.routePath.at(-1), content: markerContent("auri-amap-destination", routeConfig.destinationName || "目的地"), anchor: "bottom-center", zIndex: 110 });
+      this.overlays.routeLabels = routeRoadLabels(this.drivingRoute).map(({ name, position }) => {
+        const label = root.document.createElement("span");
+        label.className = "auri-amap-route-label";
+        label.textContent = name;
+        const marker = new AMap.Marker({ position, content: label, anchor: "bottom-center", zIndex: 76 });
+        marker.__auriRoadName = name;
+        return marker;
+      });
+      this.overlays.currentRoadContent = root.document.createElement("span");
+      this.overlays.currentRoadContent.className = "auri-amap-route-label is-current";
+      this.overlays.currentRoadMarker = new AMap.Marker({
+        position: this.routePath[0],
+        content: this.overlays.currentRoadContent,
+        anchor: "bottom-left",
+        zIndex: 86
+      });
       const incident = markerContent("auri-amap-incident", "前方拥堵");
       this.overlays.incidentContent = incident.querySelector("span");
       this.overlays.incidentMarker = new AMap.Marker({ position: this.routePath[Math.floor(this.routePath.length * 0.7)], content: incident, anchor: "top-center", zIndex: 120 });
@@ -702,10 +808,74 @@
         this.overlays.vehicleMarker,
         this.overlays.originMarker,
         this.overlays.destinationMarker,
+        ...this.overlays.routeLabels,
+        this.overlays.currentRoadMarker,
         this.overlays.incidentMarker,
         ...this.overlays.routeChevrons
       ]);
       this.applyOverviewCamera();
+    }
+
+    async loadNearbyPois(center, routeKey) {
+      const AMap = root.AMap;
+      if (!AMap?.PlaceSearch || !Array.isArray(center) || center.length < 2) return;
+      if (this.poiRouteKey === routeKey) return;
+      const usage = readUsage();
+      if (usage.poiSearches >= usageLimits(this.config).poiSearches) {
+        this.poiRouteKey = routeKey;
+        this.poiSearchStatus = "usage_guard";
+        return;
+      }
+      this.poiRouteKey = routeKey;
+      this.poiSearchStatus = "loading";
+      recordUsage("poiSearches");
+      try {
+        const pois = await new Promise((resolve, reject) => {
+          const placeSearch = new AMap.PlaceSearch({
+            city: "苏州",
+            citylimit: true,
+            type: "公司企业|科教文化服务|商务住宅|餐饮服务",
+            pageSize: 12,
+            pageIndex: 1,
+            extensions: "base"
+          });
+          const timer = root.setTimeout?.(() => reject(new Error("高德周边地点加载超时")), 1600);
+          placeSearch.searchNearBy("", center, 650, (status, result) => {
+            if (timer !== null) root.clearTimeout?.(timer);
+            if (status !== "complete") reject(new Error(result?.info || "高德周边地点加载失败"));
+            else resolve(result?.poiList?.pois || []);
+          });
+        });
+        if (this.routeKey !== routeKey) return;
+        const seen = new Set();
+        this.overlays.poiMarkers = pois.flatMap((poi, index) => {
+          const name = String(poi?.name || "").trim();
+          const position = pointValue(poi?.location);
+          if (!name || seen.has(name) || !position?.every(Number.isFinite) || seen.size >= 10) return [];
+          seen.add(name);
+          const label = root.document.createElement("span");
+          label.className = "auri-amap-poi-label";
+          label.textContent = name;
+          label.dataset.rank = String(1000 - index);
+          const marker = new AMap.Marker({
+            position,
+            content: label,
+            anchor: "bottom-center",
+            zIndex: 96 - index
+          });
+          marker.__auriPosition = position;
+          marker.__auriPoiName = name;
+          marker.__auriRank = 1000 - index;
+          return [marker];
+        });
+        if (this.overlays.poiMarkers.length) {
+          this.map.add(this.overlays.poiMarkers);
+          this.setPoiMarkersVisible(true);
+        }
+        this.poiSearchStatus = this.overlays.poiMarkers.length ? "ready" : "empty";
+      } catch (_error) {
+        if (this.routeKey === routeKey) this.poiSearchStatus = "failed";
+      }
     }
 
     completeMarkerMotion(stopMarker) {
@@ -763,6 +933,8 @@
       }
       this.pendingMotionProgress = null;
       this.cameraMode = "overview";
+      this.setPoiMarkersVisible(true);
+      this.markLabelsPending("overview");
       this.mapWrap.dataset.cameraMode = "overview";
       this.map.setPitch?.(0, true, 0);
       this.map.setRotation?.(0, true, 0);
@@ -778,7 +950,7 @@
       this.anchorDiagnostics = null;
     }
 
-    alignFollowAnchor(location, anchorY) {
+    alignFollowAnchor(location, anchorY, attempts = 1) {
       if (!location?.point || typeof this.map?.lngLatToContainer !== "function" || typeof this.map?.panBy !== "function") return;
       const before = pixelValue(this.map.lngLatToContainer(location.point));
       if (!before?.every(Number.isFinite)) return;
@@ -791,7 +963,7 @@
       // Perspective projection means one pan pixel is not always one screen
       // pixel. Re-read the route point and close the error instead of relying
       // on a hard-coded screen offset.
-      for (let attempt = 0; attempt < 3; attempt += 1) {
+      for (let attempt = 0; attempt < Math.max(1, attempts); attempt += 1) {
         const residual = [target[0] - projected[0], target[1] - projected[1]];
         if (Math.hypot(residual[0], residual[1]) < 1) break;
         const requested = residual.map((value, axis) => value / Math.max(0.2, Math.min(4, Math.abs(gain[axis]))));
@@ -828,26 +1000,63 @@
       const lookAhead = locationAtProgress(this.routeGeometry, Math.min(1, Number(snapshot.progress || 0) + progressOffset));
       const targetRotation = ((360 - heading) % 360 + 360) % 360;
       const targetPitch = cameraSpec.pitch;
+      const zoomChanged = this.lastCameraZoom === null || Math.abs(cameraSpec.zoom - this.lastCameraZoom) >= 0.05;
+      const pitchChanged = this.lastCameraPitch === null || Math.abs(targetPitch - this.lastCameraPitch) >= 1;
+      const rotationChanged = this.lastCameraRotation === null
+        || Math.abs(((targetRotation - this.lastCameraRotation + 180) % 360) - 180) >= cameraSpec.rotationThreshold;
       this.cameraMode = "follow";
+      this.setPoiMarkersVisible(true);
+      this.markLabelsPending("follow");
       this.mapWrap.dataset.cameraMode = "follow";
-      this.map.setZoomAndCenter(cameraSpec.zoom, lookAhead.point, true, 0);
-      if (this.native3d) this.map.setPitch?.(targetPitch, true, 0);
-      else this.map.setPitch?.(0, true, 0);
-      this.map.setRotation?.(targetRotation, true, 0);
-      if (force || delta >= cameraSpec.rotationThreshold || this.lastCameraRotation === null) {
+      if (force || zoomChanged || typeof this.map.setCenter !== "function") {
+        this.map.setZoomAndCenter(cameraSpec.zoom, lookAhead.point, true, 0);
+      } else {
+        this.map.setCenter(lookAhead.point, true, 0);
+      }
+      if (force || pitchChanged) {
+        if (this.native3d) this.map.setPitch?.(targetPitch, true, 0);
+        else this.map.setPitch?.(0, true, 0);
+      }
+      if (force || rotationChanged) this.map.setRotation?.(targetRotation, true, 0);
+      if (force || delta >= cameraSpec.rotationThreshold || this.lastCameraHeading === null) {
         this.lastCameraHeading = heading;
       }
       this.lastCameraRotation = targetRotation;
       this.lastCameraPitch = this.native3d ? targetPitch : 0;
+      this.lastCameraZoom = cameraSpec.zoom;
       this.lastEffectiveRotation = Number(this.map.getRotation?.() || 0);
       this.mapWrap.dataset.lockAnchorY = String(cameraSpec.anchorY);
-      this.alignFollowAnchor(location, cameraSpec.anchorY);
+      this.alignFollowAnchor(location, cameraSpec.anchorY, 2);
     }
 
     setVehicleHeading(heading) {
       const cameraRotation = Number(this.map?.getRotation?.() || 0);
       const markerAngle = screenHeading(heading, cameraRotation);
       this.overlays.vehicleContent?.style?.setProperty("--auri-vehicle-heading", `${markerAngle}deg`);
+    }
+
+    markLabelsPending(mode) {
+      if (!mode || this.labelsReadyModes.has(mode) || this.pendingLabelMode === mode) return;
+      this.pendingLabelMode = mode;
+      this.labelsReady = false;
+      this.mapWrap.dataset.labelsReady = "false";
+      if (this.labelReadyTimer !== null) root.clearTimeout?.(this.labelReadyTimer);
+      // AMap's map-level `complete` event is guaranteed for the initial load,
+      // but not for every 3D camera update. Keep the previous map out of view
+      // for a short settle window so the user never sees an unpainted vector
+      // frame while the follow camera rebuilds labels and buildings.
+      const settleMs = mode === "overview" ? 900 : 3200;
+      this.labelReadyTimer = root.setTimeout?.(() => this.completeLabelMode(mode), settleMs) ?? null;
+    }
+
+    completeLabelMode(mode) {
+      if (!mode || this.pendingLabelMode !== mode) return;
+      if (this.labelReadyTimer !== null) root.clearTimeout?.(this.labelReadyTimer);
+      this.labelReadyTimer = null;
+      this.labelsReadyModes.add(mode);
+      this.pendingLabelMode = null;
+      this.labelsReady = true;
+      this.mapWrap.dataset.labelsReady = "true";
     }
 
     updateChevrons(snapshot) {
@@ -867,6 +1076,9 @@
       if (this.status !== "online" || !this.routeGeometry) return;
       const progress = clamp(snapshot.progress);
       const location = locationAtProgress(this.routeGeometry, progress);
+      if (this.poiRouteKey !== this.routeKey && this.poiSearchStatus !== "loading") {
+        void this.loadNearbyPois(location.point, this.routeKey);
+      }
       const fallback = location.remaining.length > 1 ? location.remaining.slice(0, 2) : location.passed.slice(-2);
       this.overlays.routePassed.setOptions({ strokeOpacity: location.passed.length > 1 ? 1 : 0 });
       this.overlays.routePassed.setPath(location.passed.length > 1 ? location.passed : fallback);
@@ -968,6 +1180,17 @@
 
       this.updateChevrons({ ...snapshot, overview: overviewMode });
       const meta = routeMeta(this.drivingRoute, progress);
+      this.overlays.routeLabels.forEach((marker) => {
+        if (marker.__auriRoadName === meta.roadName) marker.hide();
+        else marker.show();
+      });
+      if (meta.roadName) {
+        this.overlays.currentRoadContent.textContent = meta.roadName;
+        this.overlays.currentRoadMarker.setPosition(locationAtProgress(this.routeGeometry, Math.min(1, progress + 0.012)).point);
+        this.overlays.currentRoadMarker.show();
+      } else {
+        this.overlays.currentRoadMarker.hide();
+      }
       const key = `${meta.stepIndex}:${meta.nextDistance.value}:${meta.nextDistance.unit}`;
       if (meta.instruction && (key !== this.lastRouteMetaKey || Math.abs(progress - (this.lastMetaProgress ?? -1)) >= 0.002)) {
         this.lastRouteMetaKey = key;
@@ -1016,6 +1239,43 @@
     }
 
     getStatus() { return this.status; }
+    setPoiMarkersVisible(visible) {
+      (this.overlays.poiMarkers || []).forEach((marker) => {
+        marker.__auriVisible = Boolean(visible);
+        if (visible) marker.show?.();
+        else marker.hide?.();
+      });
+    }
+    countVisiblePoiLabels() {
+      const width = Number(this.mapWrap?.clientWidth || 0);
+      const height = Number(this.mapWrap?.clientHeight || 0);
+      if (!width || !height || typeof this.map?.lngLatToContainer !== "function") return 0;
+      return (this.overlays.poiMarkers || []).filter((marker) => {
+        if (marker.__auriVisible === false) return false;
+        const position = pointValue(marker.getPosition?.()) || marker.__auriPosition;
+        if (!position?.every(Number.isFinite)) return false;
+        const pixel = this.map.lngLatToContainer(position);
+        const x = Number(pixel?.x ?? pixel?.getX?.());
+        const y = Number(pixel?.y ?? pixel?.getY?.());
+        return Number.isFinite(x) && Number.isFinite(y) && x >= 0 && x <= width && y >= 0 && y <= height;
+      }).length;
+    }
+    getLabelDiagnostics() {
+      const status = this.map?.getStatus?.() || {};
+      const features = this.map?.getFeatures?.() || this.map?.options?.features || [];
+      return {
+        showLabel: status.showLabel ?? this.map?.options?.showLabel ?? null,
+        labelRejectMask: this.map?.labelRejectMask ?? this.map?.options?.labelRejectMask ?? null,
+        features: Array.from(features),
+        routeLabelCount: this.overlays.routeLabels?.length || 0,
+        renderCompleteCount: this.renderCompleteCount,
+        labelsReady: this.labelsReady,
+        labelsReadyModes: Array.from(this.labelsReadyModes),
+        poiLabelCount: this.overlays.poiMarkers?.length || 0,
+        poiVisibleCount: this.countVisiblePoiLabels(),
+        poiSearchStatus: this.poiSearchStatus
+      };
+    }
     getUsage() { return readUsage(); }
     getCameraMode() { return this.cameraMode; }
     isTrafficVisible() { return this.trafficVisible; }
@@ -1042,9 +1302,15 @@
 
   return {
     MAX_FAILURE_FALLBACK_MS,
+    DEFAULT_SCRIPT_LOAD_TIMEOUT_MS,
+    MAX_SCRIPT_LOAD_TIMEOUT_MS,
+    DEFAULT_ROUTE_TIMEOUT_MS,
+    MAX_ROUTE_TIMEOUT_MS,
     USAGE_KEY,
     bearing,
     boundedTimeoutMs,
+    boundedScriptLoadTimeoutMs,
+    boundedRouteTimeoutMs,
     buildTimedMotionPath,
     buildRouteGeometry,
     create(options) { return new AuriAmapAdapter(options); },
@@ -1055,6 +1321,8 @@
     pathBetweenProgress,
     routeOverviewCamera,
     routeMeta,
+    routeRoadLabels,
+    waitForMapLabels,
     runtimeSupportsWebgl,
     screenHeading,
     trafficColor

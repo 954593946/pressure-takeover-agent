@@ -342,7 +342,6 @@ async function loadState(reason = "load") {
 function consumeState(next, reason = "state") {
   if (!next || next.schema_version !== "0.2.0") return;
   if (worldState && next.session_id === worldState.session_id && next.revision <= lastRevision) return false;
-  const previousTaskCount = worldState?.session_id === next.session_id ? worldState.tasks?.length || 0 : 0;
   if (worldState && next.session_id !== worldState.session_id) {
     stableEventIds.clear();
     completedStepKeys.clear();
@@ -350,7 +349,10 @@ function consumeState(next, reason = "state") {
   }
   worldState = next;
   lastRevision = next.revision;
-  if (!mobileTaskSyncAcknowledged && next.tasks?.length && previousTaskCount === 0) {
+  // A phone may create tasks before the Console opens or while it reconnects.
+  // A non-empty task snapshot is therefore sufficient proof of mobile sync;
+  // relying only on a live 0 -> N edge leaves the director flow locked.
+  if (!mobileTaskSyncAcknowledged && next.tasks?.length) {
     mobileTaskSyncAcknowledged = true;
     completedStepKeys.add("waitTask");
     log("mobile", "task synced", `${next.tasks.length} 项任务 · r${next.revision}`);
@@ -637,9 +639,13 @@ function renderDirector() {
   ui.nextStepHint.textContent = waitingForMobileTask
     ? "等待手机语音创建任务"
     : step.stage === "主线完成" ? "主线完成" : `下一步：${step.stage}`;
+  const nextAction = SCRIPT_STEPS[index]?.key;
+  const nextBlockReason = nextAction ? blockedReason(nextAction) : "";
   ui.hostCue.textContent = waitingForMobileTask
     ? "主持提示：当前任务为空；手机语音创建后将自动进入会议延迟步骤。"
-    : `主持提示：${step.cue}`;
+    : nextBlockReason
+      ? `暂不可执行：${nextBlockReason}`
+      : `主持提示：${step.cue}`;
   document.querySelectorAll(".script-list button[data-action]").forEach((button) => {
     const action = button.dataset.action;
     const stepIndex = SCRIPT_STEPS.findIndex((item) => item.key === action);
@@ -762,9 +768,9 @@ async function connectStream() {
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      const chunks = buffer.split("\n\n");
-      buffer = chunks.pop() || "";
-      chunks.forEach(parseStreamChunk);
+      const parsed = splitSseFrames(buffer);
+      buffer = parsed.rest;
+      parsed.frames.forEach(parseStreamChunk);
     }
     throw new Error("stream ended");
   } catch (error) {
@@ -787,11 +793,24 @@ function waitForSyncMode(expected, timeoutMs) {
   });
 }
 
+function splitSseFrames(buffer) {
+  const chunks = String(buffer || "").split(/\r?\n\r?\n/);
+  return { frames: chunks.slice(0, -1), rest: chunks.at(-1) || "" };
+}
+
+function parseSseData(chunk) {
+  const lines = String(chunk || "").split(/\r?\n/);
+  const dataLines = lines
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).replace(/^ /, ""));
+  return dataLines.length ? dataLines.join("\n") : "";
+}
+
 function parseStreamChunk(chunk) {
-  const dataLine = chunk.split("\n").find((line) => line.startsWith("data: "));
-  if (!dataLine) return;
+  const data = parseSseData(chunk);
+  if (!data) return;
   try {
-    consumeState(JSON.parse(dataLine.slice(6)), "stream");
+    consumeState(JSON.parse(data), "stream");
     if (syncMode === "sse") renderSyncMode(`r${worldState?.revision ?? "--"} · 实时推送`);
   } catch (error) {
     log("error", "stream parse failed", friendlyError(error));
@@ -950,6 +969,8 @@ function sanitizeLog(text) {
     .replace(/X-Agent-Token:\s*\S+/gi, "X-Agent-Token: ***")
     .replace(/access_token=[^&\s]+/gi, "access_token=***");
 }
+
+window.AURI_DEMO_CONSOLE_TEST = { parseSseData, splitSseFrames };
 
 initConfig();
 render();

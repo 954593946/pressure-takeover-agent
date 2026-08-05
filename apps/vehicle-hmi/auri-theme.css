@@ -417,6 +417,7 @@ body {
 }
 
 .auri-takeover-action {
+  width: 100%;
   min-height: 44px;
   padding: 0 9px;
   display: grid;
@@ -426,7 +427,21 @@ body {
   border: 1px solid rgba(126, 183, 255, 0.11);
   border-radius: 10px;
   background: rgba(245, 242, 236, 0.035);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
 }
+
+.auri-takeover-action:hover,
+.auri-takeover-action:focus-visible {
+  border-color: rgba(212, 175, 122, 0.46);
+  background: rgba(245, 242, 236, 0.075);
+  outline: none;
+}
+
+.auri-takeover-action:active { transform: translateY(1px); }
 
 .auri-takeover-action > span {
   width: 23px;
@@ -1058,6 +1073,31 @@ body {
 .auri-amap-chevron.is-2 { opacity: 0.68; }
 .auri-amap-chevron.is-3 { opacity: 0.44; }
 
+.auri-amap-route-label {
+  display: inline-flex;
+  min-height: 24px;
+  padding: 0 8px;
+  align-items: center;
+  border: 1px solid rgba(11, 27, 51, 0.13);
+  border-radius: 7px;
+  color: rgba(11, 27, 51, 0.78);
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 3px 10px rgba(11, 27, 51, 0.1);
+  backdrop-filter: blur(8px);
+  font: 650 12px/1 Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+  white-space: nowrap;
+}
+
+.auri-amap-route-label.is-current {
+  min-height: 28px;
+  padding: 0 10px;
+  border-color: rgba(47, 107, 255, 0.28);
+  color: #fff;
+  background: rgba(11, 27, 51, 0.9);
+  box-shadow: 0 5px 16px rgba(11, 27, 51, 0.22);
+  font-size: 13px;
+}
+
 .auri-amap-canvas .amap-logo,
 .auri-amap-canvas .amap-copyright {
   opacity: 0.72 !important;
@@ -1336,6 +1376,33 @@ body {
   color: #ff8492 !important;
   border-color: rgba(209, 73, 91, 0.44) !important;
   background: rgba(209, 73, 91, 0.12) !important;
+}
+
+.auri-demo-data-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(212, 175, 122, 0.38);
+  border-radius: 999px;
+  color: #f1d5a8;
+  background: rgba(212, 175, 122, 0.1);
+  font-size: 14px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.vd-hud-overlay .vh-speed .vh-source {
+  margin-top: 8px;
+  padding: 5px 9px;
+  border: 1px solid rgba(212, 175, 122, 0.34);
+  border-radius: 999px;
+  color: #f2d4a3;
+  background: rgba(11, 27, 51, 0.78);
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .left-panel.auri-shell-panel .lp-body {
@@ -2230,9 +2297,9 @@ body {
 .auri-action-step b,
 .auri-action-step small { display: block; }
 .auri-action-step b { font-size: 20px; }
-.auri-action-step small { margin-top: 5px; max-width: 100%; color: rgba(245, 242, 236, 0.52); font-size: 16px; line-height: 1.4; }
+.auri-action-step small { margin-top: 5px; max-width: 100%; color: rgba(245, 242, 236, 0.62); font-size: 18px; line-height: 1.4; }
 .auri-action-step small { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.auri-action-step em { color: var(--auri-gold); font-size: 15px; font-style: normal; white-space: nowrap; }
+.auri-action-step em { color: var(--auri-gold); font-size: 18px; font-style: normal; white-space: nowrap; }
 
 .auri-sync-board { position: relative; display: grid; gap: 12px; }
 .auri-sync-line { position: absolute; left: 39px; top: 60px; bottom: 112px; width: 2px; background: linear-gradient(var(--state-success), rgba(47, 107, 255, 0.22)); }
@@ -2587,8 +2654,8 @@ body {
 }
 .auri-driver-panel .auri-shell-row { min-height: 74px; padding: 14px 15px; }
 .auri-driver-panel .auri-shell-row-copy strong { font-size: 18px; }
-.auri-driver-panel .auri-shell-row-copy span { font-size: 14px; line-height: 1.4; }
-.auri-driver-panel .auri-shell-row-state { font-size: 13px; }
+.auri-driver-panel .auri-shell-row-copy span { font-size: 18px; line-height: 1.4; }
+.auri-driver-panel .auri-shell-row-state { font-size: 18px; }
 
 .auri-driver-brand b { font-size: 24px; }
 .auri-driver-brand small { font-size: 13px; }
@@ -2667,7 +2734,23 @@ body {
   font-size: 12px;
   font-weight: 700;
 }
-.auri-takeover-section-head { display: flex; align-items: center; justify-content: space-between; }
+.auri-takeover-section-head {
+  width: 100%;
+  min-height: 30px;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.auri-takeover-section-head > span:last-child { display: flex; align-items: center; gap: 5px; }
+.auri-takeover-section-head .auri-icon { width: 15px; height: 15px; transform: rotate(180deg); }
+.auri-takeover-section-head:hover,
+.auri-takeover-section-head:focus-visible { color: var(--auri-gold); outline: none; }
 .auri-takeover-section-head em { color: #a9c7ff; font-style: normal; }
 .auri-driver-panel .auri-takeover-conclusion {
   min-height: 0;
@@ -2999,16 +3082,16 @@ body {
 }
 .auri-action-board > header > span small,
 .auri-action-board > header > span b { display: block; }
-.auri-action-board > header > span small { color: rgba(245, 242, 236, 0.5); font-size: 13px; }
-.auri-action-board > header > span b { margin-top: 3px; font-size: 20px; }
-.auri-action-board > header > em { color: #a9c7ff; font-size: 24px; font-style: normal; font-weight: 720; }
+.auri-action-board > header > span small { color: rgba(245, 242, 236, 0.62); font-size: 27px; }
+.auri-action-board > header > span b { margin-top: 5px; font-size: 30px; }
+.auri-action-board > header > em { color: #a9c7ff; font-size: 30px; font-style: normal; font-weight: 720; }
 .auri-action-progress { height: 5px; overflow: hidden; border-radius: 99px; background: rgba(245, 242, 236, 0.08); }
 .auri-action-progress > i { height: 100%; display: block; border-radius: inherit; background: linear-gradient(90deg, var(--state-processing), var(--state-success)); transition: width 240ms ease; }
 .auri-action-list { display: grid; gap: 8px; }
 .auri-action-step {
-  min-height: 88px;
-  padding: 12px;
-  grid-template-columns: 44px minmax(0, 1fr) auto;
+  min-height: 132px;
+  padding: 16px;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
   border: 1px solid rgba(245, 242, 236, 0.09);
   border-radius: 16px;
   background: rgba(245, 242, 236, 0.035);
@@ -3021,10 +3104,10 @@ body {
 .auri-action-step-copy small,
 .auri-action-step-copy b,
 .auri-action-step-copy em { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.auri-action-step-copy small { color: #9ebdff; font-size: 12px; }
-.auri-action-step-copy b { margin-top: 3px; font-size: 18px; }
-.auri-action-step-copy em { margin-top: 5px; color: rgba(245, 242, 236, 0.52); font-size: 13px; font-style: normal; }
-.auri-action-step-state { padding: 6px 8px; border-radius: 999px; color: var(--auri-gold); background: rgba(212, 175, 122, 0.08); font-size: 11px; white-space: nowrap; }
+.auri-action-step-copy small { color: #a9c7ff; font-size: 27px; }
+.auri-action-step-copy b { margin-top: 4px; font-size: 29px; }
+.auri-action-step-copy em { margin-top: 7px; color: rgba(245, 242, 236, 0.68); font-size: 27px; font-style: normal; }
+.auri-action-step-state { padding: 8px 10px; border-radius: 999px; color: var(--auri-gold); background: rgba(212, 175, 122, 0.08); font-size: 27px; white-space: nowrap; }
 .auri-action-step.is-completed .auri-action-step-state { color: #79d9b3; background: rgba(46, 157, 111, 0.1); }
 
 .auri-task-detail,
@@ -3193,3 +3276,149 @@ body {
 .map-route-traffic.is-congested { stroke: #d1495b; stroke-dasharray: 13 87; stroke-dashoffset: -47; }
 .map-route-traffic.is-severe { stroke: #8f2032; stroke-dasharray: 12 88; stroke-dashoffset: -61; }
 article.auri-action-step { cursor: default; }
+
+.auri-amap-poi-label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  color: #26364a;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 5px;
+  font: 650 13px/1.2 Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+  text-shadow:
+    -1px -1px 0 rgba(255, 255, 255, 0.98),
+    1px -1px 0 rgba(255, 255, 255, 0.98),
+    -1px 1px 0 rgba(255, 255, 255, 0.98),
+    1px 1px 0 rgba(255, 255, 255, 0.98),
+    0 1px 3px rgba(255, 255, 255, 0.92);
+  white-space: nowrap;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 3px rgba(11, 27, 51, 0.12));
+}
+.auri-amap-poi-label::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border: 2px solid rgba(255, 255, 255, 0.96);
+  border-radius: 50%;
+  background: #6d91b4;
+  box-shadow: 0 0 0 1px rgba(11, 27, 51, 0.1);
+}
+
+/* Phase 16: make Agent proposals glanceable without covering navigation. */
+.auri-takeover-card[data-stage="service_prepared"],
+.auri-takeover-card[data-stage="waiting_confirmation"] {
+  border-color: rgba(212, 175, 122, 0.5);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28), inset 3px 0 rgba(212, 175, 122, 0.72);
+  animation: auriPlanReadyReveal 420ms cubic-bezier(.2, .8, .2, 1) both !important;
+}
+
+.auri-takeover-section-head {
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid rgba(212, 175, 122, 0.22);
+  border-radius: 12px;
+  color: rgba(245, 242, 236, 0.82);
+  background: rgba(212, 175, 122, 0.07);
+  font-size: 16px;
+}
+.auri-takeover-section-head > span:first-child { font-weight: 720; }
+.auri-takeover-section-head em {
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: #f0cc94;
+  background: rgba(212, 175, 122, 0.12);
+  font-size: 13px;
+}
+
+.auri-driver-panel .auri-takeover-actions {
+  max-height: 252px;
+  gap: 9px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.auri-driver-panel .auri-takeover-action {
+  min-height: 68px;
+  padding: 9px 11px;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 11px;
+  border-color: rgba(126, 183, 255, 0.16);
+  border-radius: 14px;
+  background: rgba(245, 242, 236, 0.045);
+}
+.auri-driver-panel .auri-takeover-action > span:first-child {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+}
+.auri-driver-panel .auri-takeover-action > span:first-child .auri-icon { width: 22px; height: 22px; }
+.auri-driver-panel .auri-takeover-action b {
+  font-size: 20px;
+  line-height: 1.22;
+  font-weight: 680;
+}
+.auri-takeover-action-copy > em {
+  color: rgba(245, 242, 236, 0.62);
+  font-size: 15px;
+  line-height: 1.28;
+}
+.auri-driver-panel .auri-takeover-action > small {
+  max-width: none;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: #f0cc94;
+  background: rgba(212, 175, 122, 0.1);
+  font-size: 14px;
+  font-weight: 700;
+}
+.auri-driver-panel .auri-takeover-action.is-completed > small {
+  color: #79d9b3;
+  background: rgba(46, 157, 111, 0.11);
+}
+.auri-order-meta i { font-size: 12px; }
+.auri-driver-panel .auri-takeover-confirm,
+.hmi.is-ultrawide .auri-driver-panel .auri-takeover-confirm { min-height: 84px; }
+.auri-takeover-confirm > span { font-size: 21px; }
+.auri-takeover-card[data-stage="service_prepared"] .auri-takeover-next,
+.auri-takeover-card[data-stage="waiting_confirmation"] .auri-takeover-next {
+  min-height: 42px;
+  padding-block: 5px;
+}
+
+.auri-stage-notice.is-plan-ready {
+  width: min(520px, calc(100% - 36px));
+  min-height: 112px;
+  padding: 15px 14px 15px 16px;
+  grid-template-columns: 50px minmax(0, 1fr) 36px;
+  border-color: rgba(230, 167, 0, 0.48);
+  background: rgba(11, 27, 51, 0.96);
+  box-shadow: 0 18px 46px rgba(3, 9, 24, 0.34), inset 3px 0 rgba(230, 167, 0, 0.78);
+}
+.auri-stage-notice.is-plan-ready .auri-stage-notice-icon { width: 48px; height: 48px; }
+.auri-stage-notice.is-plan-ready small { font-size: 13px; }
+.auri-stage-notice.is-plan-ready b { margin-top: 4px; font-size: 22px; }
+.auri-stage-notice.is-plan-ready em { margin-top: 6px; font-size: 15px; line-height: 1.35; white-space: normal; }
+
+@keyframes auriPlanReadyReveal {
+  from { opacity: 0.55; transform: translateX(-10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (max-width: 1500px) and (max-height: 760px) {
+  .auri-driver-panel .auri-takeover-head b { font-size: 25px; }
+  .auri-driver-panel .auri-takeover-head small { font-size: 16px; }
+  .auri-takeover-section-head { min-height: 46px; font-size: 19px; }
+  .auri-takeover-section-head em { font-size: 16px; }
+  .auri-driver-panel .auri-takeover-action { min-height: 76px; }
+  .auri-driver-panel .auri-takeover-action b { font-size: 27px; }
+  .auri-takeover-action-copy > em { font-size: 19px; }
+  .auri-driver-panel .auri-takeover-action > small { font-size: 17px; }
+  .auri-order-meta i { font-size: 15px; }
+  .auri-driver-panel .auri-takeover-confirm { min-height: 88px; }
+  .auri-takeover-confirm > span { font-size: 25px; }
+  .auri-stage-notice.is-plan-ready b { font-size: 25px; }
+  .auri-stage-notice.is-plan-ready em { font-size: 17px; }
+}

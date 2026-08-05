@@ -61,6 +61,7 @@ def main() -> None:
         "stream": False,
         "mapProvider": "amap",
         "amapKey": "browser-fallback-test-key",
+        "amapRouteTimeoutMs": 1800,
         "amapMonthlyMapLimit": 20,
         "amapMonthlyRouteLimit": 20,
     }

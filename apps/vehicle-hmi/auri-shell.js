@@ -1,6 +1,161 @@
 (function initAuriCockpit() {
   "use strict";
 
+  const speechBriefing = (() => {
+    const READY_STAGES = new Set(["service_prepared", "waiting_confirmation"]);
+    const SURFACE_LABELS = {
+      vehicle_hmi: "车机",
+      mobile: "手机",
+      wearable: "腕表"
+    };
+
+    function asArray(value) {
+      return Array.isArray(value) ? value.filter(Boolean) : [];
+    }
+
+    function cleanText(value, maxLength = 46) {
+      const text = String(value || "")
+        .replace(/\s+/g, " ")
+        .replace(/[（(][^）)]{0,72}[）)]/g, "")
+        .trim();
+      if (!text) return "";
+      const firstSentence = text.split(/[。！？!?]/)[0].trim() || text;
+      return firstSentence.length > maxLength ? `${firstSentence.slice(0, Math.max(1, maxLength - 1)).trim()}…` : firstSentence;
+    }
+
+    function selectChineseVoice(voices) {
+      return asArray(voices).find((voice) => /^zh(?:-|_)/i.test(String(voice?.lang || "")))
+        || asArray(voices).find((voice) => /中文|普通话|mandarin|chinese/i.test(String(voice?.name || "")))
+        || null;
+    }
+
+    function displayMoney(value) {
+      const amount = Number(value);
+      if (!Number.isFinite(amount) || amount < 0) return "";
+      return `共${Number.isInteger(amount) ? amount : amount.toFixed(1)}元`;
+    }
+
+    function orderBrief(order) {
+      if (!order || typeof order !== "object") return "";
+      const itemCount = asArray(order.items).reduce((sum, item) => sum + Math.max(0, Number(item?.quantity) || 0), 0);
+      const parts = [
+        itemCount ? `${itemCount}件物品` : "",
+        displayMoney(order.total),
+        cleanText(order.delivery_window || order.deliveryWindow, 22)
+      ].filter(Boolean);
+      return parts.join("，");
+    }
+
+    function actionBrief(actions, serviceOrders) {
+      const messages = asArray(actions)
+        .filter((action) => action?.type === "message")
+        .map((action) => cleanText(action.target, 18))
+        .filter(Boolean);
+      const uniqueTargets = [...new Set(messages)];
+      const parts = [];
+      if (uniqueTargets.length) {
+        const visible = uniqueTargets.slice(0, 2);
+        const suffix = uniqueTargets.length > visible.length ? `等${uniqueTargets.length}位联系人` : visible.join("和");
+        parts.push(`已准备通知${suffix}`);
+      }
+      const hasService = asArray(actions).some((action) => action?.type === "service_order") || asArray(serviceOrders).length > 0;
+      if (hasService) {
+        const order = asArray(serviceOrders)[0];
+        const summary = orderBrief(order);
+        parts.push(summary ? `已准备配送，${summary}` : "已准备生活服务方案");
+      }
+      const otherCount = asArray(actions).filter((action) => !["message", "service_order"].includes(action?.type)).length;
+      if (otherCount) parts.push(`已整理${otherCount}项后续安排`);
+      return parts;
+    }
+
+    function actionCountBrief(actions, serviceOrders, completed = false) {
+      const items = asArray(actions);
+      const messageCount = items.filter((action) => action?.type === "message").length;
+      const hasService = items.some((action) => action?.type === "service_order") || asArray(serviceOrders).length > 0;
+      const otherCount = items.filter((action) => !["message", "service_order"].includes(action?.type)).length;
+      const parts = [
+        messageCount ? `${messageCount}条消息` : "",
+        hasService ? "1项配送方案" : "",
+        otherCount ? `${otherCount}项后续安排` : ""
+      ].filter(Boolean);
+      if (!parts.length) return "";
+      return `${parts.join("和")}${completed ? "已完成" : "已准备"}`;
+    }
+
+    function confirmationBrief(confirmation) {
+      if (!confirmation || confirmation.status !== "pending") return "";
+      const surface = SURFACE_LABELS[confirmation.owner_surface] || "当前设备";
+      return surface === "车机" ? "请说确认，或在车机确认" : `请在${surface}确认`;
+    }
+
+    function build(state) {
+      if (!state || state.primary_surface !== "vehicle_hmi" || !READY_STAGES.has(state.stage)) return "";
+      const parts = ["AURI 已准备处理方案"];
+      const lateMinutes = Math.max(0, Number(state.risk?.late_minutes) || 0);
+      const conclusion = cleanText(state.output?.conclusion, 28);
+      if (lateMinutes) parts.push(`当前预计晚到${Math.round(lateMinutes)}分钟`);
+      else if (conclusion) parts.push(conclusion);
+      const actions = actionCountBrief(state.actions, state.service_orders);
+      if (actions) parts.push(actions);
+      else if (!conclusion) parts.push("已整理本次处理步骤");
+      const confirmation = confirmationBrief(state.confirmation);
+      if (confirmation) parts.push(confirmation);
+      return `${parts.join("。")}${parts.length ? "。" : ""}`;
+    }
+
+    function keyFor(state) {
+      if (!state || state.primary_surface !== "vehicle_hmi" || !READY_STAGES.has(state.stage)) return "";
+      const plan = {
+        conclusion: cleanText(state.output?.conclusion, 72),
+        actions: asArray(state.actions).map((action) => [
+          action?.action_id || "", action?.type || "", action?.target || "", action?.status || "", action?.summary || ""
+        ]),
+        confirmation: state.confirmation ? [
+          state.confirmation.confirmation_id || "", state.confirmation.status || "", state.confirmation.owner_surface || "",
+          ...asArray(state.confirmation.action_ids)
+        ] : [],
+        orders: asArray(state.service_orders).map((order) => [
+          order?.preview_id || order?.order_id || "", order?.status || "", order?.total || "", order?.delivery_window || "",
+          ...asArray(order?.items).map((item) => [item?.sku || item?.name || "", item?.quantity || 0, item?.unit_price || 0])
+        ])
+      };
+      return `${state.session_id || "session"}:${JSON.stringify(plan)}`;
+    }
+
+    function completionKeyFor(state) {
+      if (!state || state.stage !== "action_completed" || state.primary_surface !== "vehicle_hmi") return "";
+      const result = {
+        actions: asArray(state.actions).map((action) => [
+          action?.action_id || "", action?.type || "", action?.target || "", action?.status || ""
+        ]),
+        orders: asArray(state.service_orders).map((order) => [
+          order?.preview_id || order?.order_id || "", order?.status || "", order?.total || "", order?.delivery_window || ""
+        ])
+      };
+      return `${state.session_id || "session"}:${JSON.stringify(result)}`;
+    }
+
+    function buildCompletion(state) {
+      if (!state || state.stage !== "action_completed" || state.primary_surface !== "vehicle_hmi") return "";
+      const lateMinutes = Math.max(0, Number(state.risk?.late_minutes) || 0);
+      const conclusion = cleanText(state.output?.conclusion, 30);
+      const completed = asArray(state.actions).filter((action) => ["completed", "sent", "submitted"].includes(action?.status));
+      const parts = ["AURI 已完成处理"];
+      if (lateMinutes) parts.push(`当前预计晚到${Math.round(lateMinutes)}分钟`);
+      else if (conclusion) parts.push(conclusion);
+      else if (completed.length) parts.push(`${completed.length}项结果已经同步`);
+      const completedSummary = actionCountBrief(completed, state.service_orders, true);
+      if (completedSummary) parts.push(completedSummary);
+      parts.push("请继续安全驾驶");
+      return `${parts.join("。")}。`;
+    }
+
+    return { build, buildCompletion, keyFor, completionKeyFor, selectChineseVoice, orderBrief, actionBrief, actionCountBrief, confirmationBrief };
+  })();
+  // Exposed as pure helpers for deterministic tests and diagnostic tooling.
+  window.AuriHmiSpeechBriefing = speechBriefing;
+
   const model = window.AuriWorldStateModel;
   const agentModule = window.AuriAgentClient;
   const amapModule = window.AuriAmapAdapter;
@@ -117,6 +272,11 @@
     try { return JSON.parse(sessionStorage.getItem("auri-hmi-next-completion-speech") || "[]"); }
     catch (_error) { return []; }
   })());
+  const solutionBriefingKeys = new Set((() => {
+    try { return JSON.parse(sessionStorage.getItem("auri-hmi-next-solution-briefing") || "[]"); }
+    catch (_error) { return []; }
+  })());
+  let latestSolutionBriefing = null;
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -129,10 +289,8 @@
 
   function presentationText(value) {
     return String(value ?? "")
-      .replace(/[（(][^）)]*(?:Demo|模拟|未连接真实)[^）)]*[）)]/gi, "")
-      .replace(/[（(]\s*模拟(?:消息|订单|配送|服务)?\s*[）)]/g, "")
-      .replace(/模拟商超/g, "商超")
-      .replace(/模拟配送/g, "配送")
+      .replace(/[（(][^）)]*未连接真实通讯服务[^）)]*[）)]/g, "（Demo 模拟消息）")
+      .replace(/[（(][^）)]*未发生真实支付[^）)]*[）)]/g, "（Demo 模拟订单）")
       .replace(/\s{2,}/g, " ")
       .trim();
   }
@@ -327,7 +485,9 @@
         <span class="auri-takeover-verdict-copy"><small>现实结论</small><p class="auri-takeover-conclusion" id="auri-takeover-conclusion"></p></span>
         <em id="auri-takeover-verdict-status">已判断</em>
       </div>
-      <div class="auri-takeover-section-head"><span>AURI 已准备</span><em id="auri-takeover-action-count">0 项</em></div>
+      <button class="auri-takeover-section-head" type="button" data-panel-target="messages" aria-label="查看处理进度">
+        <span>Agent 处理方案</span><span><em id="auri-takeover-action-count">0 项</em>${iconSvg("back")}</span>
+      </button>
       <div class="auri-takeover-actions" id="auri-takeover-actions"></div>
       <div class="auri-takeover-devices" id="auri-takeover-devices"></div>
       <div class="auri-takeover-next" id="auri-takeover-next"><small>下一步</small><b>保持驾驶，等待处理结果</b></div>
@@ -404,8 +564,8 @@
         title: order
           ? action.status === "completed" ? "配送已安排" : "配送方案已准备"
           : isMessage ? `通知${presentationText(action.target) || "联系人"}` : actionTargetLabel(action),
-        detail: order ? "" : isMessage ? "消息草稿已生成" : presentationText(action.preview),
-        meta: orderMeta,
+        detail: order ? "模拟订单" : isMessage ? "消息草稿已生成 · 模拟消息" : presentationText(action.preview),
+        meta: order ? [...orderMeta, "Demo 数据"] : orderMeta,
         state: action.statusLabel,
         completed: action.status === "completed"
       };
@@ -516,6 +676,7 @@
 
     const [label, fallback, tone] = TAKEOVER_STAGE_VIEW[stage] || [viewModel.lifecycle.stageLabel, "保持当前路线。", "processing"];
     card.dataset.tone = tone;
+    card.dataset.stage = stage;
     document.getElementById("auri-takeover-stage").textContent = label;
     const riskLine = document.getElementById("auri-takeover-risk");
     riskLine.textContent = stage === "parked_review"
@@ -557,7 +718,7 @@
     const actions = takeoverActions();
     document.getElementById("auri-takeover-action-count").textContent = `${actions.length} 项`;
     document.getElementById("auri-takeover-actions").innerHTML = actions.map((action) => `
-      <div class="auri-takeover-action${action.completed ? " is-completed" : ""}">
+      <button type="button" data-panel-target="messages" aria-label="查看处理进度：${escapeHtml(action.title)}" class="auri-takeover-action${action.completed ? " is-completed" : ""}">
         <span>${iconSvg(action.icon)}</span>
         <span class="auri-takeover-action-copy">
           <b>${escapeHtml(action.title)}</b>
@@ -565,7 +726,7 @@
           ${action.meta?.length ? `<span class="auri-order-meta">${action.meta.map((item) => `<i>${escapeHtml(item)}</i>`).join("")}</span>` : ""}
         </span>
         <small>${escapeHtml(action.state)}</small>
-      </div>
+      </button>
     `).join("");
 
     const connected = ["streaming", "polling_fallback"].includes(connectionStatus.type);
@@ -637,6 +798,16 @@
   }
 
   function renderDeviceNotice() {
+    if (["service_prepared", "waiting_confirmation"].includes(viewModel.lifecycle.stage)) {
+      clearTimeout(noticeTimer);
+      clearTimeout(noticeHideTimer);
+      const notice = document.getElementById("auri-device-notice");
+      if (notice) {
+        notice.classList.remove("is-visible");
+        notice.hidden = true;
+      }
+      return;
+    }
     const wearable = viewModel.wearable;
     if (!wearable.commandId || wearable.mode === "idle" || !wearable.haptic || wearable.haptic === "none") {
       const notice = document.getElementById("auri-device-notice");
@@ -687,7 +858,21 @@
     if (stage === "handover_to_vehicle") return ["场景切换", "路线正在同步到车机", `${destination} · 手机进入驾驶只读`, "handover"];
     if (stage === "vehicle_observation") return ["导航已接续", `正在前往 ${destination}`, "ETA 与任务状态会持续同步", "guidance"];
     if (["takeover_L2", "takeover_L3", "planning"].includes(stage)) return ["手机求助已接收", "AURI 正在处理现实问题", "正在核对 ETA、任务优先级和可代办事项", stage === "takeover_L3" ? "critical" : "guidance"];
-    if (["service_prepared", "waiting_confirmation"].includes(stage)) return ["处理方案已准备", "只需确认一次", "消息与可调整事项已在左侧就绪", "warning"];
+    if (["service_prepared", "waiting_confirmation"].includes(stage)) {
+      const messageCount = viewModel.actions.items.filter((action) => action.type === "message").length;
+      const serviceCount = viewModel.actions.items.filter((action) => action.type === "service_order").length;
+      const total = viewModel.actions.items.length;
+      const parts = [
+        messageCount ? `${messageCount} 条消息` : "",
+        serviceCount ? `${serviceCount} 个生活服务` : ""
+      ].filter(Boolean);
+      return [
+        "需要一次确认",
+        "AURI 处理方案已准备",
+        `${total || "多"} 项方案${parts.length ? ` · ${parts.join(" · ")}` : ""}，可语音或在左侧确认`,
+        "warning"
+      ];
+    }
     if (stage === "action_completed") return ["处理完成", total ? `${completed}/${total} 项动作已完成` : "本次问题已处理", "手机、腕表与车机正在同步结果", "success"];
     if (stage === "cooldown") return ["恢复驾驶", "AURI 已降低打扰", "按当前路线继续即可", "success", true];
     if (stage === "parked_review") return ["本次接管结束", "完整记录已同步到手机", "消息、订单和处理结果可在手机查看", "success"];
@@ -696,8 +881,12 @@
 
   function renderStageNotice() {
     const deviceNotice = document.getElementById("auri-device-notice");
+    const planReadyStage = ["service_prepared", "waiting_confirmation"].includes(viewModel.lifecycle.stage);
     if (deviceNotice && !deviceNotice.hidden) {
-      if (deviceNotice.dataset.stage !== viewModel.lifecycle.stage) {
+      // The plan is the driver's actionable information. During confirmation
+      // stages it owns the single notification lane; wearable feedback remains
+      // visible in the persistent cross-device status instead of covering it.
+      if (planReadyStage || deviceNotice.dataset.stage !== viewModel.lifecycle.stage) {
         clearTimeout(noticeTimer);
         clearTimeout(noticeHideTimer);
         deviceNotice.classList.remove("is-visible");
@@ -725,6 +914,7 @@
     const [kicker, title, detail, tone, persistent] = view;
     notice.dataset.tone = tone;
     notice.dataset.stage = viewModel.lifecycle.stage;
+    notice.classList.toggle("is-plan-ready", ["service_prepared", "waiting_confirmation"].includes(viewModel.lifecycle.stage));
     document.getElementById("auri-stage-notice-kicker").textContent = kicker;
     document.getElementById("auri-stage-notice-title").textContent = title;
     document.getElementById("auri-stage-notice-detail").textContent = detail;
@@ -732,26 +922,81 @@
     notice.hidden = false;
     requestAnimationFrame(() => notice.classList.add("is-visible"));
     clearTimeout(stageNoticeTimer);
-    if (!persistent) stageNoticeTimer = setTimeout(hideStageNotice, 4800);
+    if (!persistent) {
+      const duration = ["service_prepared", "waiting_confirmation"].includes(viewModel.lifecycle.stage) ? 7200 : 4800;
+      stageNoticeTimer = setTimeout(hideStageNotice, duration);
+    }
   }
 
   function announceCompletion() {
     if (viewModel.lifecycle.stage !== "action_completed" || viewModel.lifecycle.primarySurface !== "vehicle_hmi") return;
-    const messageId = viewModel.agentOutput.messageId;
-    if (!messageId) return;
-    const key = `${viewModel.meta.sessionId}:${messageId}`;
+    const state = client.getSnapshot();
+    const briefing = speechBriefing.buildCompletion(state);
+    if (!briefing) return;
+    const key = speechBriefing.completionKeyFor(state);
+    if (!key) return;
     if (completionSpeechKeys.has(key)) return;
     completionSpeechKeys.add(key);
     try {
       sessionStorage.setItem("auri-hmi-next-completion-speech", JSON.stringify([...completionSpeechKeys].slice(-30)));
-      if (window.speechSynthesis && window.SpeechSynthesisUtterance) {
-        const utterance = new SpeechSynthesisUtterance("已处理，你按当前速度安全驾驶即可。");
-        utterance.lang = "zh-CN";
-        utterance.rate = 0.96;
-        utterance.pitch = 1;
-        window.speechSynthesis.speak(utterance);
-      }
+      speakSolutionBriefing(briefing);
     } catch (_error) { /* TTS is a non-blocking output channel. */ }
+  }
+
+  function isSpeechMuted() {
+    try {
+      return typeof window._voiceSuppressed === "function"
+        ? window._voiceSuppressed("medium")
+        : window.__voiceMuted === true;
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  function speakSolutionBriefing(briefing) {
+    if (!briefing || isSpeechMuted()) return false;
+    try {
+      if (typeof window.AURI_HMI_SPEECH_ADAPTER?.speak === "function") {
+        return window.AURI_HMI_SPEECH_ADAPTER.speak(briefing) !== false;
+      }
+      if (window.SAFEDRIVER_CONFIG?.ttsKey && typeof window.speakText === "function") {
+        void Promise.resolve(window.speakText(briefing, "longxiaochun", null, { priority: "medium" }));
+        return true;
+      }
+      if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return false;
+      const voices = window.speechSynthesis.getVoices?.() || [];
+      const chineseVoice = speechBriefing.selectChineseVoice(voices);
+      // Never let an English fallback voice read Chinese text. That produces
+      // unintelligible repeated syllables on Firefox/Linux installations.
+      if (!chineseVoice) return false;
+      window.speechSynthesis.cancel?.();
+      const utterance = new SpeechSynthesisUtterance(briefing);
+      utterance.voice = chineseVoice;
+      utterance.lang = chineseVoice.lang || "zh-CN";
+      utterance.rate = 0.98;
+      utterance.pitch = 1;
+      window.speechSynthesis.speak(utterance);
+      return true;
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  function announceSolutionReadiness(state) {
+    const key = speechBriefing.keyFor(state);
+    const briefing = speechBriefing.build(state);
+    if (!key || !briefing) return;
+    latestSolutionBriefing = { key, briefing };
+    if (solutionBriefingKeys.has(key)) return;
+    solutionBriefingKeys.add(key);
+    try {
+      sessionStorage.setItem("auri-hmi-next-solution-briefing", JSON.stringify([...solutionBriefingKeys].slice(-40)));
+    } catch (_error) { /* Session persistence is only a duplicate-speech guard. */ }
+    speakSolutionBriefing(briefing);
+  }
+
+  function replaySolutionBriefing() {
+    return speakSolutionBriefing(latestSolutionBriefing?.briefing || "");
   }
 
   function confirmationErrorMessage(error) {
@@ -813,6 +1058,7 @@
   }
 
   function taskBoardContent(vm) {
+    const demoExternalData = vm.navigation.route?.isSimulated === true || Boolean(client.getSnapshot()?.service_mock_mode);
     const groups = [
       ["rigid", "刚性任务", "优先保护时间窗口", "calendar"],
       ["flexible", "弹性任务", "可调整或转交 Agent", "flexible"]
@@ -829,7 +1075,7 @@
         <header><span>${iconSvg(icon)}</span><div><b>${title}</b><small>${subtitle}</small></div><em>${items.length}</em></header>
         <div>${items.map((task) => `<button type="button" class="auri-task-card" data-panel-target="task:${escapeHtml(task.id)}">
           <span class="auri-task-card-icon">${iconSvg(icon)}</span>
-          <span class="auri-task-card-copy"><small>${escapeHtml(task.type)}${task.time ? ` · ${escapeHtml(task.time)}` : ""}</small><b>${escapeHtml(task.title)}</b><em>${escapeHtml(task.location || (task.waitingParty.length ? task.waitingParty.join("、") : "暂无地点"))}</em></span>
+          <span class="auri-task-card-copy"><small>${escapeHtml(task.type)}${task.time ? ` · ${escapeHtml(task.time)}` : ""}</small><b>${escapeHtml(task.title)}</b><em>${demoExternalData ? "Demo · " : ""}${escapeHtml(task.location || (task.waitingParty.length ? task.waitingParty.join("、") : "暂无地点"))}</em></span>
           <span class="auri-task-card-state">${escapeHtml(task.status)}</span>
         </button>`).join("")}</div>
       </section>`;
@@ -847,14 +1093,14 @@
         ? vm.serviceOrders.items.find((item) => item.id === action.detailsRef) || vm.serviceOrders.items[0]
         : null;
       const icon = action.type === "message" ? "message" : action.type === "service_order" ? "order" : "task";
-      const typeLabel = action.type === "message" ? "消息" : action.type === "service_order" ? "配送" : "任务调整";
+      const typeLabel = action.type === "message" ? "模拟消息" : action.type === "service_order" ? "模拟配送" : "任务调整";
       const detail = order
-        ? `${order.itemCount} 件 · ${order.total === null ? "金额待定" : `¥${order.total}`} · ${order.deliveryWindow || "时段待定"}`
+        ? `Demo · ${order.itemCount} 件 · ${order.total === null ? "金额待定" : `¥${order.total}`} · ${order.deliveryWindow || "时段待定"}`
         : actionDetailText(action);
       return `
       <button type="button" class="auri-action-step is-${escapeHtml(action.status)}" data-panel-target="action:${escapeHtml(action.id)}">
         <span class="auri-action-index">${iconSvg(action.status === "completed" ? "check" : icon)}</span>
-        <span class="auri-action-step-copy"><small>${escapeHtml(typeLabel)}</small><b>${escapeHtml(actionTargetLabel(action))}</b><em>${escapeHtml(detail)}</em></span>
+        <span class="auri-action-step-copy"><small>${escapeHtml(typeLabel)}</small><b>${escapeHtml(action.type === "message" ? presentationText(action.target) || "联系人" : action.type === "service_order" ? "配送方案" : actionTargetLabel(action))}</b><em>${escapeHtml(detail)}</em></span>
         <span class="auri-action-step-state">${escapeHtml(action.statusLabel)}</span>
       </button>`;
     }).join("");
@@ -864,7 +1110,7 @@
       const completed = ["submitted", "completed"].includes(order.status);
       return `<article class="auri-action-step${completed ? " is-completed" : ""}">
         <span class="auri-action-index">${iconSvg(completed ? "check" : "order")}</span>
-        <span class="auri-action-step-copy"><small>配送</small><b>配送方案</b><em>${escapeHtml(`${order.itemCount} 件 · ${order.total === null ? "金额待定" : `¥${order.total}`} · ${order.deliveryWindow || "时段待定"}`)}</em></span>
+        <span class="auri-action-step-copy"><small>模拟配送</small><b>配送方案</b><em>${escapeHtml(`Demo · ${order.itemCount} 件 · ${order.total === null ? "金额待定" : `¥${order.total}`} · ${order.deliveryWindow || "时段待定"}`)}</em></span>
         <span class="auri-action-step-state">${escapeHtml(orderStatusLabel(order.status))}</span>
       </article>`;
     }).join("");
@@ -879,14 +1125,14 @@
     </section>`;
   }
 
-  function taskDetailContent(task) {
+  function taskDetailContent(task, demoExternalData = false) {
     const icon = task.tone === "rigid" ? "calendar" : "flexible";
     return `<section class="auri-task-detail is-${escapeHtml(task.tone)}">
       <header><span>${iconSvg(icon)}</span><div><small>${escapeHtml(task.type)}</small><h3>${escapeHtml(task.title)}</h3></div><em>${escapeHtml(task.status)}</em></header>
       <div class="auri-task-time"><small>${task.time ? "计划时间" : "时间安排"}</small><b>${escapeHtml(task.time || "待确定")}</b><span>${task.tone === "rigid" ? "优先保护时间窗口" : "可由 AURI 调整顺序"}</span></div>
       <div class="auri-task-facts">
-        <article><span>${iconSvg("route")}</span><small>地点</small><b>${escapeHtml(task.location || "暂未提供")}</b></article>
-        <article><span>${iconSvg("devices")}</span><small>关联人员</small><b>${escapeHtml(task.waitingParty.length ? task.waitingParty.join("、") : "暂无")}</b></article>
+        <article><span>${iconSvg("route")}</span><small>地点${demoExternalData ? " · Demo" : ""}</small><b>${escapeHtml(task.location || "暂未提供")}</b></article>
+        <article><span>${iconSvg("devices")}</span><small>联系人${demoExternalData ? " · Demo" : ""}</small><b>${escapeHtml(task.waitingParty.length ? task.waitingParty.join("、") : "暂无")}</b></article>
       </div>
       ${task.location ? `<button type="button" class="auri-detail-primary" data-panel-target="route">${iconSvg("route")}<span>查看当前路线</span></button>` : ""}
     </section>`;
@@ -901,14 +1147,14 @@
     const icon = isMessage ? "message" : isOrder ? "order" : "task";
     const heading = isMessage ? presentationText(action.target) || "联系人" : isOrder ? "配送方案" : actionTargetLabel(action);
     const detail = order
-      ? `${order.itemCount} 件 · ${order.itemKinds} 种 · ${order.total === null ? "金额待定" : `¥${order.total}`}`
+      ? `Demo · ${order.itemCount} 件 · ${order.itemKinds} 种 · ${order.total === null ? "金额待定" : `¥${order.total}`}`
       : actionDetailText(action);
     return `<section class="auri-action-detail is-${escapeHtml(action.status)}">
-      <header><span>${iconSvg(icon)}</span><div><small>${isMessage ? "联系人" : isOrder ? "生活服务" : "Agent 动作"}</small><h3>${escapeHtml(heading)}</h3></div><em>${escapeHtml(action.statusLabel)}</em></header>
+      <header><span>${iconSvg(icon)}</span><div><small>${isMessage ? "模拟消息" : isOrder ? "模拟生活服务" : "Agent 动作"}</small><h3>${escapeHtml(heading)}</h3></div><em>${escapeHtml(action.statusLabel)}</em></header>
       <div class="auri-action-preview">
-        <small>${isMessage ? "消息内容" : isOrder ? "配送摘要" : "调整结果"}</small>
+        <small>${isMessage ? "模拟消息内容" : isOrder ? "模拟配送摘要" : "调整结果"}</small>
         <p>${escapeHtml(detail)}</p>
-        ${order ? `<div class="auri-action-preview-meta"><span>${iconSvg("order")} ${escapeHtml(order.deliveryWindow || "时段待定")}</span><span>${iconSvg("check")} ${escapeHtml(orderStatusLabel(order.status))}</span></div>` : ""}
+        ${order ? `<div class="auri-action-preview-meta"><span>${iconSvg("order")} Demo · ${escapeHtml(order.deliveryWindow || "时段待定")}</span><span>${iconSvg("check")} 模拟 · ${escapeHtml(orderStatusLabel(order.status))}</span></div>` : ""}
       </div>
       <footer class="auri-action-assurance">${iconSvg(action.status === "completed" ? "check" : "info")}<span><b>${action.status === "completed" ? "处理结果已同步" : action.requiresConfirmation ? "等待一次确认" : "AURI 正在处理"}</b><small>${action.status === "completed" ? "手机、车机和腕表将显示相同结果" : action.requiresConfirmation ? "确认入口仅在当前主交互端显示" : "完成后会自动更新状态"}</small></span></footer>
     </section>`;
@@ -1031,7 +1277,7 @@
           : task.waitingParty.length ? `关联：${task.waitingParty.join("、")}` : "暂无更多任务说明。",
         status: task.status,
         tone: task.tone === "rigid" ? "warning" : "processing",
-        content: taskDetailContent(task),
+        content: taskDetailContent(task, viewModel.navigation.route?.isSimulated === true || Boolean(client.getSnapshot()?.service_mock_mode)),
         rows: [
           row(task.tone === "rigid" ? "刚" : "弹", task.type, task.tone === "rigid" ? "优先保护时间窗口" : "可由 Agent 调整顺序", task.status, task.tone),
           task.location
@@ -1660,7 +1906,7 @@
     const arrow = document.getElementById("vd-speed-arrow");
     if (speed) {
       speed.textContent = String(speedKph);
-      speed.title = profile.label;
+      speed.title = `${profile.label} · 演示车辆信号`;
     }
     const legacySpeed = document.getElementById("s3d-spd");
     if (legacySpeed) legacySpeed.textContent = String(speedKph);
@@ -1940,6 +2186,7 @@
     renderTakeover();
     renderDeviceNotice();
     renderStageNotice();
+    announceSolutionReadiness(state);
     announceCompletion();
     if (mapAdapter.getStatus() === "online") mapAdapter.update(navigationSnapshot());
     void ensureMapRoute();
@@ -2001,7 +2248,7 @@
         worldState: client.getSnapshot(),
         viewModel,
         activeSection,
-        map: { status: mapAdapter.getStatus(), cameraMode: mapAdapter.getCameraMode(), cameraHeading: mapAdapter.getCameraHeading(), cameraRotation: mapAdapter.getCameraRotation(), requestedCameraRotation: mapAdapter.getRequestedCameraRotation(), cameraPitch: mapAdapter.getCameraPitch(), rendering3d: mapAdapter.get3dMode(), motionMethod: mapAdapter.getMotionMethod(), motion: mapAdapter.getMotionDiagnostics(), congestion: mapAdapter.getCongestionDiagnostics(), anchor: mapAdapter.getAnchorDiagnostics(), trafficVisible: mapAdapter.isTrafficVisible(), usage: mapAdapter.getUsage(), routeMeta },
+        map: { status: mapAdapter.getStatus(), labels: mapAdapter.getLabelDiagnostics(), cameraMode: mapAdapter.getCameraMode(), cameraHeading: mapAdapter.getCameraHeading(), cameraRotation: mapAdapter.getCameraRotation(), requestedCameraRotation: mapAdapter.getRequestedCameraRotation(), cameraPitch: mapAdapter.getCameraPitch(), rendering3d: mapAdapter.get3dMode(), motionMethod: mapAdapter.getMotionMethod(), motion: mapAdapter.getMotionDiagnostics(), congestion: mapAdapter.getCongestionDiagnostics(), anchor: mapAdapter.getAnchorDiagnostics(), trafficVisible: mapAdapter.isTrafficVisible(), usage: mapAdapter.getUsage(), routeMeta },
         drivePlayback: {
           ...drivePlayback,
           tickIntervalMs: DRIVE_PLAYBACK_INTERVAL_MS,
@@ -2010,7 +2257,8 @@
       };
     },
     openPanel,
-    closePanel
+    closePanel,
+    replaySolutionBriefing
   };
 
   window.addEventListener("beforeunload", () => {

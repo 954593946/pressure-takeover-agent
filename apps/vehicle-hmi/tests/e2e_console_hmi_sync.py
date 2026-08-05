@@ -123,7 +123,7 @@ def main() -> None:
             f"window.AURI_HMI_CONFIG={hmi_config};"
             "try{localStorage.removeItem('auri-hmi-next-config')}catch(_e){};"
             "window.__auriSpoken=[];"
-            "try{window.speechSynthesis.speak=(item)=>window.__auriSpoken.push(item.text)}catch(_e){}"
+            "window.AURI_HMI_SPEECH_ADAPTER={speak:(text)=>{window.__auriSpoken.push(text);return true}};"
         )
 
         console.goto(CONSOLE, wait_until="domcontentloaded", timeout=30000)
@@ -189,20 +189,58 @@ def main() -> None:
         assert state["confirmation"]["confirmation_id"] in console.locator("#confirmationDetails").inner_text()
         assert "186" in console.locator("#serviceOrders").inner_text()
         assert "9 件" in console.locator("#serviceOrders").inner_text()
+        assert "演示外部数据" in hmi.locator(".top-bar").inner_text()
+        assert "演示车辆信号" in hmi.locator(".vd-hud-overlay").inner_text()
+        assert "模拟消息" in hmi.locator("#auri-takeover-actions").inner_text()
         if hmi.evaluate("window.AURI_HMI_NEXT.getState().map.status") == "online":
             hmi.wait_for_function(
-                "Array.from(document.querySelectorAll('#auri-amap-canvas img'))"
-                ".filter(image => image.complete && image.naturalWidth > 0).length >= 10",
+                "() => {"
+                " const state=window.AURI_HMI_NEXT?.getState().map;"
+                " const canvas=document.querySelector('#auri-amap-canvas');"
+                " return state?.labels?.showLabel === true"
+                "  && state.labels.routeLabelCount >= 2"
+                "  && canvas && !canvas.hidden && Number(getComputedStyle(canvas).opacity) >= 0.99;"
+                "}",
                 timeout=20000,
             )
         hmi.screenshot(path=SCREENSHOT_DIR / "waiting-confirmation-1920x720.png")
 
+        progress_triggers = hmi.locator('.auri-takeover-section-head, #auri-takeover-actions [data-panel-target="messages"]')
+        trigger_count = progress_triggers.count()
+        assert trigger_count >= 4
+        for index in range(trigger_count):
+            progress_triggers.nth(index).click()
+            hmi.wait_for_function("document.querySelector('#auri-detail-title')?.textContent === '处理进度'")
+            waiting_detail = hmi.locator("#auri-driver-detail").inner_text()
+            assert "0/3 已完成" in waiting_detail
+            hmi.locator("#auri-driver-back").click()
+            hmi.wait_for_function("document.querySelector('#auri-driver-detail')?.hidden === true")
+
+        ready_speech = hmi.evaluate("window.__auriSpoken")
+        assert len(ready_speech) == 1, ready_speech
+        assert "AURI 已准备处理方案" in ready_speech[0], ready_speech
+        assert "2条消息和1项配送方案已准备" in ready_speech[0], ready_speech
         hmi.locator("#auri-takeover-confirm").click()
         wait_console_stage(console, "action_completed")
         completed = api("/v1/state")
         wait_same_revision(console, hmi, completed["revision"])
         assert all(action["status"] == "completed" for action in completed["actions"])
-        assert hmi.evaluate("window.__auriSpoken") == ["已处理，你按当前速度安全驾驶即可。"]
+        completed_speech = hmi.evaluate("window.__auriSpoken")
+        assert len(completed_speech) == 2, completed_speech
+        assert "AURI 已完成处理" in completed_speech[1], completed_speech
+        assert "2条消息和1项配送方案已完成" in completed_speech[1], completed_speech
+        completed_triggers = hmi.locator('.auri-takeover-section-head, #auri-takeover-actions [data-panel-target="messages"]')
+        assert completed_triggers.count() >= 4
+        for index in range(completed_triggers.count()):
+            completed_triggers.nth(index).click()
+            hmi.wait_for_function("document.querySelector('#auri-detail-title')?.textContent === '处理进度'")
+            detail_text = hmi.locator("#auri-driver-detail").inner_text()
+            assert "3/3 已完成" in detail_text
+            assert "100%" in detail_text
+            if index == 0:
+                hmi.screenshot(path=SCREENSHOT_DIR / "completed-progress-1920x720.png")
+            hmi.locator("#auri-driver-back").click()
+            hmi.wait_for_function("document.querySelector('#auri-driver-detail')?.hidden === true")
 
         # A standalone mobile AC instruction updates the shared vehicle state;
         # neither the Console nor HMI is allowed to keep a local copy.
@@ -255,7 +293,10 @@ def main() -> None:
             "console_sync": console.locator("#syncMode").inner_text(),
             "hmi_sync": hmi.evaluate("window.AURI_HMI_NEXT.getState().syncMode"),
             "javascript_errors": errors,
-            "screenshot": str(SCREENSHOT_DIR / "waiting-confirmation-1920x720.png"),
+            "screenshots": [
+                str(SCREENSHOT_DIR / "waiting-confirmation-1920x720.png"),
+                str(SCREENSHOT_DIR / "completed-progress-1920x720.png"),
+            ],
         }, ensure_ascii=False))
         browser.close()
 

@@ -69,7 +69,7 @@ def main():
             f"window.AURI_HMI_CONFIG={config};"
             "try{localStorage.removeItem('auri-hmi-next-config')}catch(_e){};"
             "window.__auriSpoken=[];"
-            "try{window.speechSynthesis.speak=(item)=>window.__auriSpoken.push(item.text)}catch(_e){}"
+            "window.AURI_HMI_SPEECH_ADAPTER={speak:(text)=>{window.__auriSpoken.push(text);return true}};"
         )
         page.goto(HMI, wait_until="domcontentloaded", timeout=30000)
         page.wait_for_function(
@@ -219,6 +219,9 @@ def main():
         assert float(page.locator("#auri-takeover-card").evaluate("node => getComputedStyle(node).opacity")) > 0.9
         page.wait_for_timeout(400)
         page.screenshot(path=SCREENSHOT_DIR / "auri-hmi-e2e-waiting-confirmation.png")
+        ready_speech = page.evaluate("window.__auriSpoken")
+        assert len(ready_speech) == 1, ready_speech
+        assert "AURI 已准备处理方案" in ready_speech[0], ready_speech
 
         page.locator("#auri-takeover-confirm").click()
         page.wait_for_function(
@@ -230,7 +233,18 @@ def main():
         assert shown["meta"]["revision"] == completed["revision"]
         assert all(action["status"] == "completed" for action in completed["actions"])
         page.wait_for_timeout(200)
-        assert page.evaluate("window.__auriSpoken") == ["已处理，你按当前速度安全驾驶即可。"]
+        completed_speech = page.evaluate("window.__auriSpoken")
+        assert len(completed_speech) == 2, completed_speech
+        assert "AURI 已完成处理" in completed_speech[1], completed_speech
+
+        # A revision-only update must not enqueue the same completion speech.
+        revision_only = submit("service.mock.config", {"mode": "success"})
+        page.wait_for_function(
+            "revision => window.AURI_HMI_NEXT.getState().viewModel.meta.revision === revision",
+            arg=revision_only["revision"],
+        )
+        page.wait_for_timeout(800)
+        assert page.evaluate("window.__auriSpoken.length") == 2, page.evaluate("window.__auriSpoken")
 
         submit("cooldown.elapsed", {})
         page.wait_for_function(

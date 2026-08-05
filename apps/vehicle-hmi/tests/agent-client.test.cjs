@@ -14,6 +14,8 @@ async function main() {
     amapSecurityJsCode: "  security-code  ",
     amapServiceHost: "https://example.com/_AMapService/",
     amapStyle: "amap://styles/whitesmoke",
+    amapLoadTimeoutMs: 99999,
+    amapRouteTimeoutMs: 1,
     amapMonthlyMapLimit: 0,
     amapMonthlyRouteLimit: 99999
   });
@@ -26,6 +28,8 @@ async function main() {
   assert.equal(normalized.amapSecurityJsCode, "security-code");
   assert.equal(normalized.amapServiceHost, "https://example.com/_AMapService");
   assert.equal(normalized.amapStyle, "amap://styles/whitesmoke");
+  assert.equal(normalized.amapLoadTimeoutMs, 15000);
+  assert.equal(normalized.amapRouteTimeoutMs, 10);
   assert.equal(normalized.amapMonthlyMapLimit, 1);
   assert.equal(normalized.amapMonthlyRouteLimit, 10000);
 
@@ -37,6 +41,8 @@ async function main() {
   });
   assert.equal(invalidMapConfig.mapProvider, "auto");
   assert.equal(invalidMapConfig.amapServiceHost, "");
+  assert.equal(invalidMapConfig.amapLoadTimeoutMs, 12000);
+  assert.equal(invalidMapConfig.amapRouteTimeoutMs, 8000);
   assert.equal(invalidMapConfig.amapMonthlyMapLimit, 200);
   assert.equal(invalidMapConfig.amapMonthlyRouteLimit, 1);
 

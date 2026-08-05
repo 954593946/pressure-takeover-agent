@@ -96,6 +96,26 @@ def follow_metrics(page) -> dict:
           return {x:rect.x,y:rect.y,width:rect.width,height:rect.height,display:style.display,opacity:Number(style.opacity)};
         })
         .filter(item => item.display !== 'none' && item.width > 0 && item.height > 0 && item.opacity > 0);
+      const visibleRouteLabels=[...document.querySelectorAll('.auri-amap-route-label')]
+        .filter(node => {
+          const rect=node.getBoundingClientRect();
+          const style=getComputedStyle(node);
+          return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0
+            && rect.width > 0 && rect.height > 0 && canvas
+            && rect.right > canvas.left && rect.left < canvas.right && rect.bottom > canvas.top && rect.top < canvas.bottom;
+        })
+        .map(node => node.textContent.trim())
+        .filter(Boolean);
+      const visiblePoiLabels=[...document.querySelectorAll('.auri-amap-poi-label')]
+        .filter(node => {
+          const rect=node.getBoundingClientRect();
+          const style=getComputedStyle(node);
+          return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0
+            && rect.width > 0 && rect.height > 0 && canvas
+            && rect.right > canvas.left && rect.left < canvas.right && rect.bottom > canvas.top && rect.top < canvas.bottom;
+        })
+        .map(node => node.textContent.trim())
+        .filter(Boolean);
       const fixedStyle=fixedNode ? getComputedStyle(fixedNode) : null;
       const ringStyle=fixedRing ? getComputedStyle(fixedRing) : null;
       const tile=canvasNode?.querySelector('.amap-layer-tile');
@@ -147,7 +167,9 @@ def follow_metrics(page) -> dict:
           zoomDisabled:zoomButtons.map(button => button.disabled),
           trafficPressed:document.querySelector('[data-map-control="traffic"]')?.getAttribute('aria-pressed')
         },
-        chevrons
+        chevrons,
+        visibleRouteLabels,
+        visiblePoiLabels
       };
     }""")
 
@@ -181,6 +203,8 @@ def main() -> None:
         page.add_init_script(
             f"window.AURI_HMI_CONFIG={config};"
             "try{localStorage.removeItem('auri-hmi-next-config')}catch(_e){};"
+            "window.__auriSpoken=[];"
+            "window.AURI_HMI_SPEECH_ADAPTER={speak:(text)=>{window.__auriSpoken.push(text);return true}};"
         )
         page.goto(HMI, wait_until="domcontentloaded", timeout=30000)
         try:
@@ -193,12 +217,30 @@ def main() -> None:
         page.wait_for_timeout(2400)
 
         page.locator('[data-map-control="follow"]').click()
-        page.wait_for_timeout(900)
+        page.wait_for_function("window.AURI_HMI_NEXT.getState().map.labels.labelsReadyModes.includes('follow')", timeout=8000)
+        page.wait_for_function("['ready','empty','failed','usage_guard'].includes(window.AURI_HMI_NEXT.getState().map.labels.poiSearchStatus)", timeout=5000)
+        page.wait_for_timeout(600)
         follow = page.evaluate("window.AURI_HMI_NEXT.getState().map")
+        assert follow["labels"]["showLabel"] is True, follow
+        assert follow["labels"]["labelRejectMask"] is True, follow
+        assert follow["labels"]["features"] == ["bg", "road", "building", "point"], follow
+        assert follow["labels"]["routeLabelCount"] >= 2, follow
+        assert follow["labels"]["labelsReady"] is True, follow
+        assert follow["labels"]["renderCompleteCount"] >= 1, follow
+        assert "follow" in follow["labels"]["labelsReadyModes"], follow
+        assert follow["labels"]["poiSearchStatus"] in {"ready", "empty", "failed", "usage_guard"}, follow
+        if follow["labels"]["poiSearchStatus"] == "ready":
+            assert follow["labels"]["poiLabelCount"] >= 3, follow
+        if follow["labels"]["poiSearchStatus"] == "ready":
+            assert follow["labels"]["poiVisibleCount"] >= 3, follow
+        assert follow["usage"]["poiSearches"] == 1, follow
         follow_label = page.locator('[data-map-control="follow"] span').inner_text().strip()
         page.wait_for_function("document.querySelector('.right-panel')?.dataset.vehicleMotion === 'moving'", timeout=5000)
         moving_before = page.evaluate("window.AURI_HMI_NEXT.getState().drivePlayback.progress")
         moving_metrics = follow_metrics(page)
+        assert moving_metrics["visibleRouteLabels"], moving_metrics
+        if follow["labels"]["poiSearchStatus"] == "ready":
+            assert moving_metrics["visiblePoiLabels"], moving_metrics
         page.screenshot(path=str(OUTPUT / "moving-follow.png"))
         page.wait_for_timeout(900)
         moving_after = page.evaluate("window.AURI_HMI_NEXT.getState().drivePlayback.progress")
@@ -228,8 +270,41 @@ def main() -> None:
 
         submit("user.utterance", {"text": "我还来得及吗？帮我处理", "input_mode": "voice"}, "mobile")
         page.wait_for_function("window.AURI_HMI_NEXT.getState().viewModel.lifecycle.stage === 'waiting_confirmation'", timeout=15000)
+        page.wait_for_function(
+            "document.querySelector('.auri-takeover-section-head')?.textContent.includes('Agent 处理方案')"
+            " && document.querySelectorAll('.auri-takeover-action').length >= 3"
+            " && !document.querySelector('#auri-takeover-confirm')?.hidden",
+            timeout=5000,
+        )
+        waiting_plan = page.evaluate("""() => ({
+          section:document.querySelector('.auri-takeover-section-head')?.textContent.replace(/\\s+/g,' ').trim()||'',
+          actionTitles:[...document.querySelectorAll('.auri-takeover-action b')].map(node=>({
+            text:node.textContent.trim(),
+            fontPx:Number.parseFloat(getComputedStyle(node).fontSize)||0
+          })),
+          confirmHeight:document.querySelector('#auri-takeover-confirm')?.getBoundingClientRect().height||0,
+          noticeVisible:document.querySelector('#auri-stage-notice')?.classList.contains('is-visible')||false,
+          noticeReady:document.querySelector('#auri-stage-notice')?.classList.contains('is-plan-ready')||false,
+          noticeText:document.querySelector('#auri-stage-notice')?.textContent.replace(/\\s+/g,' ').trim()||'',
+          deviceNoticeVisible:document.querySelector('#auri-device-notice')?.classList.contains('is-visible')||false
+        })""")
+        assert "Agent 处理方案" in waiting_plan["section"], waiting_plan
+        assert len(waiting_plan["actionTitles"]) >= 3, waiting_plan
+        assert min(item["fontPx"] for item in waiting_plan["actionTitles"]) >= 18, waiting_plan
+        assert waiting_plan["confirmHeight"] >= 55, waiting_plan
+        assert waiting_plan["noticeVisible"] is True, waiting_plan
+        assert waiting_plan["noticeReady"] is True, waiting_plan
+        assert "AURI 处理方案已准备" in waiting_plan["noticeText"], waiting_plan
+        assert waiting_plan["deviceNoticeVisible"] is False, waiting_plan
+        ready_speech = page.evaluate("window.__auriSpoken")
+        assert len(ready_speech) == 1, ready_speech
+        assert "AURI 已准备处理方案" in ready_speech[0], ready_speech
+        page.screenshot(path=str(OUTPUT / "waiting-plan.png"))
         page.locator("#auri-takeover-confirm").click()
         page.wait_for_function("window.AURI_HMI_NEXT.getState().viewModel.lifecycle.stage === 'action_completed'", timeout=15000)
+        page.wait_for_function("window.__auriSpoken.length === 2", timeout=5000)
+        completed_speech = page.evaluate("window.__auriSpoken")
+        assert "AURI 已完成处理" in completed_speech[1], completed_speech
         page.wait_for_function("window.AURI_HMI_NEXT.getState().drivePlayback.speedKph >= 20", timeout=5000)
         page.wait_for_function("document.querySelector('.right-panel')?.dataset.vehicleMotion === 'moving'", timeout=5000)
         resumed_before = page.evaluate("window.AURI_HMI_NEXT.getState().drivePlayback.progress")
@@ -244,12 +319,16 @@ def main() -> None:
             page.evaluate("window.AURI_HMI_NEXT.getState().drivePlayback.progress")
         )
         page.locator('[data-map-control="overview"]').click()
-        page.wait_for_timeout(900)
+        page.wait_for_function("window.AURI_HMI_NEXT.getState().map.labels.labelsReadyModes.includes('overview')", timeout=5000)
+        page.wait_for_timeout(300)
         overview = page.evaluate("window.AURI_HMI_NEXT.getState().map")
         display_progress_after_overview = float(
             page.evaluate("window.AURI_HMI_NEXT.getState().drivePlayback.progress")
         )
         overview_metrics = follow_metrics(page)
+        if overview["labels"]["poiSearchStatus"] == "ready":
+            assert overview_metrics["visiblePoiLabels"], overview_metrics
+            assert overview["labels"]["poiVisibleCount"] >= 3, overview
         overview_transform = overview_metrics["transform"]
         page.screenshot(path=str(OUTPUT / "overview.png"))
         page.locator('[data-map-control="follow"]').click()
@@ -257,6 +336,9 @@ def main() -> None:
         return_follow = page.evaluate("window.AURI_HMI_NEXT.getState().map")
         return_follow_progress = float(page.evaluate("window.AURI_HMI_NEXT.getState().drivePlayback.progress"))
         return_follow_metrics = follow_metrics(page)
+        # The quota-safe POI enhancement searches once near the initial route
+        # position. Near the destination those markers may correctly be outside
+        # the viewport; native AMap labels remain the required follow context.
         page.screenshot(path=str(OUTPUT / "return-follow.png"))
         assert follow["cameraMode"] == "follow", follow
         assert overview["cameraMode"] == "overview", overview
@@ -292,7 +374,7 @@ def main() -> None:
         )
         for map_state in (follow, stopped_map, resumed_map, return_follow):
             assert map_state["anchor"] is not None, map_state
-            assert map_state["anchor"]["errorPx"] <= 4, map_state["anchor"]
+            assert map_state["anchor"]["errorPx"] <= 1, map_state["anchor"]
         assert follow["anchor"]["point"] != stopped_map["anchor"]["point"], (follow, stopped_map)
         assert overview["anchor"] is None, overview
         rotation_error = abs(((follow["cameraRotation"] - follow["requestedCameraRotation"] + 180) % 360) - 180)
@@ -320,7 +402,7 @@ def main() -> None:
             canvas = overview_metrics["canvas"]
             assert canvas["x"] <= marker_center_x <= canvas["x"] + canvas["width"], overview_metrics
             assert canvas["y"] <= marker_center_y <= canvas["y"] + canvas["height"], overview_metrics
-        assert follow["cameraPitch"] >= 50 and overview["cameraPitch"] == 0, (follow, overview)
+        assert 24 <= follow["cameraPitch"] <= 28 and overview["cameraPitch"] == 0, (follow, overview)
         assert not errors, errors
         print(json.dumps({
             "follow": follow,
@@ -344,9 +426,12 @@ def main() -> None:
             "followLabel": follow_label,
             "overviewTransform": overview_transform,
             "timing": timing,
+            "waitingPlan": waiting_plan,
+            "speechBriefings": {"ready": ready_speech[0], "completed": completed_speech[1]},
             "screenshots": [
                 str(OUTPUT / "moving-follow.png"),
                 str(OUTPUT / "stopped-follow.png"),
+                str(OUTPUT / "waiting-plan.png"),
                 str(OUTPUT / "resumed-follow.png"),
                 str(OUTPUT / "overview.png"),
                 str(OUTPUT / "return-follow.png"),

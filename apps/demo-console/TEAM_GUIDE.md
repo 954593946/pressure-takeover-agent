@@ -224,7 +224,9 @@ service.mock.config
 
 “载入演示预置任务”无需先单独点击“连接 Agent”。填写当前 Agent API 和 Team Token 后可直接点击“载入”，控制台会保存配置、读取当前 State，再提交包含结构化 `tasks[]` 的 `task.created`，不等待 LLM 解析；如果共享 State 已有任务，按钮会锁定，避免覆盖手机端输入。
 
-正常手机主线不使用预置任务：手机通过 `/v1/chat` 或标准 `task.created` 写入首批任务后，控制台监听同一 Session 的 SSE revision，自动把“同步手机语音任务”标记为完成。此时主按钮应显示“下一步：会议延迟”并可直接执行；若仍停在第 1 步，应先核对手机、控制台是否连接同一 Agent URL 与 `session_id`，不要重复创建任务。
+正常手机主线不使用预置任务：手机通过 `/v1/chat` 或标准 `task.created` 写入首批任务后，控制台根据同一 Session 的非空任务快照，自动把“同步手机语音任务”标记为完成。手机可以先创建任务、再打开 Console，或在 Console 断线时创建；恢复后仍应直接显示“下一步：会议延迟”。若仍停在第 1 步，应先核对手机、控制台是否连接同一 Agent URL 与 `session_id`，不要重复创建任务。
+
+Console 使用带 Team Token 的流式 `fetch` 读取 SSE，兼容 LF/CRLF、单行或多行 `data:`。不要改回原生 `EventSource`，否则无法发送 `X-Agent-Token`。
 
 公网服务冷启动时，按钮会显示“连接并载入中…”，`State Sync` 和 Event Log 同步显示连接/重试进度。Health 检查在 State 连接后后台执行，不阻塞任务载入；GET 请求三次失败或单次超过 45 秒后会显示明确错误，不会无限等待。
 

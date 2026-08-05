@@ -3,6 +3,9 @@ const assert = require("node:assert/strict");
 const calls = [];
 const storageValues = new Map();
 let routePlanCount = 0;
+let poiSearchCount = 0;
+let deferPoiSearch = false;
+const pendingPoiSearches = [];
 let drivingResultMode = "complete";
 let deferMoveEnd = false;
 
@@ -58,6 +61,9 @@ class FakeElement {
 class FakeMap {
   constructor(_container, options) {
     this.options = options;
+    this.features = [...options.features];
+    this.status = { showLabel: options.showLabel };
+    this.labelRejectMask = options.labelRejectMask;
     this.added = [];
     this.removed = [];
     this.rotation = Number(options.rotation || 0);
@@ -81,6 +87,11 @@ class FakeMap {
   setZoomAndCenter(zoom, center) {
     this.pixelOffset = [0, 0];
     calls.push(["zoom-center", zoom, center]);
+  }
+
+  setCenter(center) {
+    this.pixelOffset = [0, 0];
+    calls.push(["center", center]);
   }
 
   lngLatToContainer() {
@@ -122,6 +133,29 @@ class FakeMap {
 
   resize() {
     calls.push(["resize"]);
+  }
+
+  setFeatures(features) {
+    this.features = [...features];
+    calls.push(["features", ...features]);
+  }
+
+  getFeatures() {
+    return [...this.features];
+  }
+
+  setLabelRejectMask(value) {
+    this.labelRejectMask = value;
+    calls.push(["label-reject-mask", value]);
+  }
+
+  setStatus(status) {
+    Object.assign(this.status, status);
+    calls.push(["status", status]);
+  }
+
+  getStatus() {
+    return { ...this.status };
   }
 }
 
@@ -246,6 +280,23 @@ class FakeDriving {
   }
 }
 
+class FakePlaceSearch {
+  searchNearBy(_keywords, _center, _radius, callback) {
+    poiSearchCount += 1;
+    const result = {
+      poiList: {
+        pois: [
+          { name: "博世苏州", location: [120.7918, 31.3346] },
+          { name: "现代大厦", location: [120.789, 31.333] },
+          { name: "星龙街产业园", location: [120.787, 31.331] }
+        ]
+      }
+    };
+    if (deferPoiSearch) pendingPoiSearches.push(() => callback("complete", result));
+    else callback("complete", result);
+  }
+}
+
 global.document = {
   createElement(tagName) {
     return new FakeElement(tagName);
@@ -271,6 +322,7 @@ const fakeAMap = {
   Map: FakeMap,
   TileLayer: { Traffic: FakeTrafficLayer },
   Driving: FakeDriving,
+  PlaceSearch: FakePlaceSearch,
   DrivingPolicy: { LEAST_TIME: 0 },
   Polyline: FakePolyline,
   Marker: FakeMarker,
@@ -281,18 +333,18 @@ global.AMap = fakeAMap;
 const amap = require("../src/amap-adapter.js");
 
 assert.deepEqual(amap.followCameraSpec({ nextDistanceMeters: 1200 }, false), {
-  lookAheadMeters: 118,
-  zoom: 17.25,
-  pitch: 56,
+  lookAheadMeters: 245,
+  zoom: 15.8,
+  pitch: 28,
   anchorY: 0.72,
   rotationThreshold: 4
 });
-assert.equal(amap.followCameraSpec({ nextDistanceMeters: 500 }, false).zoom, 17.65);
-assert.equal(amap.followCameraSpec({ nextDistanceMeters: 120 }, false).zoom, 18.05);
+assert.equal(amap.followCameraSpec({ nextDistanceMeters: 500 }, false).zoom, 16.0);
+assert.equal(amap.followCameraSpec({ nextDistanceMeters: 120 }, false).zoom, 16.2);
 assert.deepEqual(amap.followCameraSpec({ nextDistanceMeters: 200 }, true), {
-  lookAheadMeters: 78,
-  zoom: 17.45,
-  pitch: 50,
+  lookAheadMeters: 154,
+  zoom: 15.95,
+  pitch: 24,
   anchorY: 0.72,
   rotationThreshold: 4
 });
@@ -321,6 +373,9 @@ function createAdapter(options = {}) {
 function resetRuntime() {
   calls.length = 0;
   routePlanCount = 0;
+  poiSearchCount = 0;
+  deferPoiSearch = false;
+  pendingPoiSearches.length = 0;
   drivingResultMode = "complete";
   deferMoveEnd = false;
   global.localStorage.clear();
@@ -354,6 +409,16 @@ async function main() {
   assert.equal(amap.boundedTimeoutMs(), 1800);
   assert.equal(amap.boundedTimeoutMs(10000), 1800, "external config cannot exceed the 2-second fallback budget");
   assert.equal(amap.boundedTimeoutMs(20), 20);
+  assert.equal(amap.DEFAULT_SCRIPT_LOAD_TIMEOUT_MS, 12000);
+  assert.equal(amap.MAX_SCRIPT_LOAD_TIMEOUT_MS, 15000);
+  assert.equal(amap.boundedScriptLoadTimeoutMs(), 12000);
+  assert.equal(amap.boundedScriptLoadTimeoutMs(30000), 15000);
+  assert.equal(amap.boundedScriptLoadTimeoutMs(100), 100);
+  assert.equal(amap.DEFAULT_ROUTE_TIMEOUT_MS, 8000);
+  assert.equal(amap.MAX_ROUTE_TIMEOUT_MS, 12000);
+  assert.equal(amap.boundedRouteTimeoutMs(), 8000);
+  assert.equal(amap.boundedRouteTimeoutMs(30000), 12000);
+  assert.equal(amap.boundedRouteTimeoutMs(20), 20);
   assertClose(amap.bearing([120, 31], [120, 31.01]), 0);
   assertClose(amap.bearing([120, 31], [120.01, 31]), 90);
   assertClose(amap.screenHeading(-90, 90), 0);
@@ -437,6 +502,18 @@ async function main() {
   assert.equal(online.container.hidden, false);
   assert.equal(online.adapter.getStatus(), "map_ready");
   assert.equal(online.adapter.get3dMode(), "native", "function-form WebGL capability must be detected");
+  assert.deepEqual(online.adapter.getLabelDiagnostics(), {
+    showLabel: true,
+    labelRejectMask: true,
+    features: ["bg", "road", "building", "point"],
+    routeLabelCount: 0,
+    renderCompleteCount: 0,
+    labelsReady: false,
+    labelsReadyModes: [],
+    poiLabelCount: 0,
+    poiVisibleCount: 0,
+    poiSearchStatus: "idle"
+  });
 
   const routeConfig = {
     start: [120.791879, 31.33468],
@@ -450,6 +527,8 @@ async function main() {
   assert.deepEqual(duplicatePlan, { mode: "online", planned: false });
   assert.equal(routePlanCount, 1, "same route key must not trigger another AMap.Driving search");
   assert.equal(online.adapter.getStatus(), "online");
+  assert.equal(online.adapter.getLabelDiagnostics().routeLabelCount, 3);
+  assert.deepEqual(amap.routeRoadLabels(successfulRoute).map((item) => item.name), ["星龙街", "现代大道", "星湖街"]);
   assert.equal(online.mapWrap.classList.contains("is-amap-online"), true);
   const overviewCameraCall = calls.filter(([name]) => name === "fit").at(-1);
   assert.equal(overviewCameraCall[0], "fit");
@@ -461,8 +540,22 @@ async function main() {
   assert.deepEqual(online.adapter.getUsage(), {
     month: currentLocalMonth(),
     mapLoads: 1,
-    routePlans: 1
+    routePlans: 1,
+    poiSearches: 0
   });
+  await online.adapter.loadNearbyPois([120.791879, 31.33468], "session-a:task-school");
+  await online.adapter.loadNearbyPois([120.792, 31.335], "session-a:task-school");
+  assert.equal(poiSearchCount, 1, "one route must trigger at most one nearby POI search");
+  assert.equal(online.adapter.getLabelDiagnostics().poiSearchStatus, "ready");
+  assert.equal(online.adapter.getLabelDiagnostics().poiLabelCount, 3);
+  assert.equal(online.adapter.getLabelDiagnostics().poiVisibleCount, 3, "overview may supplement native labels with route-context POIs");
+  assert.deepEqual(online.adapter.overlays.poiMarkers.map((marker) => marker.__auriRank), [1000, 999, 998]);
+  assert.ok(online.adapter.overlays.poiMarkers.every((marker) => marker.options.content.className === "auri-amap-poi-label"));
+  assert.deepEqual(online.adapter.overlays.poiMarkers.map((marker) => marker.options.content.textContent), ["博世苏州", "现代大厦", "星龙街产业园"]);
+  assert.equal(online.adapter.getUsage().poiSearches, 1);
+
+  const unnamedRoute = { distance: 100, time: 60, steps: [{ instruction: "直行", road: "", distance: 100, path: [[0, 0], [0.001, 0]] }] };
+  assert.equal(amap.routeMeta(unnamedRoute, 0).roadName, "", "missing AMap road names must stay hidden instead of using a fake label");
 
   const headingWritesBeforeMotion = calls.filter(([name, property]) => name === "style" && property === "--auri-vehicle-heading").length;
   online.adapter.update({
@@ -475,8 +568,10 @@ async function main() {
     lateMinutes: 18
   });
   assert.equal(online.adapter.getCameraMode(), "follow");
+  assert.equal(online.adapter.getLabelDiagnostics().poiVisibleCount, 3, "follow mode should retain real AMap PlaceSearch context labels");
+  assert.ok(online.adapter.overlays.poiMarkers.every((marker) => marker.visible === true));
   assert.ok(online.adapter.getCameraRotation() > 0);
-  assert.equal(online.adapter.getCameraPitch(), 50);
+  assert.equal(online.adapter.getCameraPitch(), 24);
   assert.ok(online.adapter.getAnchorDiagnostics().errorPx < 0.01, online.adapter.getAnchorDiagnostics());
   assert.deepEqual(online.adapter.getAnchorDiagnostics().target, [500, 504]);
   assert.equal(
@@ -491,6 +586,13 @@ async function main() {
     ["#e6a700", "#d1495b", "#8f2032"],
     "congestion must progress from amber to red and deep red"
   );
+  assert.equal(online.adapter.control("overview"), true);
+  assert.equal(online.adapter.getLabelDiagnostics().poiVisibleCount, 3);
+  assert.ok(online.adapter.overlays.poiMarkers.every((marker) => marker.visible === true));
+  assert.equal(online.adapter.control("follow"), true);
+  assert.equal(online.adapter.getLabelDiagnostics().poiVisibleCount, 3);
+  const zoomWritesBeforeSteadyUpdate = calls.filter(([name]) => name === "zoom-center").length;
+  const pitchWritesBeforeSteadyUpdate = calls.filter(([name]) => name === "pitch").length;
   online.adapter.update({
     stage: "waiting_confirmation",
     progress: 0.56,
@@ -501,6 +603,8 @@ async function main() {
     lateMinutes: 18,
     motionDurationMs: 640
   });
+  assert.ok(calls.filter(([name]) => name === "zoom-center").length <= zoomWritesBeforeSteadyUpdate + 1, "follow updates may change zoom only when the distance bucket changes");
+  assert.equal(calls.filter(([name]) => name === "pitch").length, pitchWritesBeforeSteadyUpdate, "steady follow updates must preserve pitch");
   assert.equal(calls.some(([name]) => name === "move-along"), true, "vehicle must use AMap moveAlong for curved route animation");
   const moveAlongCall = calls.find(([name]) => name === "move-along");
   assert.ok(moveAlongCall[2] <= 640, `timed path must stay within its 640ms motion budget, got ${moveAlongCall[2]}ms`);
@@ -679,6 +783,75 @@ async function main() {
   assert.deepEqual(routeGuardResult, { mode: "offline", reason: "usage_guard" });
   assert.equal(routePlanCount, 0);
   assert.equal(routeGuard.adapter.getStatus(), "offline");
+
+  resetRuntime();
+  const poiGuard = createAdapter();
+  await poiGuard.adapter.init({
+    mapProvider: "amap",
+    amapKey: "test-key",
+    amapMonthlyMapLimit: 10,
+    amapMonthlyRouteLimit: 10,
+    amapMonthlyPoiLimit: 60
+  });
+  await poiGuard.adapter.setRoute(routeConfig, "poi-guarded-route");
+  storageValues.set(amap.USAGE_KEY, JSON.stringify({
+    month: currentLocalMonth(),
+    mapLoads: 1,
+    routePlans: 1,
+    poiSearches: 60
+  }));
+  await poiGuard.adapter.loadNearbyPois([120.791879, 31.33468], "poi-guarded-route");
+  await poiGuard.adapter.loadNearbyPois([120.792, 31.335], "poi-guarded-route");
+  assert.equal(poiSearchCount, 0, "POI quota guard must prevent external calls and memoize the guarded route");
+  assert.equal(poiGuard.adapter.getLabelDiagnostics().poiSearchStatus, "usage_guard");
+
+  resetRuntime();
+  deferPoiSearch = true;
+  const poiRouteSwitch = createAdapter();
+  await poiRouteSwitch.adapter.init({
+    mapProvider: "amap",
+    amapKey: "test-key",
+    amapMonthlyMapLimit: 10,
+    amapMonthlyRouteLimit: 10,
+    amapMonthlyPoiLimit: 60
+  });
+  await poiRouteSwitch.adapter.setRoute(routeConfig, "poi-route-a");
+  const oldPoiRequest = poiRouteSwitch.adapter.loadNearbyPois([120.791879, 31.33468], "poi-route-a");
+  await poiRouteSwitch.adapter.setRoute(routeConfig, "poi-route-b");
+  poiRouteSwitch.adapter.update({
+    stage: "vehicle_observation",
+    progress: 0.2,
+    showVehicle: true,
+    overview: false,
+    driving: true,
+    riskLevel: "L0",
+    lateMinutes: 0
+  });
+  assert.equal(pendingPoiSearches.length, 2);
+  pendingPoiSearches[0]();
+  await oldPoiRequest;
+  assert.equal(poiRouteSwitch.adapter.getLabelDiagnostics().poiSearchStatus, "loading", "stale POI completion must not overwrite the new route state");
+  pendingPoiSearches[1]();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(poiRouteSwitch.adapter.getLabelDiagnostics().poiSearchStatus, "ready");
+  assert.equal(poiRouteSwitch.adapter.getLabelDiagnostics().poiLabelCount, 3);
+  assert.equal(poiSearchCount, 2, "each distinct route may issue one POI search during a rapid switch");
+  deferPoiSearch = false;
+  poiRouteSwitch.adapter.clearRoute();
+  assert.equal(poiRouteSwitch.adapter.getLabelDiagnostics().poiSearchStatus, "idle");
+  await poiRouteSwitch.adapter.setRoute(routeConfig, "poi-route-b");
+  poiRouteSwitch.adapter.update({
+    stage: "vehicle_observation",
+    progress: 0.25,
+    showVehicle: true,
+    overview: false,
+    driving: true,
+    riskLevel: "L0",
+    lateMinutes: 0
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(poiSearchCount, 3, "clearing and restoring the same route key must reload nearby POIs once");
+  assert.equal(poiRouteSwitch.adapter.getLabelDiagnostics().poiSearchStatus, "ready");
 
   resetRuntime();
   drivingResultMode = "failure";

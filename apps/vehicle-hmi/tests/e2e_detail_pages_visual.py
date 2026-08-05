@@ -69,6 +69,8 @@ def audit(page) -> dict:
           const panel=document.querySelector('#auri-driver-panel');
           const body=document.querySelector('#auri-detail-body');
           const rect=panel.getBoundingClientRect();
+          const canvas=document.querySelector('#hmi');
+          const visualScale=canvas?.style.width ? canvas.getBoundingClientRect().width/parseFloat(canvas.style.width) : 1;
           const interactive=Array.from(body.querySelectorAll('button')).filter(node=>{
             const style=getComputedStyle(node); const box=node.getBoundingClientRect();
             return style.display!=='none' && box.width>0 && box.height>0;
@@ -80,7 +82,9 @@ def audit(page) -> dict:
             interactiveSmall: interactive.filter(node=>{
               const box=node.getBoundingClientRect(); return box.width<44 || box.height<44;
             }).map(node=>node.className||node.textContent.trim().slice(0,20)),
-            visibleInternalText: /World State|revision\s*\d|手机与车机使用同一状态|由 Agent .*写入|Demo|模拟|未连接真实/i.test(panel.innerText),
+            effectiveActionFonts:Array.from(body.querySelectorAll('.auri-action-step-copy small,.auri-action-step-copy b,.auri-action-step-copy em,.auri-action-step-state'))
+              .map(node=>parseFloat(getComputedStyle(node).fontSize)*visualScale),
+            visibleInternalText: /World State|revision\s*\d|手机与车机使用同一状态|由 Agent .*写入|未连接真实/i.test(panel.innerText),
           };
         }"""
     )
@@ -104,7 +108,13 @@ def main() -> None:
             )
             page.goto(HMI, wait_until="load", timeout=30000)
             page.wait_for_function(
-                "window.AURI_HMI_NEXT?.getState().viewModel.lifecycle.stage === 'waiting_confirmation'"
+                "expected => {"
+                " const state=window.AURI_HMI_NEXT?.getState();"
+                " return state?.worldState?.session_id === expected.session_id"
+                "  && Number(state.worldState.revision) >= expected.revision"
+                "  && state.viewModel.lifecycle.stage === 'waiting_confirmation';"
+                "}",
+                arg={"session_id": prepared_state["session_id"], "revision": prepared_state["revision"]},
             )
             pages = [
                 ("tasks", '[data-auri-section="tasks"]'),
@@ -122,6 +132,12 @@ def main() -> None:
                 assert not result["bodyOverflowX"], (viewport, name, result)
                 assert not result["interactiveSmall"], (viewport, name, result)
                 assert not result["visibleInternalText"], (viewport, name, result)
+                if name == "messages":
+                    assert result["effectiveActionFonts"] and min(result["effectiveActionFonts"]) >= 18, (viewport, result)
+                    detail_text = page.locator("#auri-detail-body").inner_text()
+                    assert "Demo" in detail_text and "模拟" in detail_text, detail_text
+                if name == "tasks":
+                    assert "Demo" in page.locator("#auri-detail-body").inner_text()
                 path = OUTPUT / f"{viewport['width']}x{viewport['height']}-{name}.png"
                 page.screenshot(path=path)
                 report.append({"viewport": viewport, "page": name, "screenshot": str(path), **result})
@@ -139,6 +155,9 @@ def main() -> None:
                     assert not nested_result["bodyOverflowX"], (viewport, nested_name, nested_result)
                     assert not nested_result["interactiveSmall"], (viewport, nested_name, nested_result)
                     assert not nested_result["visibleInternalText"], (viewport, nested_name, nested_result)
+                    if nested_name == "task-detail":
+                        assert "地点 · Demo" in page.locator("#auri-detail-body").inner_text()
+                        assert "联系人 · Demo" in page.locator("#auri-detail-body").inner_text()
                     nested_path = OUTPUT / f"{viewport['width']}x{viewport['height']}-{nested_name}.png"
                     page.screenshot(path=nested_path)
                     report.append({"viewport": viewport, "page": nested_name, "screenshot": str(nested_path), **nested_result})
@@ -160,6 +179,30 @@ def main() -> None:
                 standalone_path = OUTPUT / "1920x1080-standalone-order.png"
                 page.screenshot(path=standalone_path)
                 report.append({"viewport": viewport, "page": "standalone-order", "screenshot": str(standalone_path), **standalone_result})
+                page.locator("#auri-driver-back").click()
+
+                product_state = copy.deepcopy(prepared_state)
+                product_state["revision"] += 200
+                product_state.pop("service_mock_mode", None)
+                product_state["actions"] = []
+                product_state["confirmation"] = None
+                product_state["service_orders"] = []
+                product_state["navigation"]["is_simulated"] = False
+                assert page.evaluate("state => window.AURI_HMI_NEXT.applyState(state)", product_state) is not False
+                if page.locator("#auri-driver-detail").is_visible():
+                    page.locator("#auri-driver-back").click()
+                    page.wait_for_function("document.querySelector('#auri-driver-detail')?.hidden === true")
+                page.evaluate("window.AURI_HMI_NEXT.openPanel('tasks')")
+                page.wait_for_function("document.querySelector('#auri-detail-title')?.textContent === '今日任务'")
+                product_tasks_text = page.locator("#auri-detail-body").inner_text()
+                assert "Demo" not in product_tasks_text, (
+                    product_tasks_text,
+                    page.evaluate("window.AURI_HMI_NEXT.getState()"),
+                )
+                page.locator(".auri-task-card").first.click()
+                product_task_text = page.locator("#auri-detail-body").inner_text()
+                assert "地点 · Demo" not in product_task_text
+                assert "联系人 · Demo" not in product_task_text
                 page.locator("#auri-driver-back").click()
             assert not errors, errors
             page.close()
