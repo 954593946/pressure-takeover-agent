@@ -10,9 +10,27 @@ plugins {
 fun buildConfigString(value: String): String =
     "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
-val agentApiToken = providers.gradleProperty("AURI_AGENT_API_TOKEN")
-    .orElse(providers.environmentVariable("AURI_AGENT_API_TOKEN"))
-    .orElse("")
+/**
+ * Resolve a secret from: env var → local.properties (gitignored) → gradle.properties (template) → ""
+ *
+ * local.properties is already in .gitignore and never committed.
+ * See secrets.example.properties for the required keys.
+ */
+fun secret(name: String): Provider<String> =
+    providers.environmentVariable(name)
+        .orElse(providers.provider {
+            val localFile = java.io.File(project.projectDir.parentFile, "local.properties")
+            if (localFile.exists()) {
+                java.util.Properties().apply { load(localFile.inputStream()) }.getProperty(name) ?: ""
+            } else ""
+        })
+        .orElse(providers.gradleProperty(name))
+        .orElse("")
+
+val agentApiToken = secret("AURI_AGENT_API_TOKEN")
+val xunfeiTtsAppId = secret("XUNFEI_TTS_APP_ID")
+val xunfeiTtsApiKey = secret("XUNFEI_TTS_API_KEY")
+val xunfeiTtsApiSecret = secret("XUNFEI_TTS_API_SECRET")
 
 android {
     namespace = "com.pressureagent.mobile"
@@ -50,11 +68,17 @@ android {
             buildConfigField("boolean", "USE_MOCK_AGENT", "false")
             buildConfigField("String", "AGENT_API_BASE_URL", "\"https://auri-agent-api.onrender.com\"")
             buildConfigField("String", "AGENT_API_TOKEN", buildConfigString(agentApiToken.get()))
+            buildConfigField("String", "XUNFEI_TTS_APP_ID", buildConfigString(xunfeiTtsAppId.get()))
+            buildConfigField("String", "XUNFEI_TTS_API_KEY", buildConfigString(xunfeiTtsApiKey.get()))
+            buildConfigField("String", "XUNFEI_TTS_API_SECRET", buildConfigString(xunfeiTtsApiSecret.get()))
         }
         release {
             buildConfigField("boolean", "USE_MOCK_AGENT", "false")
             buildConfigField("String", "AGENT_API_BASE_URL", "\"https://auri-agent-api.onrender.com\"")
             buildConfigField("String", "AGENT_API_TOKEN", buildConfigString(agentApiToken.get()))
+            buildConfigField("String", "XUNFEI_TTS_APP_ID", buildConfigString(xunfeiTtsAppId.get()))
+            buildConfigField("String", "XUNFEI_TTS_API_KEY", buildConfigString(xunfeiTtsApiKey.get()))
+            buildConfigField("String", "XUNFEI_TTS_API_SECRET", buildConfigString(xunfeiTtsApiSecret.get()))
         }
     }
 

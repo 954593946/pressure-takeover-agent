@@ -35,6 +35,8 @@ http://127.0.0.1:5174/apps/vehicle-hmi/
 - 相同 Session 只接受更高 revision；Session 切换后拒绝已退休 Session 的延迟响应。
 - 任务支持 0-N 项；不写死接孩子、超市、目的地、18:28 或动作数量。
 - 只读展示 `last_utterance`、`wearable`、`actions` 和 `service_orders`；`vehicle_state` 由 Agent 统一写入，HMI 只能通过 `vehicle.control` 标准 Event 请求变更。
+- 消息卡直接读取 Agent `actions[type=message].message_draft.body`，主屏显示短预览、二级页显示完整正文；旧后端仅回退到 `summary`，不再显示前端预设消息。
+- 采购方案通过 `Action.details_ref` 关联 `service_orders[].preview_id/order_id`，二级页保留逐项商品、数量、单价和小计。给车机负责人的完整映射与验收步骤见 [`docs/hmi-agent-actions-contract.md`](../../docs/hmi-agent-actions-contract.md)。
 - 座舱页支持 AC 开关、16-30°C 温度、自动/制冷/制热/送风和低/中/高风量；一次只提供一个“应用设置”CTA，请求失败不显示假成功。
 - 车机设置成功后 revision 增加，手机和 HMI 通过同一 World State/SSE 显示相同座舱状态；相同 `event_id` 重试不会重复执行。
 - 空调类输出只进入座舱状态，不占用驾驶现实结论。

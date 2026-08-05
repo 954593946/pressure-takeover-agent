@@ -59,6 +59,10 @@ class WearableViewModel @Inject constructor(
         wearableGateway.sendDebugState(mode)
     }
 
+    fun sendDebugPressureRise() {
+        wearableGateway.sendDebugPressureRise()
+    }
+
     fun sendDebugHaptic(haptic: HapticPattern) {
         val currentMode = _uiState.value.wearable?.mode ?: WearableMode.IDLE
         wearableGateway.sendDebugHaptic(haptic = haptic, mode = currentMode)

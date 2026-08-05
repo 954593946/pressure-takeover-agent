@@ -286,9 +286,10 @@ Content-Type: application/json
 
 ## 8. 每个成员具体怎么接
 
-执行详情已经放进现有 v0.2 字段，不需要各端等待新契约：
+执行详情已经放进现有 v0.2 World State，不需要各端等待另一套接口。车机可直接使用的 JSON、TypeScript 映射和验收清单见 [车机接入 Agent 实时消息与采购清单](hmi-agent-actions-contract.md)：
 
-- 消息草稿和确认后的完整模拟发送正文：`actions[type=message].summary`。
+- 消息正文：优先读取 `actions[type=message].message_draft.body`；收件人读取 `target`。该字段为向后兼容的可选字段，旧服务才回退到 `summary`。
+- 消息确认和执行状态：读取同一 Action 的 `status`，不要由页面根据按钮点击自行推演。
 - 采购方式、全部商品、金额、配送时段、替换规则和确认后的模拟订单号：`actions[type=service_order].summary`。
 - 需要逐项渲染商品卡时使用 `service_orders[].items`，订单状态和订单号使用 `service_orders[].status/order_id`。
 - `output.conclusion` 只用于当前场景的一句话回执；客户端不能靠这句话判断是否真的完成，必须读取上述结构化状态。

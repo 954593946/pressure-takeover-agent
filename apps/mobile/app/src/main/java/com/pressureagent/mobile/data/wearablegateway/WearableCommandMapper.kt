@@ -18,6 +18,8 @@ object WearableCommandMapper {
         return toWatchCommand(
             commandId = commandId,
             mode = demoState.mode,
+            icon = demoState.icon,
+            title = demoState.title,
             text = demoState.text,
             color = demoState.color,
             haptic = demoState.haptic,
@@ -28,6 +30,8 @@ object WearableCommandMapper {
     fun toWatchCommand(
         commandId: String,
         mode: WearableMode,
+        icon: String? = null,
+        title: String? = null,
         text: String = "",
         color: WearableColor = WearableColor.NAVY,
         haptic: HapticPattern = HapticPattern.NONE,
@@ -37,8 +41,8 @@ object WearableCommandMapper {
         return WatchSetStateCommand(
             commandId = commandId,
             mode = serialMode,
-            icon = iconFor(mode),
-            title = titleFor(mode),
+            icon = icon ?: iconFor(mode),
+            title = title ?: titleFor(mode),
             text = text.ifBlank { textFor(mode) },
             color = colorFor(color, mode),
             dimColor = dimColorFor(color, mode),
@@ -155,9 +159,16 @@ object WearableCommandMapper {
                 mode = WearableMode.HANDOVER,
                 text = wearableState.text.ifBlank { "车机负责确认" },
                 color = WearableColor.BLUE,
-                haptic = HapticPattern.NONE,
+                haptic = HapticPattern.SINGLE_PULSE,
             )
-            Stage.TAKEOVER_L2,
+            Stage.TAKEOVER_L2 -> DemoWatchState(
+                mode = WearableMode.WARNING,
+                icon = "!",
+                title = "压力可能上升",
+                text = pressureRiseText(worldState),
+                color = WearableColor.YELLOW,
+                haptic = HapticPattern.DOUBLE_SHORT,
+            )
             Stage.TAKEOVER_L3,
             Stage.PLANNING,
             Stage.SERVICE_PREPARED,
@@ -166,20 +177,15 @@ object WearableCommandMapper {
                 mode = WearableMode.PROCESSING,
                 text = wearableState.text.ifBlank { "AURI 正在协调" },
                 color = WearableColor.BLUE,
-                haptic = HapticPattern.NONE,
+                haptic = HapticPattern.THREE_BEAT,
             )
             Stage.SERVICE_EXECUTED,
-            Stage.ACTION_COMPLETED -> DemoWatchState(
+            Stage.ACTION_COMPLETED,
+            Stage.COOLDOWN -> DemoWatchState(
                 mode = WearableMode.COMPLETED,
-                text = wearableState.text.ifBlank { "已同步完成" },
+                text = wearableState.text.ifBlank { "已处理" },
                 color = WearableColor.GREEN,
                 haptic = HapticPattern.SOFT_SHORT,
-            )
-            Stage.COOLDOWN -> DemoWatchState(
-                mode = WearableMode.IDLE,
-                text = "已处理",
-                color = WearableColor.BLUE,
-                haptic = HapticPattern.NONE,
             )
             Stage.PARKED_REVIEW -> DemoWatchState(
                 mode = WearableMode.IDLE,
@@ -196,10 +202,21 @@ object WearableCommandMapper {
         }
     }
 
+    private fun pressureRiseText(worldState: WorldState): String {
+        val lateMinutes = worldState.risk.lateMinutes
+        return if (lateMinutes > 0) {
+            "当前负荷上升，预计晚到 ${lateMinutes} 分钟"
+        } else {
+            "检测到负荷上升，请关注节奏"
+        }
+    }
+
     private data class DemoWatchState(
         val mode: WearableMode,
         val text: String,
         val color: WearableColor,
         val haptic: HapticPattern,
+        val icon: String? = null,
+        val title: String? = null,
     )
 }

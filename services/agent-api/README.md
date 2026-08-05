@@ -126,10 +126,11 @@ AGENT_STREAM_URL=https://auri-agent-api.onrender.com/v1/stream
 
 ## Demo 消息与采购回执
 
-协助方案不再只返回“已准备/已处理”的泛化文案。客户端无需增加新接口，直接读取现有 v0.2 World State：
+协助方案不再只返回“已准备/已处理”的泛化文案。客户端无需增加第二套接口，直接读取现有 v0.2 World State；车机的完整接入示例见 [`docs/hmi-agent-actions-contract.md`](../../docs/hmi-agent-actions-contract.md)：
 
-- 确认前，消息类 `Action.summary` 包含收件人、完整消息草稿和“未连接真实通讯服务”标识。
-- 确认后，同一 `Action.summary` 变为“已模拟发送”，正文继续保留，方便手机复盘和 HMI 动作卡核验。
+- 消息类 `Action.message_draft.body` 是给客户端直接渲染的结构化正文；`target` 是收件人，`is_simulated=true` 表示 Demo 模拟。
+- `message_draft` 是 v0.2 的向后兼容可选字段。旧客户端可继续读取 `Action.summary`，新客户端不得再用前端预设消息覆盖它。
+- 确认后，同一 `Action.summary` 变为“已模拟发送”，`message_draft.body` 保持不变，方便手机复盘和 HMI 动作卡核验。
 - 采购类 `Action.summary` 包含全部商品与数量、总件数/品类数、总价、配送方式、配送时段、选择策略和替换规则；确认后还包含模拟 `order_id`。
 - `service_orders[].items` 仍是商品卡片的结构化权威数据；前端不要从自然语言回复反向解析商品或执行状态。
 - `output.conclusion` 和 Chat `tool_result.summary` 提供适合现场演示的简短回执，至少包含收件人/消息要点，以及前两项商品、金额和配送时段。
