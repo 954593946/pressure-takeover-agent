@@ -35,6 +35,8 @@ Demo 控制台是现场演示导演台，用于模拟本轮不接入真实系统
 https://954593946.github.io/pressure-takeover-agent/apps/demo-console/
 ```
 
+这是团队异地协作的正式入口。访问者与开发机无需处于同一局域网，开发机也无需保持开机；页面连接 `https://auri-agent-api.onrender.com`，不要填写发布者电脑的 `127.0.0.1` 或 `192.168.*` 地址。
+
 第一次使用需填写团队 Agent API 和负责人单独提供的 Team Token。公网静态页面不包含 Token、OpenAI API Key 或后端环境变量。
 
 在同一个 GitHub Pages 域名下，Console 点击“保存配置”“连接 Agent”或“载入演示预置任务”后，正式 HMI 会复用同一浏览器连接配置。建议先配置 Console，再打开 HMI；两端应显示同一个 Session 和 revision。若 Console 与 HMI 分别运行在不同端口或域名，浏览器不会共享 `localStorage`，需要分别填写一次。
@@ -68,6 +70,8 @@ http://<开发机局域网IP>:5174/apps/demo-console/
 ```
 
 公网、本机和局域网页面均可连接本地或公网 Agent；局域网设备若要连接开发机上的本地 Agent，需要后端监听 `0.0.0.0` 并配置允许该页面 Origin 的 CORS。
+
+局域网 URL 仅对同一网络中的设备有效。团队成员位于不同办公室、家庭网络或移动网络时，统一使用 GitHub Pages 公网地址。
 
 ## 连接本地 Agent
 

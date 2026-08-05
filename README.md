@@ -34,6 +34,8 @@ AURI 是一个面向车机、手机与腕上设备的多端 Agent。它在驾驶
 
 GitHub Pages 由本仓库的 `Web HMI and Console` 工作流自动部署。团队统一使用以下地址，不再使用其他账号仓库中的旧页面：
 
+**团队成员不在同一局域网时必须使用下面的 HTTPS GitHub Pages 地址。** GitHub Pages 是公网静态站点，与开发机是否开机、成员所在网络及 `192.168.*` 局域网地址无关；页面再通过 HTTPS 连接团队公网 Agent。局域网地址只用于同一现场网络下的低延迟备选，不能发给异地成员使用。
+
 ```text
 统一入口:  https://954593946.github.io/pressure-takeover-agent/
 车机 HMI: https://954593946.github.io/pressure-takeover-agent/apps/vehicle-hmi/
@@ -56,6 +58,8 @@ Demo 台:  http://192.168.1.11:5174/apps/demo-console/
 开发机 IP 变化时以 `hostname -I` 的首个 IPv4 地址替换 `192.168.1.11`。新版静态资源使用独立版本号，更新后不需要在 URL 添加额外后缀；如浏览器仍保留旧页面，执行一次强制刷新即可。
 
 这些只是公开静态前端，不包含 Team Token 或 OpenAI API Key。首次打开后，在页面的连接设置中填写 `https://auri-agent-api.onrender.com` 和负责人单独提供的 Team Token。若两个页面看不到同一任务，首先检查二者是否连接了同一个 API 地址和同一个共享 Session。
+
+发布或更新 `main` 后，在 GitHub Actions 中等待 `Web HMI and Console` 成功，再分别访问统一入口、HMI 和 Console。三个地址均应返回 `200`；HMI/Console 连接设置中使用团队公网 Agent，不要填写发布者电脑的 `127.0.0.1` 或 `192.168.*` 地址。
 
 ## 团队快速接入：公网 Agent
 

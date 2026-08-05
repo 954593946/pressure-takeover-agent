@@ -21,6 +21,8 @@ HMI 不负责：
 https://954593946.github.io/pressure-takeover-agent/apps/vehicle-hmi/
 ```
 
+这是团队异地协作的正式公网入口，不要求访问者与开发机处于同一局域网，也不要求开发机保持开机。异地访问时，Agent API 必须使用团队公网 HTTPS 地址；`127.0.0.1` 只指访问者自己的电脑，`192.168.*` 只能在同一局域网使用。
+
 本机从仓库根目录启动：
 
 ```bash
@@ -32,6 +34,8 @@ python -m http.server 5174
 ```text
 http://127.0.0.1:5174/apps/vehicle-hmi/
 ```
+
+同一局域网共享时改用 `python -m http.server 5174 --bind 0.0.0.0`，其他设备访问 `http://<开发机局域网IP>:5174/apps/vehicle-hmi/`。不同网络的成员不要使用该地址，直接使用上面的 GitHub Pages。
 
 ## 连接 Agent
 
