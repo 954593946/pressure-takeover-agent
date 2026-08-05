@@ -123,11 +123,23 @@ def main() -> None:
             f"window.AURI_HMI_CONFIG={hmi_config};"
             "try{localStorage.removeItem('auri-hmi-next-config')}catch(_e){};"
             "window.__auriSpoken=[];"
-            "window.AURI_HMI_SPEECH_ADAPTER={speak:(text)=>{window.__auriSpoken.push(text);return true}};"
+            "window.__systemSpeechCalls=[];"
+            "window.SAFEDRIVER_CONFIG={...(window.SAFEDRIVER_CONFIG||{}),ttsKey:'e2e-tts-key',systemSpeechFallback:false};"
         )
 
         console.goto(CONSOLE, wait_until="domcontentloaded", timeout=30000)
         hmi.goto(HMI, wait_until="domcontentloaded", timeout=30000)
+        hmi.evaluate(
+            """() => {
+              window.speakText=(text)=>{window.__auriSpoken.push(text);return Promise.resolve(true)};
+              try {
+                Object.defineProperty(window.speechSynthesis, 'speak', {
+                  configurable: true,
+                  value: utterance => window.__systemSpeechCalls.push(utterance?.text || '')
+                });
+              } catch (_error) {}
+            }"""
+        )
         console.wait_for_function("document.querySelector('#syncMode')?.textContent === 'SSE 实时'", timeout=20000)
         hmi.wait_for_function("window.AURI_HMI_NEXT?.getState().syncMode === 'streaming'", timeout=20000)
         console.locator("#preflightBtn").click()
@@ -220,6 +232,7 @@ def main() -> None:
         assert len(ready_speech) == 1, ready_speech
         assert "AURI 已准备处理方案" in ready_speech[0], ready_speech
         assert "2条消息和1项配送方案已准备" in ready_speech[0], ready_speech
+        assert hmi.evaluate("window.__systemSpeechCalls.length") == 0
         hmi.locator("#auri-takeover-confirm").click()
         wait_console_stage(console, "action_completed")
         completed = api("/v1/state")
@@ -229,6 +242,7 @@ def main() -> None:
         assert len(completed_speech) == 2, completed_speech
         assert "AURI 已完成处理" in completed_speech[1], completed_speech
         assert "2条消息和1项配送方案已完成" in completed_speech[1], completed_speech
+        assert hmi.evaluate("window.__systemSpeechCalls.length") == 0
         completed_triggers = hmi.locator('.auri-takeover-section-head, #auri-takeover-actions [data-panel-target="messages"]')
         assert completed_triggers.count() >= 4
         for index in range(completed_triggers.count()):

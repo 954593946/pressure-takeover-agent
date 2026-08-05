@@ -69,9 +69,21 @@ def main():
             f"window.AURI_HMI_CONFIG={config};"
             "try{localStorage.removeItem('auri-hmi-next-config')}catch(_e){};"
             "window.__auriSpoken=[];"
-            "window.AURI_HMI_SPEECH_ADAPTER={speak:(text)=>{window.__auriSpoken.push(text);return true}};"
+            "window.__systemSpeechCalls=[];"
+            "window.SAFEDRIVER_CONFIG={...(window.SAFEDRIVER_CONFIG||{}),ttsKey:'e2e-tts-key',systemSpeechFallback:false};"
         )
         page.goto(HMI, wait_until="domcontentloaded", timeout=30000)
+        page.evaluate(
+            """() => {
+              window.speakText=(text)=>{window.__auriSpoken.push(text);return Promise.resolve(true)};
+              try {
+                Object.defineProperty(window.speechSynthesis, 'speak', {
+                  configurable: true,
+                  value: utterance => window.__systemSpeechCalls.push(utterance?.text || '')
+                });
+              } catch (_error) {}
+            }"""
+        )
         page.wait_for_function(
             "window.AURI_HMI_NEXT?.getState().viewModel.lifecycle.stage === 'off_vehicle_idle'"
         )
@@ -222,6 +234,7 @@ def main():
         ready_speech = page.evaluate("window.__auriSpoken")
         assert len(ready_speech) == 1, ready_speech
         assert "AURI 已准备处理方案" in ready_speech[0], ready_speech
+        assert page.evaluate("window.__systemSpeechCalls.length") == 0
 
         page.locator("#auri-takeover-confirm").click()
         page.wait_for_function(
@@ -236,6 +249,7 @@ def main():
         completed_speech = page.evaluate("window.__auriSpoken")
         assert len(completed_speech) == 2, completed_speech
         assert "AURI 已完成处理" in completed_speech[1], completed_speech
+        assert page.evaluate("window.__systemSpeechCalls.length") == 0
 
         # A revision-only update must not enqueue the same completion speech.
         revision_only = submit("service.mock.config", {"mode": "success"})
