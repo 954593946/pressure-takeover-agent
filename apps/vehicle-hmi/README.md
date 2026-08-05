@@ -117,6 +117,8 @@ http://127.0.0.1:5174/apps/vehicle-hmi/
 
 本机需要默认加载真实高德地图时，复制 `env.local.example.js` 为 `env.local.js` 并填写 Web Key 和安全码。`env.local.js` 已被 Git 忽略；它只在浏览器没有保存地图 Key、且没有明确选择离线模式时作为本机兜底。团队公网页面不能依赖这个文件，必须在 Render 配置 `AMAP_JS_API_KEY`、`AMAP_SECURITY_JS_CODE`、`AMAP_PUBLIC_BASE_URL` 和允许的 HMI Origin，并确认 `/health` 返回 `amap_configured=true`、`/v1/map-config` 返回 `provider=amap`。
 
+本机语音演示同样在 `env.local.js` 配置 `SAFEDRIVER_CONFIG.ttsKey`。HMI 默认只使用已配置的 Bosch TTS；Linux/Firefox 的系统语音可能把汉字读成 “Chinese letter”，因此系统语音兜底默认关闭，只有显式设置 `systemSpeechFallback: true` 才会启用。真实 Key 不得提交到仓库。
+
 也可在本机 `env.js` 中设置（不得提交真实 Token）：
 
 ```js

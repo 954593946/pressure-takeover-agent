@@ -964,6 +964,9 @@
         window.AURI_HMI_SPEECH_ADAPTER.cancel?.();
         return window.AURI_HMI_SPEECH_ADAPTER.speak(briefing) !== false;
       }
+      // Linux speech engines can advertise a zh voice while spelling every
+      // Han character as "Chinese letter". Keep that fallback opt-in only.
+      if (window.SAFEDRIVER_CONFIG?.systemSpeechFallback !== true) return false;
       if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return false;
       const voices = window.speechSynthesis.getVoices?.() || [];
       const chineseVoice = speechBriefing.selectChineseVoice(voices);
