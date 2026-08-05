@@ -100,12 +100,14 @@ class WearableCommandMapperTest {
     }
 
     @Test
-    fun mapsDrivingAndPlanningStagesToSilentBlueProcessing() {
+    fun mapsDrivingAndPlanningStagesToAgentDrivenHaptics() {
         listOf(
-            Stage.TAKEOVER_L2,
-            Stage.PLANNING,
-            Stage.WAITING_CONFIRMATION,
-        ).forEachIndexed { index, stage ->
+            Triple(Stage.HANDOVER_TO_VEHICLE, "handover", "single_pulse"),
+            Triple(Stage.VEHICLE_OBSERVATION, "handover", "single_pulse"),
+            Triple(Stage.TAKEOVER_L2, "processing", "three_beat"),
+            Triple(Stage.PLANNING, "processing", "three_beat"),
+            Triple(Stage.WAITING_CONFIRMATION, "processing", "three_beat"),
+        ).forEachIndexed { index, (stage, expectedMode, expectedHaptic) ->
             val command = WearableCommandMapper.toWatchCommand(
                 WorldState(
                     sessionId = "demo",
@@ -122,14 +124,14 @@ class WearableCommandMapperTest {
             )
 
             assertNotNull(command)
-            assertEquals("processing", command.mode)
-            assertEquals("none", command.haptic)
+            assertEquals(expectedMode, command.mode)
+            assertEquals(expectedHaptic, command.haptic)
             assertEquals(0x2f6bff, command.color)
         }
     }
 
     @Test
-    fun mapsCompletedToGreenSoftShortAndRecoveryToSilentIdle() {
+    fun mapsCompletedAndCooldownToGreenSoftShortBeforeRecoveryIdle() {
         val completed = WearableCommandMapper.toWatchCommand(
             WorldState(
                 sessionId = "demo",
@@ -138,10 +140,18 @@ class WearableCommandMapperTest {
                 wearable = null,
             ),
         )
-        val parked = WearableCommandMapper.toWatchCommand(
+        val cooldown = WearableCommandMapper.toWatchCommand(
             WorldState(
                 sessionId = "demo",
                 revision = 21,
+                stage = Stage.COOLDOWN,
+                wearable = null,
+            ),
+        )
+        val parked = WearableCommandMapper.toWatchCommand(
+            WorldState(
+                sessionId = "demo",
+                revision = 22,
                 stage = Stage.PARKED_REVIEW,
                 wearable = null,
             ),
@@ -151,6 +161,12 @@ class WearableCommandMapperTest {
         assertEquals("completed", completed.mode)
         assertEquals("soft_short", completed.haptic)
         assertEquals(0x2e9d6f, completed.color)
+
+        assertNotNull(cooldown)
+        assertEquals("completed", cooldown.mode)
+        assertEquals("已处理", cooldown.text)
+        assertEquals("soft_short", cooldown.haptic)
+        assertEquals(0x2e9d6f, cooldown.color)
 
         assertNotNull(parked)
         assertEquals("idle", parked.mode)

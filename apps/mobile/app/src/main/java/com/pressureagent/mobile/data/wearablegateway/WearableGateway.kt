@@ -39,6 +39,8 @@ import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 import javax.inject.Singleton
 
+private const val MAX_PENDING_SET_STATE_COMMANDS = 20
+
 @Singleton
 class WearableGateway @Inject constructor(
     private val repository: WorldStateRepository,
@@ -50,6 +52,8 @@ class WearableGateway @Inject constructor(
 
     @Volatile private var serverSocket: ServerSocket? = null
     @Volatile private var latestSetState: WatchSetStateCommand? = null
+    private val setStateLock = Any()
+    private val pendingSetStateCommands = ArrayDeque<WatchSetStateCommand>()
     @Volatile private var latestSessionId: String = ""
     @Volatile private var started: Boolean = false
     private val submittedSensorEvents = ArrayDeque<String>()
@@ -79,6 +83,11 @@ class WearableGateway @Inject constructor(
                 }
             } catch (error: Exception) {
                 val shouldLogError = started
+                try {
+                    serverSocket?.close()
+                } catch (_: Exception) {
+                }
+                serverSocket = null
                 started = false
                 setState { it.copy(running = false, lastError = error.message ?: "server stopped") }
                 if (shouldLogError) {
@@ -139,7 +148,11 @@ class WearableGateway @Inject constructor(
     @Volatile private var pendingSensorRequest: WatchGatewayEnvelope? = null
 
     private fun queueDebugCommand(command: WatchSetStateCommand) {
-        latestSetState = command
+        synchronized(setStateLock) {
+            pendingSetStateCommands.clear()
+            pendingSetStateCommands.addLast(command)
+            latestSetState = command
+        }
         setState {
             it.copy(
                 lastOutboxCommandId = command.commandId,
@@ -150,13 +163,55 @@ class WearableGateway @Inject constructor(
         AppLogger.i("WearableGateway", "调试命令已入队: ${command.commandId}")
     }
 
+    private fun queueAgentCommand(command: WatchSetStateCommand) {
+        synchronized(setStateLock) {
+            if (latestSetState?.commandId == command.commandId ||
+                pendingSetStateCommands.any { it.commandId == command.commandId }
+            ) {
+                return
+            }
+
+            pendingSetStateCommands.addLast(command)
+            while (pendingSetStateCommands.size > MAX_PENDING_SET_STATE_COMMANDS) {
+                pendingSetStateCommands.removeFirst()
+            }
+            latestSetState = command
+        }
+    }
+
+    private fun nextSetStateCommand(lastCommandId: String): WatchSetStateCommand? {
+        return synchronized(setStateLock) {
+            while (pendingSetStateCommands.isNotEmpty() &&
+                pendingSetStateCommands.first().commandId == lastCommandId
+            ) {
+                pendingSetStateCommands.removeFirst()
+            }
+
+            pendingSetStateCommands.firstOrNull()?.takeIf { it.commandId != lastCommandId }
+        }
+    }
+
+    private fun acknowledgeSetState(commandId: String) {
+        if (commandId.isBlank()) {
+            return
+        }
+
+        synchronized(setStateLock) {
+            while (pendingSetStateCommands.isNotEmpty() &&
+                pendingSetStateCommands.first().commandId == commandId
+            ) {
+                pendingSetStateCommands.removeFirst()
+            }
+        }
+    }
+
     private fun observeWorldState() {
         scope.launch {
             repository.worldState.collect { worldState ->
                 latestSessionId = worldState.sessionId
                 val command = WearableCommandMapper.toWatchCommand(worldState)
-                latestSetState = command
                 if (command != null) {
+                    queueAgentCommand(command)
                     setState {
                         it.copy(
                             lastOutboxCommandId = command.commandId,
@@ -203,7 +258,7 @@ class WearableGateway @Inject constructor(
     private fun handleOutbox(query: Map<String, String>): ByteArray {
         val lastCommandId = query["last_command_id"].orEmpty()
         val lastSensorRequestId = query["last_sensor_request_id"].orEmpty()
-        val command = latestSetState
+        val command = nextSetStateCommand(lastCommandId)
         val setStateEnvelope = if (command != null && command.commandId != lastCommandId) {
             WatchGatewayEnvelope(
                 method = "watch.setState",
@@ -238,6 +293,13 @@ class WearableGateway @Inject constructor(
                     "watch.sensor" -> snapshot.copy(lastSideContactAt = System.currentTimeMillis(), lastSensor = params, lastError = "")
                     "watch.pong" -> snapshot.copy(lastSideContactAt = System.currentTimeMillis(), lastPong = params, lastError = "")
                     else -> snapshot.copy(lastSideContactAt = System.currentTimeMillis(), lastError = "")
+                }
+            }
+
+            if (method == "watch.ack") {
+                val result = params.stringValue("result")
+                if (result == "ok" || result == "duplicate") {
+                    acknowledgeSetState(params.stringValue("command_id"))
                 }
             }
 

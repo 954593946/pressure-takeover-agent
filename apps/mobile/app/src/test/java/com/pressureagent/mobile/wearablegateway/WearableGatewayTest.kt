@@ -102,6 +102,63 @@ class WearableGatewayTest {
         }
     }
 
+    @Test
+    fun queuesCompletedBeforeRecoveryIdle() {
+        val repository = FakeWorldStateRepository(
+            WorldState(
+                sessionId = "demo",
+                revision = 1,
+                stage = Stage.COOLDOWN,
+            ),
+        )
+        val gateway = WearableGateway(repository, json)
+
+        try {
+            gateway.start()
+            eventuallyTrue { gateway.state.value.lastAgentCommandId == "world-demo-1" }
+
+            repository.update(
+                WorldState(
+                    sessionId = "demo",
+                    revision = 2,
+                    stage = Stage.PARKED_REVIEW,
+                ),
+            )
+            eventuallyTrue { gateway.state.value.lastAgentCommandId == "world-demo-2" }
+
+            val firstOutbox = eventuallyJsonObject {
+                json.decodeFromString<JsonElement>(
+                    httpGet("/v1/watch/outbox?last_command_id=&last_sensor_request_id="),
+                ).jsonObject.also { response ->
+                    check(response["set_state"] is JsonObject) { "first set_state is not ready" }
+                }
+            }
+            val firstParams = firstOutbox["set_state"]!!.jsonObject["params"]!!.jsonObject
+            assertEquals("world-demo-1", firstParams["command_id"]?.jsonPrimitive?.content)
+            assertEquals("completed", firstParams["mode"]?.jsonPrimitive?.content)
+            assertEquals("soft_short", firstParams["haptic"]?.jsonPrimitive?.content)
+
+            httpPost(
+                "/v1/watch/inbox",
+                """{"method":"watch.ack","params":{"command_id":"world-demo-1","result":"ok"}}""",
+            )
+
+            val secondOutbox = eventuallyJsonObject {
+                json.decodeFromString<JsonElement>(
+                    httpGet("/v1/watch/outbox?last_command_id=world-demo-1&last_sensor_request_id="),
+                ).jsonObject.also { response ->
+                    check(response["set_state"] is JsonObject) { "second set_state is not ready" }
+                }
+            }
+            val secondParams = secondOutbox["set_state"]!!.jsonObject["params"]!!.jsonObject
+            assertEquals("world-demo-2", secondParams["command_id"]?.jsonPrimitive?.content)
+            assertEquals("idle", secondParams["mode"]?.jsonPrimitive?.content)
+            assertEquals("none", secondParams["haptic"]?.jsonPrimitive?.content)
+        } finally {
+            gateway.stop()
+        }
+    }
+
     private fun httpGet(path: String): String =
         openConnection(path).run {
             requestMethod = "GET"
@@ -179,4 +236,8 @@ private class FakeWorldStateRepository(initialState: WorldState) : WorldStateRep
     }
 
     override suspend fun resetSession(): WorldState = state.value
+
+    fun update(nextState: WorldState) {
+        state.value = nextState
+    }
 }

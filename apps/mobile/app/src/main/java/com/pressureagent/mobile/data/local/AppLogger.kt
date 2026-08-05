@@ -73,13 +73,16 @@ object AppLogger {
         }
         _logs.value = current
 
-        // Logcat
+        // Logcat is best-effort so local JVM tests can use AppLogger without Android stubs.
         val line = "[${entry.timestamp}] ${level.label}/$tag: $message"
-        when (level) {
-            Level.DEBUG -> android.util.Log.d("AURI", line)
-            Level.INFO -> android.util.Log.i("AURI", line)
-            Level.WARN -> android.util.Log.w("AURI", line)
-            Level.ERROR -> android.util.Log.e("AURI", line)
+        try {
+            when (level) {
+                Level.DEBUG -> android.util.Log.d("AURI", line)
+                Level.INFO -> android.util.Log.i("AURI", line)
+                Level.WARN -> android.util.Log.w("AURI", line)
+                Level.ERROR -> android.util.Log.e("AURI", line)
+            }
+        } catch (_: RuntimeException) {
         }
 
         // File (async)
