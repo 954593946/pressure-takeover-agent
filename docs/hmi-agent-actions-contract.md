@@ -51,6 +51,8 @@ WorldState.actions[type == "message"]
 
 - 收件人读取 `target`。
 - 完整正文优先读取 `message_draft.body`，不要再使用前端预设文案。
+- `waiting_party` 为空时，真实手机任务不会产生 `message` Action；HMI 不得自行补充老师、家人或其他联系人。
+- 只有演示者显式点击 Demo Console 的“可选预置任务”时，预置任务才会携带王老师和孩子妈妈。此时联系人仍来自 Agent 返回的 World State，而不是 HMI 本地常量。
 - 主驾驶屏只展示正文短预览；完整正文放在“处理 → 消息详情”二级页。
 - `status=awaiting_confirmation` 表示待确认；确认后同一 Action 变为 `completed`，`message_draft.body` 保持不变，`summary` 会明确显示“已模拟发送”。
 - `message_draft.is_simulated=true` 必须在 UI 中保留 Demo 标识，不能宣称真实短信已经送达。
@@ -172,6 +174,7 @@ X-Agent-Token: <团队令牌>
 ## 6. 联调验收清单
 
 - [ ] 手机创建不同任务后，车机收到的收件人和正文随 Agent 状态变化，不再固定。
+- [ ] 手机任务不含联系人时，车机不显示虚构消息；显式载入 Console 预置后才显示预置联系人。
 - [ ] 主屏显示 Agent 正文短预览，二级页显示完整正文。
 - [ ] 采购二级页逐项显示商品、数量、单价和小计。
 - [ ] 确认前后 `message_draft.body` 不变，Action 状态由后端从待确认变为完成。

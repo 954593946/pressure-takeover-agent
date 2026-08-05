@@ -11,6 +11,7 @@ from .config import Settings
 from .models import Task
 from .observability import classify_provider_error, utc_timestamp
 from .prompts import TASK_RIGIDITY_POLICY
+from .tools import ground_waiting_parties
 
 
 logger = logging.getLogger(__name__)
@@ -89,7 +90,7 @@ class TaskParser:
         extraction = state.get("structured_response")
         if not isinstance(extraction, TaskExtraction):
             extraction = TaskExtraction.model_validate(extraction)
-        tasks = self._normalise_agent_tasks(extraction.tasks)
+        tasks = self._normalise_agent_tasks(extraction.tasks, text)
         if "孩子" in text and not any(task.task_type == "rigid" for task in tasks):
             raise ValueError("agent omitted the rigid responsibility")
         if any(word in text for word in ("超市", "采购", "买菜")) and not any(
@@ -98,7 +99,7 @@ class TaskParser:
             raise ValueError("agent omitted the grocery capability")
         return tasks
 
-    def _normalise_agent_tasks(self, extracted: list[ExtractedTask]) -> list[Task]:
+    def _normalise_agent_tasks(self, extracted: list[ExtractedTask], source_text: str) -> list[Task]:
         tasks: list[Task] = []
         for index, raw in enumerate(extracted):
             title = raw.title.strip()
@@ -126,7 +127,7 @@ class TaskParser:
                     task_type=task_type,
                     priority=priority,
                     adjustable=adjustable,
-                    waiting_party=raw.waiting_party,
+                    waiting_party=ground_waiting_parties(raw.waiting_party, source_text),
                     capability_tags=tags,
                 )
             )

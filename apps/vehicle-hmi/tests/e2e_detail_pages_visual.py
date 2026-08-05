@@ -136,6 +136,7 @@ def main() -> None:
                     assert result["effectiveActionFonts"] and min(result["effectiveActionFonts"]) >= 18, (viewport, result)
                     detail_text = page.locator("#auri-detail-body").inner_text()
                     assert "Demo" in detail_text and "模拟" in detail_text, detail_text
+                    assert "20:00-21:00" in detail_text, detail_text
                 if name == "tasks":
                     assert "Demo" in page.locator("#auri-detail-body").inner_text()
                 path = OUTPUT / f"{viewport['width']}x{viewport['height']}-{name}.png"
@@ -158,6 +159,10 @@ def main() -> None:
                     if nested_name == "task-detail":
                         assert "地点 · Demo" in page.locator("#auri-detail-body").inner_text()
                         assert "联系人 · Demo" in page.locator("#auri-detail-body").inner_text()
+                    if nested_name == "message-detail":
+                        confirm = page.locator("[data-confirm-current]")
+                        assert confirm.is_visible(), "待确认动作详情必须提供车机确认入口"
+                        assert "确认全部" in confirm.inner_text()
                     nested_path = OUTPUT / f"{viewport['width']}x{viewport['height']}-{nested_name}.png"
                     page.screenshot(path=nested_path)
                     report.append({"viewport": viewport, "page": nested_name, "screenshot": str(nested_path), **nested_result})

@@ -7,9 +7,11 @@
 
   const STORAGE_KEY = "auri-hmi-next-config";
   const SHARED_STORAGE_KEY = "auri-shared-agent-config-v1";
+  const PRIMARY_AGENT_API = "https://auri-agent-api.onrender.com";
+  const BACKUP_AGENT_API = "https://auri-langchain-agent-api.onrender.com";
   const GET_RETRY_DELAYS_MS = [0, 900, 2200];
   const DEFAULT_CONFIG = {
-    apiBase: "https://auri-langchain-agent-api.onrender.com",
+    apiBase: PRIMARY_AGENT_API,
     token: "",
     stream: true,
     pollIntervalMs: 3000,
@@ -105,8 +107,14 @@
 
   function loadConfig(environment = {}) {
     const storage = environment.storage || (typeof localStorage !== "undefined" ? localStorage : null);
-    const stored = safeStorageGet(storage, STORAGE_KEY);
-    const shared = safeStorageGet(storage, SHARED_STORAGE_KEY);
+    const storedRaw = safeStorageGet(storage, STORAGE_KEY);
+    const sharedRaw = safeStorageGet(storage, SHARED_STORAGE_KEY);
+    const stored = storedRaw.apiBase === BACKUP_AGENT_API && Number(storedRaw.configVersion || 0) < 3
+      ? { ...storedRaw, apiBase: PRIMARY_AGENT_API }
+      : storedRaw;
+    const shared = sharedRaw.apiBase === BACKUP_AGENT_API && Number(sharedRaw.configVersion || 0) < 2
+      ? { ...sharedRaw, apiBase: PRIMARY_AGENT_API }
+      : sharedRaw;
     const globalConfig = environment.globalConfig || (typeof window !== "undefined" ? window.AURI_HMI_CONFIG : {}) || {};
     const localConfig = environment.localConfig || (typeof window !== "undefined" ? window.AURI_HMI_LOCAL_CONFIG : {}) || {};
     const search = environment.search ?? (typeof location !== "undefined" ? location.search : "");
@@ -148,9 +156,9 @@
 
   function saveConfig(config, storage = typeof localStorage !== "undefined" ? localStorage : null) {
     const normalized = normalizeConfig(config);
-    safeStorageSet(storage, STORAGE_KEY, normalized);
+    safeStorageSet(storage, STORAGE_KEY, { ...normalized, configVersion: 3 });
     safeStorageSet(storage, SHARED_STORAGE_KEY, {
-      configVersion: 1,
+      configVersion: 2,
       apiBase: normalized.apiBase,
       token: normalized.token,
       updatedAt: Date.now()

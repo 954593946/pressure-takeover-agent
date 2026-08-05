@@ -47,6 +47,45 @@ assert.equal(vm.serviceOrders.items[0].items[0].quantity, 2);
 assert.ok(vm.serviceOrders.items[0].itemSummary.includes("鸡蛋×1"));
 assert.equal(vm.serviceOrders.totalAmount, 186);
 
+// Structured action/order fields are the HMI contract. A stale natural-language
+// summary must not replace a message draft or the structured purchase items.
+const fieldSourceVm = model.buildVehicleHmiViewModel({
+  ...fixture,
+  revision: 41,
+  actions: [
+    {
+      ...fixture.actions[0],
+      action_id: "message-structured-source",
+      target: "真实联系人",
+      summary: "错误摘要：这个文本不能作为消息正文显示",
+      message_draft: { body: "只来自 message_draft.body 的正文", channel: "demo", is_simulated: true }
+    },
+    {
+      ...fixture.actions[2],
+      action_id: "order-structured-source",
+      summary: "错误摘要：这个文本不能作为采购清单显示",
+      details_ref: "preview-structured-source"
+    }
+  ],
+  service_orders: [{
+    ...fixture.service_orders[0],
+    preview_id: "preview-structured-source",
+    items: [
+      { sku: "structured-milk", name: "结构化牛奶", quantity: 7, unit_price: 11, subtotal: 77, substitution: null },
+      { sku: "structured-eggs", name: "结构化鸡蛋", quantity: 4, unit_price: 6, subtotal: 24, substitution: null }
+    ],
+    total: 101,
+    delivery_window: "21:10-21:30"
+  }]
+}, { now });
+assert.equal(fieldSourceVm.actions.items[0].messageBody, "只来自 message_draft.body 的正文");
+assert.doesNotMatch(fieldSourceVm.actions.items[0].messageBody, /错误摘要/);
+assert.deepEqual(
+  fieldSourceVm.serviceOrders.items[0].items.map((item) => [item.name, item.quantity]),
+  [["结构化牛奶", 7], ["结构化鸡蛋", 4]]
+);
+assert.equal(fieldSourceVm.serviceOrders.items[0].itemSummary, "结构化牛奶×7、结构化鸡蛋×4");
+
 // The shell must receive every action verbatim: varying targets and unknown types
 // are rendered dynamically rather than being reduced to the demo's three actions.
 for (const count of [0, 1, 2, 5]) {
@@ -68,6 +107,22 @@ for (const count of [0, 1, 2, 5]) {
     assert.equal(dynamicVm.actions.items[2].status, "failed");
   }
 }
+
+// Unknown action kinds remain first-class list items regardless of how many the
+// Agent returns; the shell must not silently cap or discard them.
+const unknownActions = Array.from({ length: 7 }, (_, index) => ({
+  action_id: `unknown-action-${index + 1}`,
+  type: `provider_extension_${index + 1}`,
+  target: `未知目标 ${index + 1}`,
+  status: "awaiting_confirmation",
+  summary: `未知动作 ${index + 1} 的完整详情`,
+  details_ref: null,
+  requires_confirmation: true
+}));
+const unknownVm = model.buildVehicleHmiViewModel({ ...fixture, revision: 49, actions: unknownActions }, { now });
+assert.equal(unknownVm.actions.counts.total, unknownActions.length);
+assert.deepEqual(unknownVm.actions.items.map((action) => action.id), unknownActions.map((action) => action.action_id));
+assert.deepEqual(unknownVm.actions.items.map((action) => action.type), unknownActions.map((action) => action.type));
 
 const legacyMessageVm = model.buildVehicleHmiViewModel({
   ...fixture,

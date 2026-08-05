@@ -324,7 +324,7 @@
       ? presentationText(action?.messageBody) || actionDetailText(action)
       : actionDetailText(action);
     const orderDetail = order
-      ? `Demo · ${order.itemCount} 件 · ${order.itemKinds} 种 · ${order.total === null ? "金额待定" : `¥${order.total}`} · ${order.deliveryWindow || "时段待定"}`
+      ? `Demo · ${order.itemCount}件/${order.itemKinds}种 · ${order.total === null ? "金额待定" : `¥${order.total}`} · ${order.deliveryWindow || "时段待定"}`
       : "";
     return {
       order,
@@ -938,7 +938,7 @@
     requestAnimationFrame(() => notice.classList.add("is-visible"));
     clearTimeout(stageNoticeTimer);
     if (!persistent) {
-      const duration = ["service_prepared", "waiting_confirmation"].includes(viewModel.lifecycle.stage) ? 7200 : 4800;
+      const duration = ["service_prepared", "waiting_confirmation"].includes(viewModel.lifecycle.stage) ? 3600 : 4200;
       stageNoticeTimer = setTimeout(hideStageNotice, duration);
     }
   }
@@ -971,13 +971,15 @@
   function speakSolutionBriefing(briefing) {
     if (!briefing || isSpeechMuted()) return false;
     try {
-      if (window.SAFEDRIVER_CONFIG?.ttsKey && typeof window.speakText === "function") {
-        void Promise.resolve(window.speakText(briefing, "longxiaochun", null, { priority: "medium" }));
-        return true;
-      }
+      // An explicitly injected vehicle/test adapter owns the channel. The
+      // browser Bosch TTS client remains the default when no adapter exists.
       if (typeof window.AURI_HMI_SPEECH_ADAPTER?.speak === "function") {
         window.AURI_HMI_SPEECH_ADAPTER.cancel?.();
         return window.AURI_HMI_SPEECH_ADAPTER.speak(briefing) !== false;
+      }
+      if (window.SAFEDRIVER_CONFIG?.ttsKey && typeof window.speakText === "function") {
+        void Promise.resolve(window.speakText(briefing, "longxiaochun", null, { priority: "medium" }));
+        return true;
       }
       // Linux speech engines can advertise a zh voice while spelling every
       // Han character as "Chinese letter". Keep that fallback opt-in only.
@@ -1122,7 +1124,7 @@
       const completed = ["submitted", "completed"].includes(order.status);
       return `<article class="auri-action-step${completed ? " is-completed" : ""}">
         <span class="auri-action-index">${iconSvg(completed ? "check" : "order")}</span>
-        <span class="auri-action-step-copy"><small>模拟配送</small><b>配送方案</b><em>${escapeHtml(`Demo · ${order.itemCount} 件 · ${order.total === null ? "金额待定" : `¥${order.total}`} · ${order.deliveryWindow || "时段待定"}`)}</em></span>
+        <span class="auri-action-step-copy"><small>模拟配送</small><b>配送方案</b><em>${escapeHtml(`Demo · ${order.itemCount}件/${order.itemKinds}种 · ${order.total === null ? "金额待定" : `¥${order.total}`} · ${order.deliveryWindow || "时段待定"}`)}</em></span>
         <span class="auri-action-step-state">${escapeHtml(orderStatusLabel(order.status))}</span>
       </article>`;
     }).join("");
@@ -1153,6 +1155,10 @@
   function actionDetailContent(vm, action) {
     const item = actionPresentation(vm, action);
     const order = item.order;
+    const canConfirmHere = vm.interaction.canConfirm && vm.interaction.actionIds.includes(action.id);
+    const confirmationCopy = canConfirmHere
+      ? "说“确认”或点击下方按钮即可继续"
+      : "请在当前主交互端完成确认";
     return `<section class="auri-action-detail is-${escapeHtml(action.status)}">
       <header><span>${iconSvg(item.icon)}</span><div><small>${escapeHtml(item.typeLabel)}</small><h3>${escapeHtml(item.title)}</h3></div><em>${escapeHtml(action.statusLabel)}</em></header>
       <div class="auri-action-preview">
@@ -1160,7 +1166,8 @@
         <p>${escapeHtml(item.detail)}</p>
         ${order ? `<div class="auri-action-preview-meta"><span>${iconSvg("order")} Demo · ${escapeHtml(order.deliveryWindow || "时段待定")}</span><span>${iconSvg("check")} 模拟 · ${escapeHtml(orderStatusLabel(order.status))}</span></div>` : ""}
       </div>
-      <footer class="auri-action-assurance">${iconSvg(action.status === "completed" ? "check" : "info")}<span><b>${action.status === "completed" ? "处理结果已同步" : action.requiresConfirmation ? "等待一次确认" : "AURI 正在处理"}</b><small>${action.status === "completed" ? "手机、车机和腕表将显示相同结果" : action.requiresConfirmation ? "确认入口仅在当前主交互端显示" : "完成后会自动更新状态"}</small></span></footer>
+      <footer class="auri-action-assurance">${iconSvg(action.status === "completed" ? "check" : "info")}<span><b>${action.status === "completed" ? "处理结果已同步" : action.requiresConfirmation ? "等待一次确认" : "AURI 正在处理"}</b><small>${action.status === "completed" ? "手机、车机和腕表将显示相同结果" : action.requiresConfirmation ? confirmationCopy : "完成后会自动更新状态"}</small></span></footer>
+      ${canConfirmHere ? `<button type="button" class="auri-detail-primary auri-action-confirm" data-confirm-current>${iconSvg("check")}<span>确认全部 ${vm.interaction.actionIds.length} 项方案</span></button>` : ""}
     </section>`;
   }
 
@@ -1468,8 +1475,8 @@
           <label><span>Agent API</span><input id="auri-config-api" type="url" spellcheck="false" value="${escapeHtml(config.apiBase)}" required></label>
           <label><span>Team Token</span><input id="auri-config-token" type="password" autocomplete="off" value="${escapeHtml(config.token)}" placeholder="仅保存在当前浏览器"></label>
           <div class="auri-config-presets">
-            <button type="button" data-api="https://auri-langchain-agent-api.onrender.com">当前公网服务</button>
-            <button type="button" data-api="https://auri-agent-api.onrender.com">旧版公网服务</button>
+            <button type="button" data-api="https://auri-agent-api.onrender.com">团队公网服务</button>
+            <button type="button" data-api="https://auri-langchain-agent-api.onrender.com">LangChain 备用</button>
             <button type="button" data-api="http://127.0.0.1:8000">本地服务</button>
           </div>
           <details class="auri-map-config">
@@ -1635,6 +1642,7 @@
       button.addEventListener("click", () => updateClimateDraft({ fan_speed: button.dataset.climateFan, ac_on: true }));
     });
     body.querySelector('[data-climate-control="apply"]')?.addEventListener("click", () => void submitClimateSettings());
+    body.querySelector("[data-confirm-current]")?.addEventListener("click", () => void confirmCurrentActions("button"));
   }
 
   function openPanel(section) {

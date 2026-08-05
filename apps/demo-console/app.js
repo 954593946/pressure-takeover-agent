@@ -1,10 +1,10 @@
 const DEFAULT_CONFIG = {
-  apiBase: "https://auri-langchain-agent-api.onrender.com",
+  apiBase: "https://auri-agent-api.onrender.com",
   stream: true
 };
 
-const PUBLIC_AGENT_API = "https://auri-langchain-agent-api.onrender.com";
-const LEGACY_AGENT_API = "https://auri-agent-api.onrender.com";
+const PUBLIC_AGENT_API = "https://auri-agent-api.onrender.com";
+const BACKUP_AGENT_API = "https://auri-langchain-agent-api.onrender.com";
 const LOCAL_AGENT_API = "http://127.0.0.1:8000";
 const DEMO_PRESET_TASK_TEXT = "今天18:10接孩子，之后去超市";
 const DEMO_TRAFFIC_DELAY_MINUTES = 18;
@@ -22,10 +22,13 @@ function readStoredConfig(key) {
 }
 
 const storedConfigRaw = readStoredConfig(APP_CONFIG_KEY);
-const storedConfig = storedConfigRaw.apiBase === LEGACY_AGENT_API && storedConfigRaw.configVersion !== 2
+const storedConfig = storedConfigRaw.apiBase === BACKUP_AGENT_API && Number(storedConfigRaw.configVersion || 0) < 3
   ? { ...storedConfigRaw, apiBase: PUBLIC_AGENT_API }
   : storedConfigRaw;
-const sharedConfig = readStoredConfig(SHARED_CONFIG_KEY);
+const sharedConfigRaw = readStoredConfig(SHARED_CONFIG_KEY);
+const sharedConfig = sharedConfigRaw.apiBase === BACKUP_AGENT_API && Number(sharedConfigRaw.configVersion || 0) < 2
+  ? { ...sharedConfigRaw, apiBase: PUBLIC_AGENT_API }
+  : sharedConfigRaw;
 const CONFIG = {
   ...DEFAULT_CONFIG,
   ...storedConfig,
@@ -448,12 +451,13 @@ async function preflight() {
   const started = performance.now();
   const parsedTarget = new URL(CONFIG.apiBase);
   const isCanonical = CONFIG.apiBase === PUBLIC_AGENT_API;
+  const isBackup = CONFIG.apiBase === BACKUP_AGENT_API;
   const isLocal = parsedTarget.protocol === "http:"
     && ["127.0.0.1", "localhost"].includes(parsedTarget.hostname);
-  if (!isCanonical && !isLocal) {
-    throw new Error(`Agent API 不是团队 canonical 地址：${CONFIG.apiBase}`);
+  if (!isCanonical && !isBackup && !isLocal) {
+    throw new Error(`Agent API 不是团队主地址、备用地址或本地开发地址：${CONFIG.apiBase}`);
   }
-  log("check", "target", isCanonical ? "canonical" : "local development");
+  log("check", "target", isCanonical ? "canonical" : isBackup ? "langchain backup" : "local development");
 
   const health = await loadHealth("preflight.health");
   if (health?.status !== "ok") throw new Error(`Health 检查失败：${health?.status || "missing status"}`);
@@ -822,13 +826,13 @@ function saveConfig() {
   CONFIG.token = ui.token.value.trim();
   const savedAt = Date.now();
   localStorage.setItem(APP_CONFIG_KEY, JSON.stringify({
-    configVersion: 2,
+    configVersion: 3,
     apiBase: CONFIG.apiBase,
     token: CONFIG.token,
     updatedAt: savedAt
   }));
   localStorage.setItem(SHARED_CONFIG_KEY, JSON.stringify({
-    configVersion: 1,
+    configVersion: 2,
     apiBase: CONFIG.apiBase,
     token: CONFIG.token,
     updatedAt: savedAt
@@ -908,7 +912,7 @@ ui.usePublicAgent.addEventListener("click", () => {
   ui.apiBase.value = PUBLIC_AGENT_API;
 });
 ui.useLegacyAgent.addEventListener("click", () => {
-  ui.apiBase.value = LEGACY_AGENT_API;
+  ui.apiBase.value = BACKUP_AGENT_API;
 });
 ui.useLocalAgent.addEventListener("click", () => {
   ui.apiBase.value = LOCAL_AGENT_API;

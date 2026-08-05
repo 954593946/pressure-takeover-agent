@@ -104,6 +104,42 @@ async function main() {
   const sharedSaved = JSON.parse(storage.values[agent.SHARED_STORAGE_KEY]);
   assert.equal(sharedSaved.apiBase, "http://localhost:8000");
   assert.equal(sharedSaved.token, "secret");
+  assert.equal(saved.configVersion, 3);
+  assert.equal(sharedSaved.configVersion, 2);
+
+  const legacyBackupStorage = {
+    values: {
+      [agent.STORAGE_KEY]: JSON.stringify({
+        apiBase: "https://auri-langchain-agent-api.onrender.com",
+        token: "legacy-token",
+        configVersion: 2
+      }),
+      [agent.SHARED_STORAGE_KEY]: JSON.stringify({
+        apiBase: "https://auri-langchain-agent-api.onrender.com",
+        token: "legacy-token",
+        configVersion: 1
+      })
+    },
+    getItem(key) { return this.values[key] || null; },
+    setItem(key, value) { this.values[key] = value; }
+  };
+  const migratedBackup = agent.loadConfig({ storage: legacyBackupStorage, search: "", globalConfig: {} });
+  assert.equal(migratedBackup.apiBase, "https://auri-agent-api.onrender.com");
+  assert.equal(migratedBackup.token, "legacy-token");
+
+  legacyBackupStorage.values[agent.STORAGE_KEY] = JSON.stringify({
+    apiBase: "https://auri-langchain-agent-api.onrender.com",
+    token: "explicit-backup",
+    configVersion: 3
+  });
+  legacyBackupStorage.values[agent.SHARED_STORAGE_KEY] = JSON.stringify({
+    apiBase: "https://auri-langchain-agent-api.onrender.com",
+    token: "explicit-backup",
+    configVersion: 2
+  });
+  const explicitBackup = agent.loadConfig({ storage: legacyBackupStorage, search: "", globalConfig: {} });
+  assert.equal(explicitBackup.apiBase, "https://auri-langchain-agent-api.onrender.com");
+  assert.equal(explicitBackup.token, "explicit-backup");
 
   storage.values[agent.STORAGE_KEY] = JSON.stringify({
     apiBase: "https://stale.example.test",

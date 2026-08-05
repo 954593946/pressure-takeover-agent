@@ -39,7 +39,12 @@ def test_public_tool_schemas_hide_runtime_context() -> None:
 
 def test_assistance_is_grounded_in_existing_tasks() -> None:
     state = initial_state("demo_grounded")
-    toolbox = AgentToolbox(state, event_id="evt_tasks", source="mobile", original_text="记下这些任务")
+    toolbox = AgentToolbox(
+        state,
+        event_id="evt_tasks",
+        source="mobile",
+        original_text="18:10接孩子，老师和家人在等；之后去超市",
+    )
     toolbox.create_tasks(
         [
             task(
@@ -69,7 +74,12 @@ def test_assistance_is_grounded_in_existing_tasks() -> None:
 
 def test_assistance_does_not_invent_grocery_or_child_contacts() -> None:
     state = initial_state("demo_airport")
-    toolbox = AgentToolbox(state, event_id="evt_airport", source="mobile", original_text="去机场接同事")
+    toolbox = AgentToolbox(
+        state,
+        event_id="evt_airport",
+        source="mobile",
+        original_text="去机场接同事，请通知同事",
+    )
     toolbox.create_tasks(
         [task("20:00去机场接同事", "rigid", adjustable=False, waiting_party=["同事"])],
         replace_existing=False,
@@ -84,7 +94,12 @@ def test_assistance_does_not_invent_grocery_or_child_contacts() -> None:
 
 def test_assistance_preserves_specific_family_contact() -> None:
     state = initial_state("demo_grandparent")
-    toolbox = AgentToolbox(state, event_id="evt_grandparent", source="mobile", original_text="接孩子")
+    toolbox = AgentToolbox(
+        state,
+        event_id="evt_grandparent",
+        source="mobile",
+        original_text="18:10接孩子，请通知王老师和孩子奶奶",
+    )
     toolbox.create_tasks(
         [task("18:10去学校接孩子", "rigid", adjustable=False, waiting_party=["王老师", "孩子奶奶"])],
         replace_existing=False,
@@ -110,7 +125,15 @@ def test_assistance_uses_every_existing_waiting_party_without_invention(
     state = initial_state(f"demo_contacts_{expected_count}")
     state.eta = datetime(2026, 8, 5, 18, 28, tzinfo=TZ)
     state.risk.late_minutes = 18
-    toolbox = AgentToolbox(state, event_id=f"evt_contacts_{expected_count}", source="mobile", original_text="帮我处理")
+    original_text = "帮我处理接孩子"
+    if contacts:
+        original_text += "，需要通知" + "、".join(contacts)
+    toolbox = AgentToolbox(
+        state,
+        event_id=f"evt_contacts_{expected_count}",
+        source="mobile",
+        original_text=original_text,
+    )
     toolbox.create_tasks(
         [task("18:10接孩子", "rigid", priority="high", adjustable=False, waiting_party=contacts)],
         replace_existing=False,
@@ -131,6 +154,31 @@ def test_assistance_uses_every_existing_waiting_party_without_invention(
     else:
         assert result["requires_confirmation"] is True
         assert state.confirmation is not None
+
+
+def test_task_creation_drops_recipients_not_named_by_user() -> None:
+    state = initial_state("demo_no_invented_contacts")
+    toolbox = AgentToolbox(
+        state,
+        event_id="evt_no_invented_contacts",
+        source="mobile",
+        original_text="今天18:10接孩子，之后去超市",
+    )
+
+    toolbox.create_tasks(
+        [
+            task(
+                "18:10接孩子",
+                "rigid",
+                priority="high",
+                adjustable=False,
+                waiting_party=["孩子", "王老师", "孩子妈妈"],
+            )
+        ],
+        replace_existing=False,
+    )
+
+    assert state.tasks[0].waiting_party == []
 
 
 def test_confirmation_requires_explicit_words_and_owner_surface() -> None:
@@ -163,7 +211,12 @@ def test_demo_receipts_include_message_body_and_purchase_details() -> None:
     state = initial_state("demo_receipts")
     state.eta = datetime(2026, 7, 29, 18, 28, tzinfo=TZ)
     state.risk.late_minutes = 18
-    setup = AgentToolbox(state, event_id="evt_receipts", source="mobile", original_text="帮我处理")
+    setup = AgentToolbox(
+        state,
+        event_id="evt_receipts",
+        source="mobile",
+        original_text="帮我处理，并通知孩子",
+    )
     setup.create_tasks(
         [
             task(
@@ -226,7 +279,12 @@ def test_demo_receipts_render_utc_eta_in_shanghai_time() -> None:
     state = initial_state("demo_receipts_utc")
     state.eta = datetime(2026, 7, 29, 10, 28, tzinfo=timezone.utc)
     state.risk.late_minutes = 18
-    setup = AgentToolbox(state, event_id="evt_receipts_utc", source="mobile", original_text="帮我处理")
+    setup = AgentToolbox(
+        state,
+        event_id="evt_receipts_utc",
+        source="mobile",
+        original_text="帮我处理，并通知孩子",
+    )
     setup.create_tasks(
         [task("18:10去学校接孩子", "rigid", priority="high", adjustable=False, waiting_party=["孩子"])],
         replace_existing=False,

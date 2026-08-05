@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import re
 from typing import Annotated, Literal
 
 from langchain.tools import ToolRuntime, tool
@@ -35,6 +36,46 @@ class TaskDraft(BaseModel):
 @dataclass
 class AgentToolContext:
     toolbox: "AgentToolbox"
+
+
+def ground_waiting_parties(candidates: list[str], source_text: str) -> list[str]:
+    """Keep only recipients the user explicitly named in this task request."""
+    compact_source = "".join(str(source_text or "").split()).casefold()
+    if not compact_source:
+        return []
+    generic_parties = {
+        "孩子", "家人", "老师", "同事", "朋友", "家长", "同学", "客户",
+        "家属", "爸爸", "妈妈", "爷爷", "奶奶",
+    }
+    recipient_clauses = re.findall(
+        r"(?:通知|联系|告诉|转告|同步给|发给|向|给)([^，。！？；]+)",
+        compact_source,
+    )
+    grounded: list[str] = []
+    for candidate in candidates:
+        value = str(candidate or "").strip()
+        compact_value = "".join(value.split()).casefold()
+        if not value or not compact_value or compact_value not in compact_source or value in grounded:
+            continue
+        if compact_value in generic_parties:
+            escaped = re.escape(compact_value)
+            listed_recipient = any(
+                item == compact_value
+                or any(
+                    item == compact_value + suffix
+                    for suffix in ("发消息", "发信息", "说一声", "报平安")
+                )
+                for clause in recipient_clauses
+                for item in re.split(r"[、和及与]", clause)
+            )
+            waiting_context = re.search(
+                rf"{escaped}[^，。！？；]{{0,8}}(?:在等|等我|等待)",
+                compact_source,
+            )
+            if not listed_recipient and waiting_context is None:
+                continue
+        grounded.append(value)
+    return grounded
 
 
 class AgentToolbox:
@@ -80,7 +121,7 @@ class AgentToolbox:
                     task_type=task_type,
                     priority=priority,
                     adjustable=adjustable,
-                    waiting_party=list(dict.fromkeys(draft.waiting_party)),
+                    waiting_party=ground_waiting_parties(draft.waiting_party, self.original_text),
                     capability_tags=tags,
                 )
             )

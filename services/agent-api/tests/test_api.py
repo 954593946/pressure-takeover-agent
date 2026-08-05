@@ -349,6 +349,41 @@ async def test_langchain_agent_output_is_normalised_to_public_task_contract() ->
 
 
 @pytest.mark.asyncio
+async def test_langchain_agent_drops_hallucinated_waiting_parties() -> None:
+    class FakeAgent:
+        async def ainvoke(self, _input: dict) -> dict:
+            return {
+                "structured_response": TaskExtraction(
+                    tasks=[
+                        ExtractedTask(
+                            title="接孩子",
+                            scheduled_at="2026-08-05T18:10:00+08:00",
+                            location="阳光小学",
+                            task_type="rigid",
+                            priority="high",
+                            adjustable=False,
+                            waiting_party=["孩子", "王老师", "孩子妈妈"],
+                        ),
+                        ExtractedTask(
+                            title="去超市",
+                            task_type="flexible",
+                            priority="medium",
+                            adjustable=True,
+                        ),
+                    ]
+                )
+            }
+
+    parser = TaskParser(Settings(llm_enabled=False, openai_api_key=""))
+    parser.agent = FakeAgent()
+    tasks = await parser.parse("今天18:10接孩子，之后去超市")
+
+    pickup = next(task for task in tasks if task.task_type == "rigid")
+    assert parser.last_mode == "langchain_agent"
+    assert pickup.waiting_party == []
+
+
+@pytest.mark.asyncio
 async def test_shared_backend_requires_team_token() -> None:
     app = create_app(Settings(llm_enabled=False, openai_api_key="", agent_shared_token="team-test-token"))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as secured_client:
