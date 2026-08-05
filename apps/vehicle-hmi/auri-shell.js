@@ -338,11 +338,13 @@
       const order = action.type === "service_order"
         ? viewModel.serviceOrders.items.find((item) => item.id === action.detailsRef)
         : null;
+      const orderItems = order?.items.slice(0, 2).map((item) => `${item.name}×${item.quantity}`).join("、") || "";
+      const orderItemsSuffix = order && order.itemKinds > 2 ? `等${order.itemKinds}种` : "";
       const orderText = order
-        ? `模拟配送 · ${order.itemCount} 件/${order.itemKinds} 种 · ${order.total === null ? "金额待定" : `${order.total} 元`} · ${order.deliveryWindow || "配送待定"}`
+        ? `模拟采购：${orderItems}${orderItemsSuffix} · ${order.total === null ? "金额待定" : `${order.total} 元`} · ${order.deliveryWindow || "配送待定"}`
         : null;
       const messageText = action.type === "message"
-        ? `给${action.target || "联系人"}的消息草稿已生成（模拟）`
+        ? `给${action.target || "联系人"}：${action.messagePreview || action.preview}`
         : null;
       return {
         icon: action.status === "completed" ? "check" : action.type === "message" ? "message" : action.type === "service_order" ? "order" : "task",
@@ -759,7 +761,7 @@
     const actions = vm.actions.items.map((action, index) => `
       <button type="button" class="auri-action-step is-${escapeHtml(action.status)}" data-panel-target="action:${escapeHtml(action.id)}">
         <span class="auri-action-index">${action.status === "completed" ? iconSvg("check") : index + 1}</span>
-        <span><b>${escapeHtml(action.target || "Agent 动作")}</b><small>${escapeHtml(action.summary)}</small></span>
+        <span><b>${escapeHtml(action.target || "Agent 动作")}</b><small>${escapeHtml(action.type === "message" ? action.messageBody : action.summary)}</small></span>
         <em>${escapeHtml(action.statusLabel)}</em>
       </button>`).join("");
     return `<section class="auri-action-board"><header><b>处理队列</b><span>${vm.actions.counts.completed}/${vm.actions.counts.total} 完成</span></header>${actions}</section>`;
@@ -895,7 +897,7 @@
       const actionRows = vm.actions.items.map((action) => rowButton(
         action.type === "message" ? "信" : action.type === "service_order" ? "单" : "调",
         action.target || "Agent 动作",
-        action.summary,
+        action.type === "message" ? action.messageBody : action.summary,
         action.statusLabel,
         `action:${action.id}`,
         action.status === "completed" ? "completed" : action.status === "failed" || action.status === "blocked" ? "error" : "processing"
@@ -930,16 +932,27 @@
       const order = vm.serviceOrders.items.find((item) => item.id === action.detailsRef);
       const detailRows = [
         action.type === "message"
-          ? row("信", action.target || "联系人", action.summary, action.statusLabel, action.status === "completed" ? "completed" : "processing")
+          ? row("信", action.target || "联系人", action.messageBody, action.statusLabel, action.status === "completed" ? "completed" : "processing")
           : row("调", "Agent 动作", action.summary, action.statusLabel, action.status === "completed" ? "completed" : "processing")
       ];
       if (order) detailRows.push(row("单", `${order.itemCount} 件商品`, `${order.total === null ? "金额待定" : `${order.total} 元`} · ${order.deliveryWindow || "配送时间待定"}`, order.status, order.errorCode ? "error" : order.status === "submitted" ? "completed" : "processing"));
+      if (order) order.items.forEach((item) => detailRows.push(row(
+        "order",
+        item.name,
+        `${item.quantity} 件 · ${item.unitPrice === null ? "单价待定" : `单价 ${item.unitPrice} 元`} · ${item.subtotal === null ? "小计待定" : `小计 ${item.subtotal} 元`}`,
+        `×${item.quantity}`,
+        order.errorCode ? "error" : order.status === "submitted" ? "completed" : "processing"
+      )));
       detailRows.push(rowButton("返", "返回动作列表", "查看全部消息、任务调整和生活服务", "返回", "messages"));
       return {
         title: action.type === "message" ? `给${action.target || "联系人"}的消息` : action.type === "service_order" ? "生活服务方案" : "任务调整详情",
         subtitle: action.statusLabel,
-        lead: action.summary,
-        copy: action.requiresConfirmation ? "确认后，AURI 将执行这项处理。" : "处理结果已同步到车机。",
+        lead: action.type === "message" ? action.messageBody : action.summary,
+        copy: action.type === "message"
+          ? "这是 Agent 根据当前任务和到达时间生成的 Demo 消息；未连接真实通讯服务。"
+          : action.type === "service_order"
+            ? "这是 Agent 生成的 Demo 采购清单；未发生真实支付。"
+            : action.requiresConfirmation ? "确认后，AURI 将执行这项处理。" : "处理结果已同步到车机。",
         status: action.statusLabel,
         tone: action.status === "completed" ? "success" : action.status === "failed" || action.status === "blocked" ? "critical" : "processing",
         rows: detailRows

@@ -355,6 +355,10 @@ async def test_happy_path_and_duplicate_confirmation(client: AsyncClient) -> Non
     order_action = next(action for action in state["actions"] if action["type"] == "service_order")
     assert "消息草稿" in message_action["summary"]
     assert "预计18:28到" in message_action["summary"]
+    assert message_action["message_draft"]["body"] in message_action["summary"]
+    assert "预计18:28到" in message_action["message_draft"]["body"]
+    assert message_action["message_draft"]["channel"] == "demo"
+    assert message_action["message_draft"]["is_simulated"] is True
     assert "牛奶×2" in order_action["summary"]
     assert "鸡蛋×1" in order_action["summary"]
     assert "模拟商超配送" in order_action["summary"]
@@ -371,6 +375,9 @@ async def test_happy_path_and_duplicate_confirmation(client: AsyncClient) -> Non
     assert first_state["service_orders"][0]["order_id"] == second_state["service_orders"][0]["order_id"]
     assert first_state["revision"] == second_state["revision"]
     completed_order = next(action for action in first_state["actions"] if action["type"] == "service_order")
+    completed_message = next(action for action in first_state["actions"] if action["type"] == "message")
+    assert completed_message["message_draft"] == message_action["message_draft"]
+    assert completed_message["message_draft"]["body"] in completed_message["summary"]
     assert first_state["service_orders"][0]["order_id"] in completed_order["summary"]
     assert "牛奶×2" in first_state["output"]["conclusion"]
     assert "鸡蛋×1" in first_state["output"]["conclusion"]

@@ -171,6 +171,14 @@ class WearableState(StrictModel):
     signal_confidence: float | None = Field(default=None, ge=0, le=1)
 
 
+class MessageDraft(StrictModel):
+    """Structured Agent-authored message content for client rendering."""
+
+    body: str = Field(min_length=1)
+    channel: Literal["demo"] = "demo"
+    is_simulated: Literal[True] = True
+
+
 class Action(StrictModel):
     action_id: str
     type: Literal["message", "reschedule", "service_order"]
@@ -179,6 +187,7 @@ class Action(StrictModel):
     risk: Literal["low", "medium", "high"]
     requires_confirmation: bool
     summary: str
+    message_draft: MessageDraft | None = None
     details_ref: str | None = None
     error_code: str | None = None
 

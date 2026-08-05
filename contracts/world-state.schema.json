@@ -24,6 +24,16 @@
     "Event": {
       "$ref": "event.schema.json"
     },
+    "MessageDraft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["body", "channel", "is_simulated"],
+      "properties": {
+        "body": {"type": "string", "minLength": 1},
+        "channel": {"const": "demo"},
+        "is_simulated": {"const": true}
+      }
+    },
     "Action": {
       "type": "object",
       "additionalProperties": false,
@@ -36,6 +46,7 @@
         "risk": {"enum": ["low", "medium", "high"]},
         "requires_confirmation": {"type": "boolean"},
         "summary": {"type": "string"},
+        "message_draft": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/MessageDraft"}]},
         "details_ref": {"type": ["string", "null"]},
         "error_code": {"type": ["string", "null"]}
       }

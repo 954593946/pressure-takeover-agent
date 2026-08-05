@@ -29,6 +29,9 @@ assert.equal(vm.navigation.lateMinutes, 18);
 assert.equal(vm.risk.level, "L2");
 assert.equal(vm.actions.counts.total, 3);
 assert.equal(vm.actions.counts.pending, 3);
+assert.equal(vm.actions.items[0].messageBody, fixture.actions[0].message_draft.body);
+assert.equal(vm.actions.items[0].messageDraft.isSimulated, true);
+assert.ok(vm.actions.items[0].messagePreview.includes("预计18:28到"));
 assert.equal(vm.agentOutput.available, true);
 assert.ok(vm.agentOutput.fullText.length > vm.agentOutput.preview.length);
 assert.equal(vm.utterance.text, "我还来得及吗？帮我处理");
@@ -39,7 +42,21 @@ assert.equal(vm.vehicle.temperatureLabel, "24°C");
 assert.equal(vm.interaction.canConfirm, true);
 assert.equal(vm.serviceOrders.items[0].itemKinds, 8);
 assert.equal(vm.serviceOrders.items[0].itemCount, 9);
+assert.equal(vm.serviceOrders.items[0].items[0].name, "牛奶");
+assert.equal(vm.serviceOrders.items[0].items[0].quantity, 2);
+assert.ok(vm.serviceOrders.items[0].itemSummary.includes("鸡蛋×1"));
 assert.equal(vm.serviceOrders.totalAmount, 186);
+
+const legacyMessageVm = model.buildVehicleHmiViewModel({
+  ...fixture,
+  revision: 18,
+  actions: fixture.actions.map((action) => {
+    const { message_draft, ...legacyAction } = action;
+    return legacyAction;
+  })
+}, { now });
+assert.ok(legacyMessageVm.actions.items[0].messageBody.startsWith("您好，我正在前往"));
+assert.ok(!legacyMessageVm.actions.items[0].messageBody.startsWith("给王老师的消息草稿"));
 
 const climateOutput = model.buildVehicleHmiViewModel({
   ...fixture,
