@@ -10,7 +10,7 @@ from jsonschema import Draft202012Validator
 
 from auri_agent.app import create_app, world_state_event_stream
 from auri_agent.config import Settings
-from auri_agent.llm import ExtractedTask, TaskExtraction, TaskParser
+from auri_agent.llm import ExtractedTask, TaskExtraction, TaskParser, fallback_tasks
 from auri_agent.models import ConfirmationRequest, Event, GeoPoint, initial_state, now
 from auri_agent.observability import classify_provider_error
 from auri_agent.prompts import TASK_RIGIDITY_POLICY, build_agent_prompt
@@ -42,9 +42,40 @@ async def event(client: AsyncClient, event_id: str, event_type: str, payload: di
 
 
 async def prepare_confirmation(client: AsyncClient) -> dict:
+    # This is the explicit Console demo fixture. Real text/LLM fallback task
+    # creation intentionally has no invented recipients.
+    demo_tasks = [
+        {
+            "task_id": "task_pickup_child",
+            "title": "接孩子",
+            "scheduled_at": "2026-07-15T18:10:00+08:00",
+            "location": "阳光小学",
+            "task_type": "rigid",
+            "priority": "high",
+            "adjustable": False,
+            "waiting_party": ["王老师", "孩子妈妈"],
+            "capability_tags": [],
+        },
+        {
+            "task_id": "task_grocery",
+            "title": "超市采购",
+            "scheduled_at": "2026-07-15T19:30:00+08:00",
+            "task_type": "flexible",
+            "priority": "low",
+            "adjustable": True,
+            "waiting_party": [],
+            "capability_tags": ["grocery_delivery"],
+        },
+    ]
     await client.post(
         "/v1/event",
-        json=await event(client, "evt_task", "task.created", {"text": "今天18:10接孩子，之后去超市"}, "mobile"),
+        json=await event(
+            client,
+            "evt_task",
+            "task.created",
+            {"text": "今天18:10接孩子，之后去超市", "tasks": demo_tasks},
+            "mobile",
+        ),
     )
     await client.post("/v1/event", json=await event(client, "evt_meeting", "meeting.overrun", {"delay_minutes": 20}))
     await client.post("/v1/event", json=await event(client, "evt_vehicle", "scene.vehicle_entered", {}))
@@ -273,6 +304,14 @@ async def test_fallback_never_invents_child_for_unrelated_pickup() -> None:
     assert len(tasks) == 1
     assert tasks[0].title == "今晚二十点去机场接从北京回来的同事"
     assert all("孩子" not in task.title for task in tasks)
+
+
+def test_fallback_child_task_never_invents_waiting_parties() -> None:
+    tasks = fallback_tasks("今天18:10接孩子，之后去超市")
+
+    pickup = next(task for task in tasks if task.task_type == "rigid")
+    assert pickup.title == "接孩子"
+    assert pickup.waiting_party == []
 
 
 @pytest.mark.asyncio

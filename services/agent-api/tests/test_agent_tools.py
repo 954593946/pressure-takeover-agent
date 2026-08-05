@@ -58,9 +58,9 @@ def test_assistance_is_grounded_in_existing_tasks() -> None:
 
     assert result["requires_confirmation"] is True
     assert {action.type for action in state.actions} == {"message", "service_order"}
-    assert {action.target for action in state.actions if action.type == "message"} == {"老师", "孩子妈妈"}
-    family_action = next(action for action in state.actions if action.target == "孩子妈妈")
-    assert family_action.action_id == "action_message_family"
+    assert {action.target for action in state.actions if action.type == "message"} == {"老师", "家人"}
+    family_action = next(action for action in state.actions if action.target == "家人")
+    assert family_action.action_id == "action_message_2"
     assert "我会安全驾驶并继续同步进度" in family_action.summary
     assert "你先安心等我" not in family_action.summary
     assert len(state.service_orders) == 1
@@ -93,6 +93,44 @@ def test_assistance_preserves_specific_family_contact() -> None:
     toolbox.prepare_assistance(include_messages=True, include_grocery=False)
 
     assert {action.target for action in state.actions} == {"王老师", "孩子奶奶"}
+
+
+@pytest.mark.parametrize(
+    ("contacts", "expected_count"),
+    [
+        ([], 0),
+        (["陈老师"], 1),
+        (["陈老师", "孩子爷爷", "孩子妈妈"], 3),
+        (["陈老师", "孩子爷爷", "孩子妈妈", "爸爸", "社区联系人"], 5),
+    ],
+)
+def test_assistance_uses_every_existing_waiting_party_without_invention(
+    contacts: list[str], expected_count: int
+) -> None:
+    state = initial_state(f"demo_contacts_{expected_count}")
+    state.eta = datetime(2026, 8, 5, 18, 28, tzinfo=TZ)
+    state.risk.late_minutes = 18
+    toolbox = AgentToolbox(state, event_id=f"evt_contacts_{expected_count}", source="mobile", original_text="帮我处理")
+    toolbox.create_tasks(
+        [task("18:10接孩子", "rigid", priority="high", adjustable=False, waiting_party=contacts)],
+        replace_existing=False,
+    )
+
+    result = toolbox.prepare_assistance(include_messages=True, include_grocery=False)
+    messages = [action for action in state.actions if action.type == "message"]
+
+    assert [action.target for action in messages] == contacts
+    assert len(messages) == expected_count
+    assert len({action.action_id for action in messages}) == expected_count
+    assert all(action.action_id == f"action_message_{index + 1}" for index, action in enumerate(messages))
+    assert all("预计18:28到" in action.summary for action in messages)
+    assert all("王老师" not in action.summary and "孩子妈妈" not in action.summary for action in messages if action.target not in {"王老师", "孩子妈妈"})
+    if expected_count == 0:
+        assert result["requires_confirmation"] is False
+        assert state.confirmation is None
+    else:
+        assert result["requires_confirmation"] is True
+        assert state.confirmation is not None
 
 
 def test_confirmation_requires_explicit_words_and_owner_surface() -> None:

@@ -242,22 +242,18 @@ class ActionPlanner:
         message_targets: list[str] = []
         if include_messages:
             for task in rigid_tasks:
-                message_targets.extend("孩子妈妈" if target == "家人" else target for target in task.waiting_party)
-                if "孩子" in task.title and not task.waiting_party:
-                    message_targets.extend(["老师", "孩子妈妈"])
-        message_targets = list(dict.fromkeys(target for target in message_targets if target))[:2]
+                # Recipients are a World State contract. Do not replace broad
+                # labels, add demo recipients, or cap the number of contacts.
+                message_targets.extend(task.waiting_party)
+        message_targets = list(dict.fromkeys(target.strip() for target in message_targets if target and target.strip()))
 
         message_actions: list[Action] = []
         for index, target in enumerate(message_targets):
-            if "老师" in target:
-                action_id = "action_message_teacher"
-                details_ref = "message_teacher"
-            elif _is_family_target(target):
-                action_id = "action_message_family"
-                details_ref = "message_family"
-            else:
-                action_id = f"action_message_{index + 1}"
-                details_ref = f"message_contact_{index + 1}"
+            # An index-based identifier remains stable for the ordered World
+            # State list and avoids collisions when several teachers/family
+            # members are legitimate recipients.
+            action_id = f"action_message_{index + 1}"
+            details_ref = f"message_contact_{index + 1}"
             summary = f"给{target}的消息草稿：{build_message_body(state, target)}"
             message_actions.append(
                 Action(

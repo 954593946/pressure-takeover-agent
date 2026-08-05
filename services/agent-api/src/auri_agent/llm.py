@@ -163,7 +163,10 @@ def fallback_tasks(text: str) -> list[Task]:
                 task_type="rigid",
                 priority="high",
                 adjustable=False,
-                waiting_party=["王老师", "孩子妈妈"],
+                # Contact resolution belongs to an explicit task payload, an
+                # authorised profile/contact adapter, or the LLM extraction.
+                # A parser fallback must never fabricate message recipients.
+                waiting_party=[],
                 capability_tags=[],
             )
         )
