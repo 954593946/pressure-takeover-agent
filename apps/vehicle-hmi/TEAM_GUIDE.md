@@ -41,6 +41,8 @@ http://127.0.0.1:5174/apps/vehicle-hmi/
 
 推荐先在同源 Demo Console 中填写 Agent API 和负责人单独提供的 Team Token，再打开 HMI。两页会共享同源浏览器配置。
 
+源码和 GitHub Pages 部署产物不内置 Team Token；用户填写的连接配置会保存在当前浏览器的同源 `localStorage`。不要在公共电脑长期保存，也不要在截图、URL 或公开文档中传播 Token。
+
 HMI 左上角连接状态可打开配置页。保存后必须同时满足：
 
 ```text

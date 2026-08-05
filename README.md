@@ -18,7 +18,7 @@ AURI 是一个面向车机、手机与腕上设备的多端 Agent。它在驾驶
 
 > **车机实时方案接口（2026-08-05）**：[Agent 消息正文与采购清单接入说明](docs/hmi-agent-actions-contract.md)。车机负责人应直接消费 World State/SSE 中的 Agent 实时内容，不再使用预设消息。
 
-> **Web 联调入口（GitHub Pages）**：[AURI Web 协作入口](https://954593946.github.io/pressure-takeover-agent/)。进入后可选择车机 HMI 或 Demo 控制台；两端必须填写同一个 Agent API 和 Team Token，静态页面本身不保存任何后端密钥。
+> **Web 联调入口（GitHub Pages）**：[AURI Web 协作入口](https://954593946.github.io/pressure-takeover-agent/)。进入后可选择车机 HMI 或 Demo 控制台；两端必须填写同一个 Agent API 和 Team Token。源码和部署产物不内置密钥；用户填写的连接配置会保存在当前浏览器的同源 `localStorage`，不得使用公共电脑长期保存或在截图中暴露。
 
 > 最后更新：2026-07-27。[完整 LangChain 工具编排 PR #15](https://github.com/954593946/pressure-takeover-agent/pull/15)、[手机 Chat SSE 接入 PR #16](https://github.com/954593946/pressure-takeover-agent/pull/16) 与 [SSE/崩溃/日志修复 PR #17](https://github.com/954593946/pressure-takeover-agent/pull/17) 已合并。`contracts v0.2` 仍是共享候选基线；Chat 接口和跨端字段必须共同评审后冻结，禁止在端内复制后自行修改。
 
@@ -57,7 +57,7 @@ Demo 台:  http://192.168.1.11:5174/apps/demo-console/
 
 开发机 IP 变化时以 `hostname -I` 的首个 IPv4 地址替换 `192.168.1.11`。新版静态资源使用独立版本号，更新后不需要在 URL 添加额外后缀；如浏览器仍保留旧页面，执行一次强制刷新即可。
 
-这些只是公开静态前端，不包含 Team Token 或 OpenAI API Key。首次打开后，在页面的连接设置中填写 `https://auri-agent-api.onrender.com` 和负责人单独提供的 Team Token。若两个页面看不到同一任务，首先检查二者是否连接了同一个 API 地址和同一个共享 Session。
+这些公开静态前端的源码和部署产物不包含 Team Token 或 OpenAI API Key。首次打开后，在页面的连接设置中填写 `https://auri-agent-api.onrender.com` 和负责人单独提供的 Team Token；该配置会保存在当前浏览器的同源 `localStorage`。若两个页面看不到同一任务，首先检查二者是否连接了同一个 API 地址和同一个共享 Session。
 
 发布或更新 `main` 后，在 GitHub Actions 中等待 `Web HMI and Console` 成功，再分别访问统一入口、HMI 和 Console。三个地址均应返回 `200`；HMI/Console 连接设置中使用团队公网 Agent，不要填写发布者电脑的 `127.0.0.1` 或 `192.168.*` 地址。
 
