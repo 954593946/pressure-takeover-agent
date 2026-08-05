@@ -3573,6 +3573,166 @@ article.auri-action-step { cursor: default; }
   background: linear-gradient(135deg, var(--auri-ivory), var(--auri-gold));
   box-shadow: 0 9px 22px rgba(0, 0, 0, 0.2), inset 0 1px rgba(255, 255, 255, 0.62);
 }
+
+/* Action detail is a second-level cockpit surface: keep the page heading primary,
+   then use a compact progress summary and tappable action rows. */
+.auri-action-board {
+  gap: 7px;
+}
+.auri-action-board > header {
+  min-height: 52px;
+  padding: 9px 12px;
+  border-color: rgba(126, 183, 255, 0.14);
+  border-radius: 14px;
+  background: linear-gradient(100deg, rgba(47, 107, 255, 0.1), rgba(245, 242, 236, 0.035));
+}
+.auri-action-board > header > span small {
+  display: none;
+}
+.auri-action-board > header > span b {
+  margin: 0;
+  color: var(--auri-ivory);
+  font-size: 20px;
+  line-height: 1.15;
+}
+.auri-action-board > header > em {
+  min-width: 42px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: #a9c7ff;
+  background: rgba(47, 107, 255, 0.13);
+  font-size: 15px;
+  font-style: normal;
+  font-weight: 720;
+  text-align: center;
+}
+.auri-action-progress {
+  height: 4px;
+}
+.auri-action-list {
+  gap: 7px;
+}
+.auri-action-step {
+  min-height: 76px;
+  padding: 10px 12px;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 10px;
+  border-color: rgba(126, 183, 255, 0.14);
+  border-radius: 14px;
+  background: linear-gradient(100deg, rgba(245, 242, 236, 0.05), rgba(245, 242, 236, 0.025));
+  box-shadow: inset 0 1px rgba(245, 242, 236, 0.025);
+}
+.auri-action-index {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+}
+.auri-action-index .auri-icon {
+  width: 19px;
+  height: 19px;
+}
+.auri-action-step-copy small {
+  color: #9ebdff;
+  font-size: 13px;
+  font-weight: 680;
+  line-height: 1.2;
+}
+.auri-action-step-copy b {
+  margin-top: 2px;
+  color: var(--auri-ivory);
+  font-size: 19px;
+  line-height: 1.25;
+}
+.auri-action-step-copy em {
+  margin-top: 3px;
+  color: rgba(245, 242, 236, 0.58);
+  font-size: 14px;
+  line-height: 1.3;
+  -webkit-line-clamp: 1;
+}
+.auri-action-step-state {
+  margin-right: 0;
+  padding: 4px 7px;
+  border-radius: 999px;
+  color: rgba(245, 242, 236, 0.72);
+  background: rgba(245, 242, 236, 0.06);
+  font-size: 13px;
+  font-weight: 720;
+}
+.auri-action-step.is-completed .auri-action-step-state {
+  color: #79d9b3;
+  background: rgba(46, 157, 111, 0.12);
+}
+button.auri-action-step {
+  grid-template-columns: 40px minmax(0, 1fr) auto 18px;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+.auri-action-disclosure {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  align-self: center;
+  color: rgba(245, 242, 236, 0.5);
+  transition: color 160ms ease, transform 160ms ease;
+}
+.auri-action-disclosure .auri-icon {
+  width: 16px;
+  height: 16px;
+  transform: rotate(180deg);
+}
+button.auri-action-step:hover,
+button.auri-action-step:focus-visible {
+  border-color: rgba(126, 183, 255, 0.42);
+  background: rgba(47, 107, 255, 0.11);
+  outline: none;
+}
+button.auri-action-step:active {
+  transform: translateY(1px);
+}
+button.auri-action-step:hover .auri-action-disclosure,
+button.auri-action-step:focus-visible .auri-action-disclosure {
+  color: var(--auri-gold);
+  transform: translateX(2px);
+}
+article.auri-action-step {
+  cursor: default;
+}
+
+/* The left-side proposal list uses the same disclosure language as the detail page. */
+.auri-driver-panel .auri-takeover-action {
+  grid-template-columns: 40px minmax(0, 1fr) auto 18px;
+}
+.auri-driver-panel .auri-takeover-action > .auri-action-disclosure {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.auri-driver-panel .auri-takeover-action:hover .auri-action-disclosure,
+.auri-driver-panel .auri-takeover-action:focus-visible .auri-action-disclosure {
+  color: var(--auri-gold);
+  transform: translateX(2px);
+}
+
+@media (min-width: 1700px) and (min-height: 900px) {
+  .auri-action-board > header {
+    min-height: 58px;
+    padding: 10px 14px;
+  }
+  .auri-action-board > header > span b { font-size: 21px; }
+  .auri-action-step {
+    min-height: 82px;
+    padding: 11px 14px;
+  }
+  button.auri-action-step { grid-template-columns: 40px minmax(0, 1fr) auto 18px; }
+  .auri-action-step-copy b { font-size: 20px; }
+  .auri-action-step-copy em { font-size: 15px; }
+  .auri-driver-panel .auri-takeover-action { grid-template-columns: 40px minmax(0, 1fr) auto 18px; }
+}
 .auri-detail-primary:hover,
 .auri-detail-primary:focus-visible,
 .auri-takeover-confirm:hover,
@@ -3653,5 +3813,29 @@ article.auri-action-step { cursor: default; }
   .auri-stage-notice.is-plan-ready {
     width: min(380px, calc(100% - 28px));
     min-height: 84px;
+  }
+}
+
+/* Final authority for the action detail page.  Keep these after the legacy
+   scaled-canvas rules so a 1366x768 vehicle display does not inflate rows. */
+@media (max-width: 1500px) and (max-height: 800px) {
+  .auri-action-board > header { min-height: 52px; padding: 9px 12px; }
+  .auri-action-board > header > span small { display: none; }
+  .auri-action-board > header > span b { margin: 0; font-size: 25px; line-height: 1.15; }
+  .auri-action-board > header > em { min-width: 42px; padding: 5px 8px; font-size: 20px; }
+  .auri-action-progress { height: 4px; }
+  .auri-action-list { gap: 7px; }
+  .auri-action-step { min-height: 76px; padding: 10px 12px; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 10px; }
+  button.auri-action-step { grid-template-columns: 40px minmax(0, 1fr) auto 18px; }
+  .auri-action-step-copy small { font-size: 19px; }
+  .auri-action-step-copy b { margin-top: 2px; font-size: 25px; }
+  .auri-action-step-copy em { margin-top: 3px; font-size: 20px; -webkit-line-clamp: 1; }
+  .auri-action-step-state { padding: 4px 7px; font-size: 19px; }
+  .auri-driver-panel .auri-takeover-action { grid-template-columns: 40px minmax(0, 1fr) auto 18px; }
+}
+
+@media (max-height: 760px) {
+  .hmi.is-ultrawide .auri-driver-panel .auri-takeover-action {
+    grid-template-columns: 44px minmax(0, 1fr) auto 18px;
   }
 }
