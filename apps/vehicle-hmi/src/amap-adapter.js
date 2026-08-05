@@ -835,7 +835,7 @@
             city: "苏州",
             citylimit: true,
             type: "公司企业|科教文化服务|商务住宅|餐饮服务",
-            pageSize: 12,
+            pageSize: 10,
             pageIndex: 1,
             extensions: "base"
           });

@@ -956,12 +956,13 @@
   function speakSolutionBriefing(briefing) {
     if (!briefing || isSpeechMuted()) return false;
     try {
-      if (typeof window.AURI_HMI_SPEECH_ADAPTER?.speak === "function") {
-        return window.AURI_HMI_SPEECH_ADAPTER.speak(briefing) !== false;
-      }
       if (window.SAFEDRIVER_CONFIG?.ttsKey && typeof window.speakText === "function") {
         void Promise.resolve(window.speakText(briefing, "longxiaochun", null, { priority: "medium" }));
         return true;
+      }
+      if (typeof window.AURI_HMI_SPEECH_ADAPTER?.speak === "function") {
+        window.AURI_HMI_SPEECH_ADAPTER.cancel?.();
+        return window.AURI_HMI_SPEECH_ADAPTER.speak(briefing) !== false;
       }
       if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return false;
       const voices = window.speechSynthesis.getVoices?.() || [];
