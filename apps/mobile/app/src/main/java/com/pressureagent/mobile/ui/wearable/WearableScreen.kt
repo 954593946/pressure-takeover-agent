@@ -94,6 +94,12 @@ fun WearableScreen(viewModel: WearableViewModel = hiltViewModel()) {
                     DebugButton("完成", Modifier.weight(1f)) { viewModel.sendDebugState(WearableMode.COMPLETED) }
                     DebugButton("异常", Modifier.weight(1f)) { viewModel.sendDebugState(WearableMode.ERROR) }
                 }
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DebugButton("压力上升", Modifier.weight(1f)) { viewModel.sendDebugPressureRise() }
+                    Spacer(Modifier.weight(1f))
+                    Spacer(Modifier.weight(1f))
+                }
 
                 Spacer(Modifier.height(16.dp))
                 Text("触觉测试", style = MaterialTheme.typography.labelMedium, color = Color.Gray)

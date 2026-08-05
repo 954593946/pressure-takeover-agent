@@ -29,6 +29,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class WearableGatewayTest {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -154,6 +155,44 @@ class WearableGatewayTest {
             assertEquals("world-demo-2", secondParams["command_id"]?.jsonPrimitive?.content)
             assertEquals("idle", secondParams["mode"]?.jsonPrimitive?.content)
             assertEquals("none", secondParams["haptic"]?.jsonPrimitive?.content)
+        } finally {
+            gateway.stop()
+        }
+    }
+
+    @Test
+    fun queuesDebugPressureRiseCommandInOutbox() {
+        val repository = FakeWorldStateRepository(
+            WorldState(
+                sessionId = "demo",
+                revision = 1,
+                stage = Stage.OFF_VEHICLE_IDLE,
+            ),
+        )
+        val gateway = WearableGateway(repository, json)
+
+        try {
+            gateway.start()
+            eventuallyJson { httpGet("/health") }
+
+            gateway.sendDebugPressureRise()
+
+            val outbox = eventuallyJsonObject {
+                json.decodeFromString<JsonElement>(
+                    httpGet("/v1/watch/outbox?last_command_id=&last_sensor_request_id="),
+                ).jsonObject.also { response ->
+                    check(response["set_state"] is JsonObject) { "debug set_state is not ready" }
+                }
+            }
+            val params = outbox["set_state"]!!.jsonObject["params"]!!.jsonObject
+            val commandId = params["command_id"]?.jsonPrimitive?.content.orEmpty()
+            assertTrue(commandId.startsWith("android-debug-pressure-rise-"))
+            assertEquals("warning", params["mode"]?.jsonPrimitive?.content)
+            assertEquals("压力可能上升", params["title"]?.jsonPrimitive?.content)
+            assertTrue(params["text"]?.jsonPrimitive?.content.orEmpty().contains("负荷上升"))
+            assertEquals("double_short", params["haptic"]?.jsonPrimitive?.content)
+            assertEquals(0xe6a700, params["color"]?.jsonPrimitive?.int)
+            eventuallyTrue { gateway.state.value.lastOutboxSource == "android-debug" }
         } finally {
             gateway.stop()
         }
