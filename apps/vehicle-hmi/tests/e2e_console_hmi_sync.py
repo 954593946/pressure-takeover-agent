@@ -203,7 +203,13 @@ def main() -> None:
         assert "9 件" in console.locator("#serviceOrders").inner_text()
         assert "演示外部数据" in hmi.locator(".top-bar").inner_text()
         assert "演示车辆信号" in hmi.locator(".vd-hud-overlay").inner_text()
-        assert "模拟消息" in hmi.locator("#auri-takeover-actions").inner_text()
+        message_actions = [action for action in state["actions"] if action["type"] == "message"]
+        service_actions = [action for action in state["actions"] if action["type"] == "service_order"]
+        action_text = hmi.locator("#auri-takeover-actions").inner_text()
+        if message_actions:
+            assert "消息" in action_text
+        else:
+            assert "模拟消息" not in action_text
         if hmi.evaluate("window.AURI_HMI_NEXT.getState().map.status") == "online":
             hmi.wait_for_function(
                 "() => {"
@@ -219,7 +225,7 @@ def main() -> None:
 
         hmi.locator(".auri-takeover-section-head").click()
         hmi.wait_for_function("document.querySelector('#auri-detail-title')?.textContent === '处理进度'")
-        assert "0/3 已完成" in hmi.locator("#auri-driver-detail").inner_text()
+        assert f"0/{len(state['actions'])} 已完成" in hmi.locator("#auri-driver-detail").inner_text()
         hmi.locator("#auri-driver-back").click()
         action_triggers = hmi.locator('#auri-takeover-actions [data-panel-target^="action:"]')
         assert action_triggers.count() == len(state["actions"])
@@ -234,7 +240,12 @@ def main() -> None:
         ready_speech = hmi.evaluate("window.__auriSpoken")
         assert len(ready_speech) == 1, ready_speech
         assert "AURI 已准备处理方案" in ready_speech[0], ready_speech
-        assert "2条消息和1项配送方案已准备" in ready_speech[0], ready_speech
+        ready_parts = []
+        if message_actions:
+            ready_parts.append(f"{len(message_actions)}条消息")
+        if service_actions:
+            ready_parts.append(f"{len(service_actions)}项配送方案")
+        assert f"{'和'.join(ready_parts)}已准备" in ready_speech[0], ready_speech
         assert hmi.evaluate("window.__systemSpeechCalls.length") == 0
         hmi.locator("#auri-takeover-confirm").click()
         wait_console_stage(console, "action_completed")
@@ -244,12 +255,19 @@ def main() -> None:
         completed_speech = hmi.evaluate("window.__auriSpoken")
         assert len(completed_speech) == 2, completed_speech
         assert "AURI 已完成处理" in completed_speech[1], completed_speech
-        assert "2条消息和1项配送方案已完成" in completed_speech[1], completed_speech
+        completed_messages = [action for action in completed["actions"] if action["type"] == "message" and action["status"] == "completed"]
+        completed_services = [action for action in completed["actions"] if action["type"] == "service_order" and action["status"] == "completed"]
+        completed_parts = []
+        if completed_messages:
+            completed_parts.append(f"{len(completed_messages)}条消息")
+        if completed_services:
+            completed_parts.append(f"{len(completed_services)}项配送方案")
+        assert f"{'和'.join(completed_parts)}已完成" in completed_speech[1], completed_speech
         assert hmi.evaluate("window.__systemSpeechCalls.length") == 0
         hmi.locator(".auri-takeover-section-head").click()
         hmi.wait_for_function("document.querySelector('#auri-detail-title')?.textContent === '处理进度'")
         detail_text = hmi.locator("#auri-driver-detail").inner_text()
-        assert "3/3 已完成" in detail_text
+        assert f"{len(completed['actions'])}/{len(completed['actions'])} 已完成" in detail_text
         assert "100%" in detail_text
         hmi.screenshot(path=SCREENSHOT_DIR / "completed-progress-1920x720.png")
         hmi.locator("#auri-driver-back").click()

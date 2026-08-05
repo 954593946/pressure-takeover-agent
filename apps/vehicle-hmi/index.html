@@ -8,6 +8,25 @@
 <!-- Optional local AMap sidecar. Missing = Agent config or offline fallback. See env.local.example.js. -->
 <script src="env.js" onerror="console.info('[AURI] env.js not found · visual shell mode')"></script>
 <script src="env.local.js" onerror="console.info('[AURI] env.local.js not found · use browser or Agent map config')"></script>
+<script>
+// AURI speech is delivered by Bosch TTS audio. Firefox/Linux system voices can
+// advertise Chinese support while spelling Han characters as "Chinese letter".
+(function blockUnreliableSystemSpeech() {
+  try {
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+    synth.cancel();
+    Object.defineProperty(synth, "speak", {
+      configurable: true,
+      writable: false,
+      value: function auriSystemSpeechBlocked() { return undefined; }
+    });
+    window.__AURI_SYSTEM_SPEECH_BLOCKED__ = true;
+  } catch (_error) {
+    window.__AURI_SYSTEM_SPEECH_BLOCKED__ = false;
+  }
+})();
+</script>
 <style>
 /* ─── Reset ─── */
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -3116,7 +3135,7 @@ body{background:#000814;}
 .dc-toggle:hover{background:rgba(255,255,255,.12);color:#fff;}
 </style>
 <link rel="stylesheet" href="rds_figma_theme.css">
-  <link rel="stylesheet" href="auri-theme.css?v=auri-next-20260805r">
+  <link rel="stylesheet" href="auri-theme.css?v=auri-next-20260805s">
 </head>
 <body>
 <!-- ══ Demo Playback Controls · 倒退/快进/跳转 ══ -->
@@ -14536,7 +14555,7 @@ window.addEventListener('load',()=>{
 </script>
 <script src="src/world-state-model.js?v=auri-next-20260803b"></script>
 <script src="src/agent-client.js?v=auri-next-20260803d"></script>
-  <script src="src/amap-adapter.js?v=auri-next-20260805r"></script>
-  <script src="auri-shell.js?v=auri-next-20260805r"></script>
+  <script src="src/amap-adapter.js?v=auri-next-20260805s"></script>
+  <script src="auri-shell.js?v=auri-next-20260805s"></script>
 </body>
 </html>

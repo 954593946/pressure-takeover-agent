@@ -65,6 +65,17 @@ assert.match(threeActions, /2条消息和1项配送方案已准备/);
 assert.match(threeActions, /请说确认，或在车机确认/);
 assert.equal(briefing.build(state({ stage: "planning" })), "");
 assert.equal(briefing.build(state({ primary_surface: "mobile" })), "");
+assert.equal(briefing.build(state({ confirmation: { ...state().confirmation, owner_surface: "mobile" } })), "");
+assert.equal(briefing.build(state({ confirmation: { ...state().confirmation, status: "expired" } })), "");
+
+const mixedAvailability = briefing.build(state({
+  actions: [
+    { action_id: "message-ok", type: "message", target: "联系人甲", status: "awaiting_confirmation" },
+    { action_id: "service-blocked", type: "service_order", target: "配送", status: "blocked" }
+  ]
+}));
+assert.match(mixedAvailability, /1条消息已准备/);
+assert.doesNotMatch(mixedAvailability, /配送方案已准备/);
 
 const changedPlan = {
   ...threeActionsState,
@@ -92,6 +103,33 @@ assert.match(completion, /当前预计晚到9分钟/);
 assert.match(completion, /2条消息和1项配送方案已完成/);
 assert.doesNotMatch(completion, /王老师|孩子妈妈|超市|接孩子/);
 assert.equal(briefing.buildCompletion({ ...changedPlan, stage: "action_completed", primary_surface: "mobile" }), "");
+
+const rejected = briefing.buildCompletion({
+  ...changedPlan,
+  stage: "action_completed",
+  confirmation: { ...changedPlan.confirmation, status: "rejected" },
+  actions: changedPlan.actions.map((action) => ({ ...action, status: "blocked" })),
+  service_orders: changedPlan.service_orders.map((order) => ({ ...order, status: "failed" }))
+});
+assert.equal(rejected, "AURI 已取消本次处理方案。消息和服务均未执行。请继续安全驾驶。");
+assert.doesNotMatch(rejected, /已完成|配送方案已完成/);
+
+const failedCompletion = briefing.buildCompletion({
+  ...changedPlan,
+  stage: "action_completed",
+  actions: changedPlan.actions.map((action) => ({ ...action, status: "failed" })),
+  service_orders: changedPlan.service_orders.map((order) => ({ ...order, status: "failed" }))
+});
+assert.match(failedCompletion, /本次没有执行任何动作/);
+assert.doesNotMatch(failedCompletion, /消息已完成|配送方案已完成/);
+
+const multipleServices = briefing.build(state({
+  actions: [
+    { action_id: "service-1", type: "service_order", status: "awaiting_confirmation" },
+    { action_id: "service-2", type: "service_order", status: "awaiting_confirmation" }
+  ]
+}));
+assert.match(multipleServices, /2项配送方案已准备/);
 
 const completionState = {
   ...changedPlan,

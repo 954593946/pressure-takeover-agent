@@ -1,10 +1,10 @@
 const DEFAULT_CONFIG = {
-  apiBase: "https://auri-agent-api.onrender.com",
+  apiBase: "https://auri-langchain-agent-api.onrender.com",
   stream: true
 };
 
-const PUBLIC_AGENT_API = "https://auri-agent-api.onrender.com";
-const LEGACY_AGENT_API = "https://auri-langchain-agent-api.onrender.com";
+const PUBLIC_AGENT_API = "https://auri-langchain-agent-api.onrender.com";
+const LEGACY_AGENT_API = "https://auri-agent-api.onrender.com";
 const LOCAL_AGENT_API = "http://127.0.0.1:8000";
 const DEMO_PRESET_TASK_TEXT = "今天18:10接孩子，之后去超市";
 const DEMO_TRAFFIC_DELAY_MINUTES = 18;

@@ -9,7 +9,7 @@
   const SHARED_STORAGE_KEY = "auri-shared-agent-config-v1";
   const GET_RETRY_DELAYS_MS = [0, 900, 2200];
   const DEFAULT_CONFIG = {
-    apiBase: "https://auri-agent-api.onrender.com",
+    apiBase: "https://auri-langchain-agent-api.onrender.com",
     token: "",
     stream: true,
     pollIntervalMs: 3000,

@@ -69,14 +69,14 @@
       return parts;
     }
 
-    function actionCountBrief(actions, serviceOrders, completed = false) {
+    function actionCountBrief(actions, completed = false) {
       const items = asArray(actions);
       const messageCount = items.filter((action) => action?.type === "message").length;
-      const hasService = items.some((action) => action?.type === "service_order") || asArray(serviceOrders).length > 0;
+      const serviceCount = items.filter((action) => action?.type === "service_order").length;
       const otherCount = items.filter((action) => !["message", "service_order"].includes(action?.type)).length;
       const parts = [
         messageCount ? `${messageCount}条消息` : "",
-        hasService ? "1项配送方案" : "",
+        serviceCount ? `${serviceCount}项配送方案` : "",
         otherCount ? `${otherCount}项后续安排` : ""
       ].filter(Boolean);
       if (!parts.length) return "";
@@ -91,12 +91,14 @@
 
     function build(state) {
       if (!state || state.primary_surface !== "vehicle_hmi" || !READY_STAGES.has(state.stage)) return "";
+      if (state.confirmation?.status !== "pending" || state.confirmation?.owner_surface !== "vehicle_hmi") return "";
       const parts = ["AURI 已准备处理方案"];
       const lateMinutes = Math.max(0, Number(state.risk?.late_minutes) || 0);
       const conclusion = cleanText(state.output?.conclusion, 28);
       if (lateMinutes) parts.push(`当前预计晚到${Math.round(lateMinutes)}分钟`);
       else if (conclusion) parts.push(conclusion);
-      const actions = actionCountBrief(state.actions, state.service_orders);
+      const pendingActions = asArray(state.actions).filter((action) => action?.status === "awaiting_confirmation");
+      const actions = actionCountBrief(pendingActions);
       if (actions) parts.push(actions);
       else if (!conclusion) parts.push("已整理本次处理步骤");
       const confirmation = confirmationBrief(state.confirmation);
@@ -138,6 +140,9 @@
 
     function buildCompletion(state) {
       if (!state || state.stage !== "action_completed" || state.primary_surface !== "vehicle_hmi") return "";
+      if (state.confirmation?.status === "rejected") {
+        return "AURI 已取消本次处理方案。消息和服务均未执行。请继续安全驾驶。";
+      }
       const lateMinutes = Math.max(0, Number(state.risk?.late_minutes) || 0);
       const conclusion = cleanText(state.output?.conclusion, 30);
       const completed = asArray(state.actions).filter((action) => ["completed", "sent", "submitted"].includes(action?.status));
@@ -145,8 +150,9 @@
       if (lateMinutes) parts.push(`当前预计晚到${Math.round(lateMinutes)}分钟`);
       else if (conclusion) parts.push(conclusion);
       else if (completed.length) parts.push(`${completed.length}项结果已经同步`);
-      const completedSummary = actionCountBrief(completed, state.service_orders, true);
+      const completedSummary = actionCountBrief(completed, true);
       if (completedSummary) parts.push(completedSummary);
+      else parts.push("本次没有执行任何动作");
       parts.push("请继续安全驾驶");
       return `${parts.join("。")}。`;
     }
@@ -232,6 +238,7 @@
 
   let viewModel = model.buildVehicleHmiViewModel(null);
   let activeSection = null;
+  let showConnectionSettings = false;
   let connectionStatus = { type: "idle" };
   let lastHealth = null;
   let lastAnimatedStage = null;
@@ -1409,7 +1416,7 @@
   function connectionPanel() {
     const config = client.getConfig();
     const statusLabel = STATUS_VIEW[connectionStatus.type]?.[0] || "等待连接";
-    const setupMode = new URLSearchParams(window.location.search).get("setup") === "1";
+    const setupMode = showConnectionSettings || new URLSearchParams(window.location.search).get("setup") === "1";
     if (!setupMode) {
       const connected = ["streaming", "polling_fallback"].includes(connectionStatus.type);
       return {
@@ -1420,6 +1427,7 @@
           <h3>${connected ? "AURI 服务已连接" : "正在恢复连接"}</h3>
           <p>${connected ? "任务、路线和处理状态会自动保持同步。" : "当前页面会自动重试，也可以立即重新连接。"}</p>
           <button type="button" data-connection-reload>${connected ? "刷新状态" : "重新连接"}</button>
+          <button type="button" data-connection-settings>连接与地图设置</button>
         </section>`,
         rows: []
       };
@@ -1447,8 +1455,8 @@
           <label><span>Agent API</span><input id="auri-config-api" type="url" spellcheck="false" value="${escapeHtml(config.apiBase)}" required></label>
           <label><span>Team Token</span><input id="auri-config-token" type="password" autocomplete="off" value="${escapeHtml(config.token)}" placeholder="仅保存在当前浏览器"></label>
           <div class="auri-config-presets">
-            <button type="button" data-api="https://auri-agent-api.onrender.com">公网服务</button>
-            <button type="button" data-api="https://auri-langchain-agent-api.onrender.com">LangChain 服务</button>
+            <button type="button" data-api="https://auri-langchain-agent-api.onrender.com">当前公网服务</button>
+            <button type="button" data-api="https://auri-agent-api.onrender.com">旧版公网服务</button>
             <button type="button" data-api="http://127.0.0.1:8000">本地服务</button>
           </div>
           <details class="auri-map-config">
@@ -1591,6 +1599,10 @@
       button.addEventListener("click", () => openPanel(button.dataset.panelTarget));
     });
     body.querySelector("[data-connection-reload]")?.addEventListener("click", () => window.location.reload());
+    body.querySelector("[data-connection-settings]")?.addEventListener("click", () => {
+      showConnectionSettings = true;
+      openPanel("connection");
+    });
     body.querySelector('[data-climate-control="power"]')?.addEventListener("click", () => {
       const draft = ensureClimateDraft();
       updateClimateDraft({ ac_on: !draft.ac_on });

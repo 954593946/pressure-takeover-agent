@@ -16,7 +16,6 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_pla
 AGENT = os.getenv("AURI_AGENT_URL", "http://127.0.0.1:8795").rstrip("/")
 TOKEN = os.getenv("AURI_AGENT_TOKEN", "test-shared-token")
 HMI = os.getenv("AURI_HMI_URL", "http://127.0.0.1:5174/apps/vehicle-hmi/")
-SETUP_HMI = f"{HMI}{'&' if '?' in HMI else '?'}setup=1"
 CHROME = os.getenv(
     "PLAYWRIGHT_CHROMIUM_EXECUTABLE",
     str(Path.home() / ".cache/ms-playwright/chromium-1228/chrome-linux64/chrome"),
@@ -47,8 +46,16 @@ def main() -> None:
         page = context.new_page()
         errors: list[str] = []
         page.on("pageerror", lambda error: errors.append(str(error)))
-        page.goto(SETUP_HMI, wait_until="load", timeout=30000)
+        # This is intentionally the normal teammate URL. The settings form
+        # must be reachable from the connection status chip, without setup=1.
+        page.goto(HMI, wait_until="load", timeout=30000)
+        page.wait_for_function(
+            "document.querySelector('#tb-offline')?.classList.contains('show')",
+            timeout=15000,
+        )
         page.locator("#tb-offline").click()
+        page.locator("[data-connection-settings]").click()
+        page.locator("#auri-config-form").wait_for(state="visible")
         page.locator("#auri-config-token").fill(TOKEN)
         page.locator(".auri-map-config summary").click()
         assert page.locator(".auri-map-config").evaluate("node => node.open") is True
@@ -60,6 +67,7 @@ def main() -> None:
             timeout=30000,
         )
         page.locator("#tb-offline").click()
+        page.locator("[data-connection-settings]").click()
         page.wait_for_function(
             "document.querySelector('[data-connection-metric=session]')?.textContent !== '--'"
             " && document.querySelector('[data-connection-metric=revision]')?.textContent !== '--'"
@@ -118,6 +126,7 @@ def main() -> None:
             )
             raise AssertionError(f"wrong-token state did not settle: {diagnostics}") from exc
         page.locator("#tb-offline").click()
+        page.locator("[data-connection-settings]").click()
         page.wait_for_function("document.querySelector('.auri-shell-copy')?.textContent.includes('Team Token')")
         assert "Team Token" in page.locator(".auri-shell-copy").inner_text()
         assert page.locator("[data-connection-metric=health]").inner_text() == "正常"
@@ -130,6 +139,7 @@ def main() -> None:
             "map_details_open": True,
             "draft_preserved": True,
             "wrong_token_visible": True,
+            "normal_url": True,
             "javascript_errors": len(errors),
             "screenshot": str(SCREENSHOT),
         }, ensure_ascii=False))
