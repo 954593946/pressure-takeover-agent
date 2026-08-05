@@ -196,14 +196,33 @@
   }
 
   function actionView(action) {
+    const summary = String(action.summary || "Agent 动作");
+    const draft = action.message_draft && typeof action.message_draft === "object"
+      ? action.message_draft
+      : null;
+    let messageBody = "";
+    if (action.type === "message") {
+      messageBody = String(draft?.body || summary).trim();
+      const draftPrefix = `给${String(action.target || "")}的消息草稿：`;
+      const sentPrefix = `已模拟发送给${String(action.target || "")}：`;
+      if (!draft && messageBody.startsWith(draftPrefix)) messageBody = messageBody.slice(draftPrefix.length).trim();
+      if (!draft && messageBody.startsWith(sentPrefix)) messageBody = messageBody.slice(sentPrefix.length).trim();
+    }
     return {
       id: action.action_id || "",
       type: action.type || "unknown",
       target: String(action.target || ""),
       status: action.status || "planned",
       statusLabel: ACTION_STATUS[action.status] || "待处理",
-      summary: String(action.summary || "Agent 动作"),
-      preview: previewText(action.summary || "Agent 动作", 88),
+      summary,
+      preview: previewText(summary, 88),
+      messageBody,
+      messagePreview: messageBody ? previewText(messageBody, 72) : "",
+      messageDraft: messageBody ? {
+        body: messageBody,
+        channel: String(draft?.channel || "demo"),
+        isSimulated: draft?.is_simulated !== false
+      } : null,
       errorCode: action.error_code || null,
       requiresConfirmation: action.requires_confirmation === true,
       detailsRef: action.details_ref || null
@@ -268,12 +287,25 @@
   }
 
   function orderView(order) {
-    const items = asArray(order.items);
+    const items = asArray(order.items).map((item) => ({
+      sku: String(item.sku || ""),
+      name: String(item.name || "商品"),
+      quantity: finiteNumber(item.quantity) || 0,
+      unitPrice: finiteNumber(item.unit_price),
+      subtotal: finiteNumber(item.subtotal),
+      substitution: item.substitution ? String(item.substitution) : null
+    }));
+    const itemSummary = items.map((item) => `${item.name}×${item.quantity}`).join("、");
     return {
       id: order.order_id || order.preview_id || "",
+      orderId: order.order_id || null,
+      previewId: order.preview_id || null,
       status: order.status || "planned",
+      items,
+      itemSummary,
+      itemPreview: previewText(itemSummary, 68),
       itemKinds: items.length,
-      itemCount: items.reduce((total, item) => total + (finiteNumber(item.quantity) || 0), 0),
+      itemCount: items.reduce((total, item) => total + item.quantity, 0),
       total: finiteNumber(order.total),
       budgetLimit: finiteNumber(order.budget_limit),
       budgetStatus: order.budget_status || null,

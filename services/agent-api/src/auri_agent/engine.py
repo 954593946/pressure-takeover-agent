@@ -7,6 +7,7 @@ from .models import (
     Confirmation,
     ConfirmationRequest,
     InteractionOutput,
+    MessageDraft,
     PressureLevel,
     Scene,
     ServiceItem,
@@ -258,7 +259,8 @@ class ActionPlanner:
             else:
                 action_id = f"action_message_{index + 1}"
                 details_ref = f"message_contact_{index + 1}"
-            summary = f"给{target}的消息草稿：{build_message_body(state, target)}"
+            message_body = build_message_body(state, target)
+            summary = f"给{target}的消息草稿：{message_body}"
             message_actions.append(
                 Action(
                     action_id=action_id,
@@ -268,6 +270,7 @@ class ActionPlanner:
                     risk="medium",
                     requires_confirmation=True,
                     summary=summary,
+                    message_draft=MessageDraft(body=message_body),
                     details_ref=details_ref,
                 )
             )
