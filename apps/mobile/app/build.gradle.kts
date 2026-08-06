@@ -19,9 +19,14 @@ fun buildConfigString(value: String): String =
 fun secret(name: String): Provider<String> =
     providers.environmentVariable(name)
         .orElse(providers.provider {
-            val localFile = java.io.File(project.projectDir.parentFile, "local.properties")
+            val localFile = file("${rootProject.projectDir}/local.properties")
             if (localFile.exists()) {
-                java.util.Properties().apply { load(localFile.inputStream()) }.getProperty(name) ?: ""
+                localFile.readLines()
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() && !it.startsWith("#") && !it.startsWith("//") }
+                    .map { it.split("=", limit = 2) }
+                    .firstOrNull { it.size == 2 && it[0].trim() == name }
+                    ?.get(1)?.trim() ?: ""
             } else ""
         })
         .orElse(providers.gradleProperty(name))
