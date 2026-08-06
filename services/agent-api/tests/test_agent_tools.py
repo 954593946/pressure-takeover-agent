@@ -139,6 +139,9 @@ def test_message_drafts_are_natural_and_recipient_specific() -> None:
         "（Demo 模拟消息，未连接真实通讯服务）"
     )
     assert all("前往处理" not in body and "继续同步进度" not in body for body in bodies.values())
+    assert state.output is not None
+    assert "继续同步进度" not in state.output.conclusion
+    assert "到达后马上联系" in state.output.conclusion
 
 
 def test_airport_message_addresses_the_actual_contact_and_includes_body() -> None:

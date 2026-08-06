@@ -2351,6 +2351,9 @@
       renderConnectionStatus({ type: "polling_fallback" });
     }
   });
-  if (document.readyState === "complete") applyShell();
-  else window.addEventListener("load", () => requestAnimationFrame(applyShell), { once: true });
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => requestAnimationFrame(applyShell), { once: true });
+  } else {
+    requestAnimationFrame(applyShell);
+  }
 })();

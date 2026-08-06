@@ -209,7 +209,7 @@ def _receipt_message_request(state: WorldState, actions: list[Action]) -> str:
     if len(actions) == 1 and "老师" in actions[0].target:
         task = _message_task(state, actions[0].target)
         return "请先照看孩子" if task and "孩子" in task.title else "请先协助等候"
-    return "我会继续同步进度"
+    return "我会安全驾驶，到达后马上联系"
 
 
 def build_preparation_receipt(state: WorldState) -> str:
