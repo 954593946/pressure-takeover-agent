@@ -11,7 +11,7 @@ from .config import Settings
 from .models import Task
 from .observability import classify_provider_error, utc_timestamp
 from .prompts import TASK_RIGIDITY_POLICY
-from .tools import ground_waiting_parties
+from .tools import ground_waiting_parties, restore_explicit_waiting_parties
 
 
 logger = logging.getLogger(__name__)
@@ -97,6 +97,7 @@ class TaskParser:
             "grocery_delivery" in task.capability_tags for task in tasks
         ):
             raise ValueError("agent omitted the grocery capability")
+        restore_explicit_waiting_parties(tasks, text)
         return tasks
 
     def _normalise_agent_tasks(self, extracted: list[ExtractedTask], source_text: str) -> list[Task]:

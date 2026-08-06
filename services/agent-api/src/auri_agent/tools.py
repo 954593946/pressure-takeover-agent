@@ -43,39 +43,92 @@ def ground_waiting_parties(candidates: list[str], source_text: str) -> list[str]
     compact_source = "".join(str(source_text or "").split()).casefold()
     if not compact_source:
         return []
-    generic_parties = {
-        "孩子", "家人", "老师", "同事", "朋友", "家长", "同学", "客户",
-        "家属", "爸爸", "妈妈", "爷爷", "奶奶",
-    }
-    recipient_clauses = re.findall(
-        r"(?:通知|联系|告诉|转告|同步给|发给|向|给)([^，。！？；]+)",
-        compact_source,
-    )
+    explicit_parties = set(extract_explicit_waiting_parties(source_text))
     grounded: list[str] = []
     for candidate in candidates:
         value = str(candidate or "").strip()
         compact_value = "".join(value.split()).casefold()
         if not value or not compact_value or compact_value not in compact_source or value in grounded:
             continue
-        if compact_value in generic_parties:
-            escaped = re.escape(compact_value)
-            listed_recipient = any(
-                item == compact_value
-                or any(
-                    item == compact_value + suffix
-                    for suffix in ("发消息", "发信息", "说一声", "报平安")
-                )
-                for clause in recipient_clauses
-                for item in re.split(r"[、和及与]", clause)
-            )
-            waiting_context = re.search(
-                rf"{escaped}[^，。！？；]{{0,8}}(?:在等|等我|等待)",
-                compact_source,
-            )
-            if not listed_recipient and waiting_context is None:
-                continue
+        escaped = re.escape(compact_value)
+        pickup_context = re.search(rf"(?:接|接上|迎接)[^，。！？；]{{0,16}}{escaped}", compact_source)
+        waiting_context = re.search(rf"{escaped}[^，。！？；]{{0,8}}(?:在等|等我|等待)", compact_source)
+        family_pickup_without_notification = value in {
+            "孩子", "儿子", "女儿", "小朋友", "家人", "爸爸", "妈妈", "爷爷", "奶奶",
+        }
+        if family_pickup_without_notification:
+            pickup_context = None
+        if value not in explicit_parties and pickup_context is None and waiting_context is None:
+            continue
         grounded.append(value)
     return grounded
+
+
+def extract_explicit_waiting_parties(source_text: str) -> list[str]:
+    """Recover recipients from explicit notification clauses without inventing contacts."""
+    compact_source = "".join(str(source_text or "").split())
+    if not compact_source:
+        return []
+    delay_terms = ("迟到", "晚到", "来不及", "赶不上", "无法按时", "不能按时", "延误", "堵车")
+    patterns = (
+        re.compile(r"(?:请)?(?:通知|联系|告诉|转告)([^，。！？；]+)"),
+        re.compile(r"(?:请)?给([^，。！？；]+?)(?:发消息|发信息|说一声|报平安)"),
+    )
+    clauses: list[str] = []
+    for pattern in patterns:
+        for match in pattern.finditer(compact_source):
+            separators = "，。！？；"
+            left = max((compact_source.rfind(char, 0, match.start()) for char in separators), default=-1) + 1
+            right_candidates = [
+                index
+                for char in separators
+                if (index := compact_source.find(char, match.end())) >= 0
+            ]
+            right = min(right_candidates, default=len(compact_source))
+            context = compact_source[left:right]
+            if any(term in context for term in delay_terms):
+                clauses.append(match.group(1))
+    generic_parties = {
+        "孩子", "家人", "老师", "同事", "朋友", "家长", "同学", "客户",
+        "家属", "爸爸", "妈妈", "爷爷", "奶奶", "社区联系人",
+    }
+    role_suffix = re.compile(
+        r"^[\u4e00-\u9fffA-Za-z0-9·]{0,12}(?:老师|经理|医生|师傅|妈妈|爸爸|奶奶|爷爷|外婆|外公|家人|孩子|同事|朋友|客户|总|工)"
+    )
+    recovered: list[str] = []
+    for clause in clauses:
+        clause = re.split(r"(?:之后|然后|再去|并把|并将|同时)", clause, maxsplit=1)[0]
+        for raw_item in re.split(r"[、和及与]", clause):
+            item = re.sub(r"(?:发消息|发信息|说一声|报平安|说明情况)$", "", raw_item).strip()
+            item = re.sub(r"^(?:请|给)", "", item).strip()
+            if not item or item in recovered:
+                continue
+            role_match = role_suffix.match(item)
+            generic_match = next((party for party in generic_parties if item == party), None)
+            value = (role_match.group(0) if role_match else None) or generic_match
+            if value and value not in recovered:
+                recovered.append(value)
+    return recovered
+
+
+def restore_explicit_waiting_parties(tasks: list[Task], source_text: str) -> None:
+    """Attach explicit recipients only when their task can be identified safely."""
+    explicit_parties = extract_explicit_waiting_parties(source_text)
+    rigid_tasks = [task for task in tasks if task.task_type == "rigid"]
+    non_grocery_tasks = [task for task in tasks if "grocery_delivery" not in task.capability_tags]
+    for party in explicit_parties:
+        for task in tasks:
+            task.waiting_party = [item for item in task.waiting_party if item != party]
+        matching_tasks = [task for task in rigid_tasks if party in task.title]
+        if len(matching_tasks) == 1:
+            recipient_task = matching_tasks[0]
+        elif len(rigid_tasks) == 1:
+            recipient_task = rigid_tasks[0]
+        elif not rigid_tasks and len(non_grocery_tasks) == 1:
+            recipient_task = non_grocery_tasks[0]
+        else:
+            continue
+        recipient_task.waiting_party.append(party)
 
 
 class AgentToolbox:
@@ -125,6 +178,8 @@ class AgentToolbox:
                     capability_tags=tags,
                 )
             )
+
+        restore_explicit_waiting_parties(new_tasks, self.original_text)
 
         existing = [] if replace_existing else list(self.state.tasks)
         seen = {(task.title, task.scheduled_at) for task in existing}

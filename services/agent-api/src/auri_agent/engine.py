@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from uuid import uuid4
 
 from .models import (
@@ -107,12 +108,13 @@ class MockGroceryAdapter:
 
 
 def _timing_text(state: WorldState) -> str:
-    parts: list[str] = []
+    if state.eta is not None and state.risk.late_minutes > 0:
+        return f"预计{format_local_time(state.eta)}到，比原计划晚{state.risk.late_minutes}分钟"
     if state.eta is not None:
-        parts.append(f"预计{format_local_time(state.eta)}到")
+        return f"预计{format_local_time(state.eta)}到"
     if state.risk.late_minutes > 0:
-        parts.append(f"会晚{state.risk.late_minutes}分钟")
-    return "，".join(parts) or "到达时间有变化"
+        return f"预计比原计划晚{state.risk.late_minutes}分钟"
+    return "到达时间有变化"
 
 
 def _message_task(state: WorldState, target: str) -> Task | None:
@@ -132,18 +134,46 @@ def _is_family_target(target: str) -> bool:
     return any(term in target for term in family_terms)
 
 
+def _journey_text(task: Task | None) -> str:
+    if task is None:
+        return "赶往约定地点"
+    title = re.sub(r"^\s*(?:今天|今晚|之后)?\s*\d{1,2}:\d{2}\s*", "", task.title).strip()
+    title = re.sub(r"[（(].*?[）)]", "", title).strip()
+    if "接孩子" in title:
+        return "去学校接孩子" if "学校" in title else "去接孩子"
+    if "机场" in title:
+        return "前往机场"
+    if title.startswith("去"):
+        return title
+    if title.startswith("接"):
+        return f"去{title}"
+    if title.startswith(("参加", "出席", "拜访", "办理", "送", "取", "看")):
+        return f"去{title}"
+    return f"按计划前往“{title}”" if title else "赶往约定地点"
+
+
+def _delay_context(state: WorldState) -> str:
+    return "路上有些拥堵，" if state.risk.late_minutes > 0 else ""
+
+
 def build_message_body(state: WorldState, target: str) -> str:
-    """Build the concrete body persisted in Action.summary for the demo message."""
+    """Build a concise recipient-aware message persisted in the Agent action."""
     task = _message_task(state, target)
-    task_text = f"“{task.title}”" if task else "当前安排"
     timing = _timing_text(state)
+    journey = _journey_text(task)
+    delay = _delay_context(state)
+    child_pickup = bool(task and "孩子" in task.title)
     if _is_child_target(target):
-        body = f"我正在前往处理{task_text}，{timing}。你先安心等我，我会安全驾驶并继续同步进度。"
+        child_journey = journey.replace("接孩子", "接你")
+        body = f"我正在{child_journey}，{delay}{timing}。你先安心等我，我会安全驾驶，到达后马上联系你。"
     elif "老师" in target:
-        request = "麻烦先照看一下孩子" if task and "孩子" in task.title else "麻烦先协助等候"
-        body = f"您好，我正在前往处理{task_text}，{timing}。{request}，谢谢。"
+        request = "麻烦您先帮我照看一下孩子" if child_pickup else "麻烦您先协助等候"
+        body = f"{target}您好，我正在{journey}，{delay}{timing}。{request}，我到达后马上联系您，谢谢。"
+    elif _is_family_target(target):
+        request = "麻烦你先和孩子说一声，" if child_pickup else ""
+        body = f"我正在{journey}，{delay}{timing}。{request}我会安全驾驶，到达后马上联系你。"
     else:
-        body = f"我正在前往处理{task_text}，{timing}。我会安全驾驶并继续同步进度。"
+        body = f"{target}您好，我正在{journey}，{delay}{timing}。抱歉让您久等，我到达后马上联系您。"
     return f"{body}（Demo 模拟消息，未连接真实通讯服务）"
 
 
@@ -358,6 +388,18 @@ def consume_confirmation(state: WorldState, request: ConfirmationRequest) -> Non
         for action in state.actions:
             if action.action_id in confirmation.action_ids:
                 action.status = "blocked"
+        rejected_order_refs = {
+            action.details_ref
+            for action in state.actions
+            if action.action_id in confirmation.action_ids and action.type == "service_order"
+        }
+        for order in state.service_orders:
+            if order.preview_id in rejected_order_refs and order.status == "awaiting_confirmation":
+                order.status = "blocked"
+        if rejected_order_refs:
+            for task in state.tasks:
+                if "grocery_delivery" in task.capability_tags and task.status == "rescheduled":
+                    task.status = "pending"
         state.stage = Stage.ACTION_COMPLETED
         state.output = InteractionOutput(
             message_id=f"msg_{uuid4().hex[:12]}",

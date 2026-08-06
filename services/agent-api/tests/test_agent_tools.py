@@ -66,7 +66,7 @@ def test_assistance_is_grounded_in_existing_tasks() -> None:
     assert {action.target for action in state.actions if action.type == "message"} == {"老师", "家人"}
     family_action = next(action for action in state.actions if action.target == "家人")
     assert family_action.action_id == "action_message_2"
-    assert "我会安全驾驶并继续同步进度" in family_action.summary
+    assert "我会安全驾驶，到达后马上联系你" in family_action.summary
     assert "你先安心等我" not in family_action.summary
     assert len(state.service_orders) == 1
     assert state.confirmation is not None
@@ -98,7 +98,7 @@ def test_assistance_preserves_specific_family_contact() -> None:
         state,
         event_id="evt_grandparent",
         source="mobile",
-        original_text="18:10接孩子，请通知王老师和孩子奶奶",
+        original_text="18:10接孩子，如果迟到请通知王老师和孩子奶奶",
     )
     toolbox.create_tasks(
         [task("18:10去学校接孩子", "rigid", adjustable=False, waiting_party=["王老师", "孩子奶奶"])],
@@ -108,6 +108,143 @@ def test_assistance_preserves_specific_family_contact() -> None:
     toolbox.prepare_assistance(include_messages=True, include_grocery=False)
 
     assert {action.target for action in state.actions} == {"王老师", "孩子奶奶"}
+
+
+def test_message_drafts_are_natural_and_recipient_specific() -> None:
+    state = initial_state("demo_natural_messages")
+    state.eta = datetime(2026, 8, 6, 18, 28, tzinfo=TZ)
+    state.risk.late_minutes = 18
+    toolbox = AgentToolbox(
+        state,
+        event_id="evt_natural_messages",
+        source="mobile",
+        original_text="18:10接孩子，如果迟到请通知王老师和孩子妈妈",
+    )
+    toolbox.create_tasks(
+        [task("接孩子", "rigid", adjustable=False, waiting_party=["王老师", "孩子妈妈"])],
+        replace_existing=False,
+    )
+
+    toolbox.prepare_assistance(include_messages=True, include_grocery=False)
+    bodies = {action.target: action.message_draft.body for action in state.actions}
+
+    assert bodies["王老师"] == (
+        "王老师您好，我正在去接孩子，路上有些拥堵，预计18:28到，比原计划晚18分钟。"
+        "麻烦您先帮我照看一下孩子，我到达后马上联系您，谢谢。"
+        "（Demo 模拟消息，未连接真实通讯服务）"
+    )
+    assert bodies["孩子妈妈"] == (
+        "我正在去接孩子，路上有些拥堵，预计18:28到，比原计划晚18分钟。"
+        "麻烦你先和孩子说一声，我会安全驾驶，到达后马上联系你。"
+        "（Demo 模拟消息，未连接真实通讯服务）"
+    )
+    assert all("前往处理" not in body and "继续同步进度" not in body for body in bodies.values())
+
+
+def test_airport_message_addresses_the_actual_contact_and_includes_body() -> None:
+    state = initial_state("demo_airport_message")
+    state.eta = datetime(2026, 8, 6, 20, 18, tzinfo=TZ)
+    state.risk.late_minutes = 18
+    toolbox = AgentToolbox(
+        state,
+        event_id="evt_airport_message",
+        source="mobile",
+        original_text="20:00去机场接张工，如果来不及请通知张工",
+    )
+    toolbox.create_tasks(
+        [task("去机场接张工", "rigid", adjustable=False, waiting_party=["张工"])],
+        replace_existing=False,
+    )
+
+    toolbox.prepare_assistance(include_messages=True, include_grocery=False)
+
+    assert len(state.actions) == 1
+    action = state.actions[0]
+    assert action.target == "张工"
+    assert action.message_draft.body == (
+        "张工您好，我正在前往机场，路上有些拥堵，预计20:18到，比原计划晚18分钟。"
+        "抱歉让您久等，我到达后马上联系您。"
+        "（Demo 模拟消息，未连接真实通讯服务）"
+    )
+    assert action.message_draft.body in action.summary
+
+
+def test_child_message_keeps_the_pickup_context() -> None:
+    state = initial_state("demo_child_message")
+    state.eta = datetime(2026, 8, 6, 18, 28, tzinfo=TZ)
+    state.risk.late_minutes = 18
+    toolbox = AgentToolbox(
+        state,
+        event_id="evt_child_message",
+        source="mobile",
+        original_text="18:10去学校接孩子，如果迟到请给孩子发消息",
+    )
+    toolbox.create_tasks(
+        [task("去学校接孩子", "rigid", adjustable=False, waiting_party=["孩子"])],
+        replace_existing=False,
+    )
+
+    toolbox.prepare_assistance(include_messages=True, include_grocery=False)
+
+    assert state.actions[0].message_draft.body == (
+        "我正在去学校接你，路上有些拥堵，预计18:28到，比原计划晚18分钟。"
+        "你先安心等我，我会安全驾驶，到达后马上联系你。"
+        "（Demo 模拟消息，未连接真实通讯服务）"
+    )
+
+
+def test_generic_contact_message_keeps_the_specific_task_context() -> None:
+    state = initial_state("demo_generic_contact")
+    state.eta = datetime(2026, 8, 6, 16, 18, tzinfo=TZ)
+    state.risk.late_minutes = 18
+    toolbox = AgentToolbox(
+        state,
+        event_id="evt_generic_contact",
+        source="mobile",
+        original_text="16:00参加项目评审，如果来不及请通知赵经理",
+    )
+    toolbox.create_tasks(
+        [task("参加项目评审", "rigid", adjustable=False, waiting_party=["赵经理"])],
+        replace_existing=False,
+    )
+
+    toolbox.prepare_assistance(include_messages=True, include_grocery=False)
+
+    assert state.actions[0].message_draft.body == (
+        "赵经理您好，我正在去参加项目评审，路上有些拥堵，预计16:18到，比原计划晚18分钟。"
+        "抱歉让您久等，我到达后马上联系您。"
+        "（Demo 模拟消息，未连接真实通讯服务）"
+    )
+
+
+def test_rejecting_plan_blocks_related_service_order_snapshot() -> None:
+    state = initial_state("demo_reject_order")
+    setup = AgentToolbox(
+        state,
+        event_id="evt_reject_order_setup",
+        source="mobile",
+        original_text="今天去超市采购",
+    )
+    setup.create_tasks(
+        [task("去超市采购", "flexible", capability_tags=["grocery_delivery"])],
+        replace_existing=False,
+    )
+    setup.prepare_assistance(include_messages=False, include_grocery=True)
+    assert state.service_orders[0].status == "awaiting_confirmation"
+
+    rejector = AgentToolbox(
+        state,
+        event_id="evt_reject_order_confirm",
+        source="mobile",
+        original_text="取消这套方案",
+    )
+    result = rejector.confirm_current_actions("reject")
+
+    assert result["ok"] is True
+    assert state.confirmation is not None and state.confirmation.status == "rejected"
+    assert state.actions[0].status == "blocked"
+    assert state.service_orders[0].status == "blocked"
+    assert state.tasks[0].status == "pending"
 
 
 @pytest.mark.parametrize(
@@ -127,7 +264,7 @@ def test_assistance_uses_every_existing_waiting_party_without_invention(
     state.risk.late_minutes = 18
     original_text = "帮我处理接孩子"
     if contacts:
-        original_text += "，需要通知" + "、".join(contacts)
+        original_text += "，如果迟到需要通知" + "、".join(contacts)
     toolbox = AgentToolbox(
         state,
         event_id=f"evt_contacts_{expected_count}",
@@ -181,6 +318,131 @@ def test_task_creation_drops_recipients_not_named_by_user() -> None:
     assert state.tasks[0].waiting_party == []
 
 
+def test_task_creation_recovers_explicit_contacts_omitted_by_llm() -> None:
+    state = initial_state("demo_recover_explicit_contacts")
+    toolbox = AgentToolbox(
+        state,
+        event_id="evt_recover_explicit_contacts",
+        source="mobile",
+        original_text="今天18:10接孩子，如果迟到请通知陈老师和孩子奶奶，之后去超市",
+    )
+
+    toolbox.create_tasks(
+        [
+            task(
+                "接孩子；如果迟到通知陈老师和孩子奶奶",
+                "rigid",
+                priority="high",
+                adjustable=False,
+                waiting_party=[],
+                capability_tags=["late_notify:陈老师", "late_notify:孩子奶奶"],
+            ),
+            task("去超市", "flexible", waiting_party=[], capability_tags=["grocery_delivery"]),
+        ],
+        replace_existing=False,
+    )
+
+    assert state.tasks[0].waiting_party == ["陈老师", "孩子奶奶"]
+    assert state.tasks[1].waiting_party == []
+
+
+def test_contact_recovery_is_limited_to_explicit_notification_clauses() -> None:
+    state = initial_state("demo_no_contact_recovery")
+    toolbox = AgentToolbox(
+        state,
+        event_id="evt_no_contact_recovery",
+        source="mobile",
+        original_text="今天和王老师讨论项目，18:10接孩子，之后去超市",
+    )
+
+    toolbox.create_tasks(
+        [task("18:10接孩子", "rigid", priority="high", adjustable=False, waiting_party=[])],
+        replace_existing=False,
+    )
+
+    assert state.tasks[0].waiting_party == []
+
+
+def test_contact_recovery_does_not_treat_giving_materials_as_notification() -> None:
+    state = initial_state("demo_give_materials")
+    toolbox = AgentToolbox(
+        state,
+        event_id="evt_give_materials",
+        source="mobile",
+        original_text="今天把资料给王老师，18:10接孩子",
+    )
+
+    toolbox.create_tasks(
+        [task("18:10接孩子", "rigid", priority="high", adjustable=False, waiting_party=["王老师"])],
+        replace_existing=False,
+    )
+
+    assert state.tasks[0].waiting_party == []
+
+
+@pytest.mark.parametrize(
+    "original_text",
+    [
+        "今天联系张工讨论项目，18:10接孩子",
+        "今天告诉王老师会议安排，18:10接孩子",
+        "今天转告赵经理评审结论，18:10接孩子",
+    ],
+)
+def test_contact_recovery_requires_a_local_delay_context(original_text: str) -> None:
+    state = initial_state("demo_non_delay_contact")
+    toolbox = AgentToolbox(
+        state,
+        event_id="evt_non_delay_contact",
+        source="mobile",
+        original_text=original_text,
+    )
+
+    toolbox.create_tasks(
+        [task("18:10接孩子", "rigid", priority="high", adjustable=False, waiting_party=["张工", "王老师", "赵经理"])],
+        replace_existing=False,
+    )
+
+    assert state.tasks[0].waiting_party == []
+
+
+def test_contact_recovery_binds_to_matching_rigid_task() -> None:
+    state = initial_state("demo_multiple_rigid_tasks")
+    toolbox = AgentToolbox(
+        state,
+        event_id="evt_multiple_rigid_tasks",
+        source="mobile",
+        original_text="18:10接孩子，20:00去机场接张工，如果来不及请通知张工",
+    )
+
+    toolbox.create_tasks(
+        [
+            task("接孩子", "rigid", priority="high", adjustable=False, waiting_party=["张工"]),
+            task("去机场接张工", "rigid", priority="high", adjustable=False, waiting_party=[]),
+        ],
+        replace_existing=False,
+    )
+
+    assert state.tasks[0].waiting_party == []
+    assert state.tasks[1].waiting_party == ["张工"]
+
+
+def test_contact_recovery_handles_notification_without_punctuation() -> None:
+    state = initial_state("demo_notification_without_punctuation")
+    toolbox = AgentToolbox(
+        state,
+        event_id="evt_notification_without_punctuation",
+        source="mobile",
+        original_text="20:00去机场接张工，如果来不及请通知张工我会晚到",
+    )
+
+    toolbox.create_tasks(
+        [task("去机场接张工", "rigid", priority="high", adjustable=False, waiting_party=[])],
+        replace_existing=False,
+    )
+
+    assert state.tasks[0].waiting_party == ["张工"]
+
+
 def test_confirmation_requires_explicit_words_and_owner_surface() -> None:
     state = initial_state("demo_confirm")
     setup = AgentToolbox(state, event_id="evt_setup", source="mobile", original_text="帮我处理")
@@ -215,7 +477,7 @@ def test_demo_receipts_include_message_body_and_purchase_details() -> None:
         state,
         event_id="evt_receipts",
         source="mobile",
-        original_text="帮我处理，并通知孩子",
+        original_text="帮我处理，如果晚到请通知孩子",
     )
     setup.create_tasks(
         [
@@ -283,7 +545,7 @@ def test_demo_receipts_render_utc_eta_in_shanghai_time() -> None:
         state,
         event_id="evt_receipts_utc",
         source="mobile",
-        original_text="帮我处理，并通知孩子",
+        original_text="帮我处理，如果晚到请通知孩子",
     )
     setup.create_tasks(
         [task("18:10去学校接孩子", "rigid", priority="high", adjustable=False, waiting_party=["孩子"])],
