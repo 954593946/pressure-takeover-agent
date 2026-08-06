@@ -116,6 +116,18 @@ AGENT_STREAM_URL=https://auri-agent-api.onrender.com/v1/stream
 
 免费实例适合团队开发联调，但空闲后会休眠，首次请求可能需要约一分钟唤醒；休眠、重启或重新部署都会清空当前进程内 World State。正式演示前应提前唤醒并执行一次标准场景重置，或临时升级到不会空闲休眠的实例。
 
+### 公网发布验收
+
+GitHub Actions 通过只说明提交在 CI 环境测试成功，不代表 Render 已经切换版本。发布后必须先读取 `/health`，确认 `build_sha` 等于目标提交，再验证 `/v1/state`：
+
+```bash
+curl -sS https://auri-agent-api.onrender.com/health
+curl -sS https://auri-agent-api.onrender.com/v1/state \
+  -H "X-Agent-Token: $AGENT_SHARED_TOKEN"
+```
+
+涉及消息方案时，以 `actions[].message_draft.body` 为跨端展示的权威正文。HMI、手机和测试报告应核对同一 `session_id` 与 `revision`，不能用本地 Agent 的结果替代公网部署验收。
+
 ## 最小测试
 
 ```powershell
